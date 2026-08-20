@@ -1,0 +1,259 @@
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
+const db = require("../lib/db");
+const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
+const { logAudit } = require("../lib/audit");
+const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
+const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
+const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
+const { persistUpload } = require("../lib/mediaStorage");
+
+const router = express.Router();
+// 60MB cap accommodates a short brand-evidence video clip from a phone camera, not just photos.
+// UPLOAD_DIR (see server.js) lets this point at a durable path in production; defaults to the
+// same local ./uploads dir as always for local/dev.
+const uploadsRoot = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
+const upload = multer({ dest: uploadsRoot, limits: { fileSize: 60 * 1024 * 1024 } });
+
+function getRespondentByToken(token) {
+  return db.prepare("SELECT * FROM respondents WHERE unique_token = ?").get(token);
+}
+
+function loadQuestionnaire(studyId) {
+  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1 ORDER BY order_index").all(studyId);
+  const rules = db.prepare("SELECT * FROM skip_rules WHERE study_id = ?").all(studyId);
+  questions.forEach((q) => {
+    q.options = q.options_json ? JSON.parse(q.options_json) : [];
+  });
+  return { questions, rules };
+}
+
+// Per-respondent PWA manifest so "Add to Home Screen" reopens straight into
+// this respondent's own diary link (a shared static manifest can't do that).
+router.get("/:token/manifest.json", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "not found" });
+  res.set("Content-Type", "application/manifest+json");
+  res.json({
+    name: `INICIO Diary — ${respondent.respondent_code}`,
+    short_name: "INICIO Diary",
+    description: "Your in-home consumption diary.",
+    start_url: `/r/${req.params.token}`,
+    scope: "/r/",
+    display: "standalone",
+    background_color: "#F8FAFC",
+    theme_color: "#1F3864",
+    orientation: "portrait-primary",
+    icons: [
+      { src: "/public/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/public/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/public/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  });
+});
+
+router.get("/:token", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid. Please contact your interviewer.", user: null });
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const consent = db.prepare("SELECT * FROM consent_versions WHERE study_id = ? AND status='approved' ORDER BY version DESC LIMIT 1").get(study.id);
+  const records = db.prepare("SELECT * FROM diary_records WHERE respondent_id = ? ORDER BY datetime(entry_time) DESC").all(respondent.id);
+  res.render("respondent/home", { respondent, study, consent, records });
+});
+
+router.post("/:token/consent", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  db.prepare("UPDATE respondents SET consent_status='given', activation_status='activated' WHERE id = ?").run(respondent.id);
+  res.redirect(`/r/${req.params.token}`);
+});
+
+router.get("/:token/diary/new", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const mode = req.query.mode;
+  const practice = req.query.practice === "1";
+
+  // No mode chosen yet — let the respondent pick how they want to log this entry.
+  if (!mode) {
+    return res.render("respondent/diary_mode_picker", { respondent, study, practice });
+  }
+
+  // Video mode has its own capture-first screen (see POST /diary/analyze-video below);
+  // standard and audio modes go straight to the question form.
+  if (mode === "video") {
+    return res.render("respondent/diary_video_capture", { respondent, study, practice });
+  }
+
+  const { questions, rules } = loadQuestionnaire(study.id);
+  res.render("respondent/diary_form", {
+    respondent, study, questions, rules, practice,
+    mode: mode === "audio" ? "audio" : "standard",
+    prefill: {}, pendingMedia: null, aiNote: null,
+  });
+});
+
+// Video mode, step 1: respondent uploads one video, we run it through the
+// (mocked, see lib/videoFieldExtraction.js) field-extraction provider, then
+// render the same diary form pre-filled with whatever it could confidently
+// pull out — everything else is left for the respondent to answer normally.
+// The already-saved video is carried forward via hidden fields so it isn't
+// re-uploaded; final POST /diary attaches it as evidence media.
+router.post("/:token/diary/analyze-video", upload.single("video"), async (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const { questions, rules } = loadQuestionnaire(study.id);
+  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? AND active = 1").all(study.id);
+  const practice = req.body.practice === "1";
+
+  if (!req.file) {
+    return res.render("respondent/diary_video_capture", {
+      respondent, study, practice, error: "Please record or choose a video before continuing.",
+    });
+  }
+
+  // Everything below can fail on a live provider call (a misconfigured Azure
+  // resource, a network blip, a corrupt upload) — this whole block is wrapped
+  // so any of that degrades to the standard-form experience with the video
+  // still attached as evidence, instead of taking the whole app down. Express
+  // 4 does NOT automatically catch a rejected promise from an async route
+  // handler, so an uncaught throw here would crash the entire Node process
+  // for every concurrent respondent, not just this one request.
+  try {
+    // Construct the provider (can throw synchronously — e.g. missing Azure
+    // credentials — hence inside this try, not above it).
+    const provider = getVideoFieldExtractionProvider();
+    // Analyze the video while it's still a fresh local temp file (real bytes on
+    // this machine — ffmpeg needs a path, not a storage-abstracted pointer),
+    // THEN hand it off to permanent storage (local or Azure Blob, depending on
+    // STORAGE_PROVIDER) so the analysis step never has to care where the file
+    // ends up living.
+    const result = await provider
+      .analyze(req.file, questions, brands)
+      .catch(() => ({ status: "error", prefill: {}, note: "AI video review failed — please answer the questions below." }));
+    const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
+
+    res.render("respondent/diary_form", {
+      respondent, study, questions, rules, practice,
+      mode: "video",
+      prefill: result.prefill || {},
+      pendingMedia: { path: storedPath, mimetype: req.file.mimetype },
+      aiNote: result.note || null,
+    });
+  } catch (e) {
+    // Provider construction itself failed (e.g. VIDEO_FIELD_EXTRACTION_PROVIDER=azure_vision
+    // with no credentials set). Still let the respondent continue with a plain
+    // form rather than dead-ending them — the video was uploaded, just not analyzed.
+    const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
+    res.render("respondent/diary_form", {
+      respondent, study, questions, rules, practice,
+      mode: "video",
+      prefill: {},
+      pendingMedia: { path: storedPath, mimetype: req.file.mimetype },
+      aiNote: "AI video review is unavailable right now — please answer the questions below; your video is still attached as evidence.",
+    });
+  }
+});
+
+router.post("/:token/diary", upload.any(), async (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const isSubmit = req.body._action === "submit";
+  const isPractice = req.body._practice === "1" ? 1 : 0;
+  const entryMode = ["standard", "video", "audio"].includes(req.body._mode) ? req.body._mode : "standard";
+  const occurrenceTime = req.body.occurrence_time ? req.body.occurrence_time.replace("T", " ") : new Date().toISOString().slice(0, 19).replace("T", " ");
+  const periodLabel = req.body.period_label || occurrenceTime.slice(0, 10);
+
+  const info = db
+    .prepare(
+      `INSERT INTO diary_records (respondent_id, study_id, period_label, occurrence_time, submit_time, channel, status, is_practice, entry_mode)
+       VALUES (?, ?, ?, ?, ?, 'app', ?, ?, ?)`
+    )
+    .run(
+      respondent.id, study.id, periodLabel, occurrenceTime,
+      isSubmit ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
+      isSubmit ? "submitted" : "draft", isPractice, entryMode
+    );
+  const recordId = info.lastInsertRowid;
+
+  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1").all(study.id);
+  const insertResponse = db.prepare("INSERT INTO responses (record_id, question_id, value, study_version) VALUES (?, ?, ?, ?)");
+  for (const q of questions) {
+    const field = `q_${q.id}`;
+    if (q.type === "multi") {
+      const vals = req.body[field];
+      if (vals) {
+        const arr = Array.isArray(vals) ? vals : [vals];
+        insertResponse.run(recordId, q.id, arr.join("|"), study.version);
+      }
+    } else if (q.type !== "photo" && q.type !== "video" && req.body[field] !== undefined && req.body[field] !== "") {
+      insertResponse.run(recordId, q.id, req.body[field], study.version);
+    }
+  }
+
+  const insertMedia = db.prepare(
+    "INSERT INTO media (record_id, media_type, file_path) VALUES (?, ?, ?)"
+  );
+  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? AND active = 1").all(study.id);
+
+  // AI enrichment (brand detection / transcription) is always best-effort and
+  // must never block or crash a diary submission -- the diary record and the
+  // respondent's actual answers are the data that matters. Provider
+  // construction can throw synchronously (e.g. a real provider selected with
+  // missing/invalid credentials); catch that here so a misconfigured Azure
+  // resource degrades to "detection/transcription skipped" instead of
+  // crashing the whole app for every respondent.
+  let brandProvider = null;
+  try { brandProvider = getBrandDetectionProvider(); } catch (e) { console.error("Brand detection provider unavailable:", e.message); }
+  let audioProvider = null;
+  try { audioProvider = getAudioTranscriptionProvider(); } catch (e) { console.error("Audio transcription provider unavailable:", e.message); }
+
+  // Video mode: the video was already uploaded + analyzed in the /diary/analyze-video
+  // step, and its saved path was carried forward via hidden fields — attach it here
+  // rather than asking the respondent to upload it again.
+  if (req.body._pending_media_path) {
+    const mediaType = (req.body._pending_media_mimetype || "").startsWith("video/") ? "video" : "photo";
+    const info2 = insertMedia.run(recordId, mediaType, req.body._pending_media_path);
+    const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: mediaType, file_path: req.body._pending_media_path };
+    if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
+  }
+
+  for (const f of req.files || []) {
+    // Hand each upload off to permanent storage (local disk or Azure Blob,
+    // depending on STORAGE_PROVIDER) before recording its path — falls back
+    // to the local "/uploads/..." path if storage isn't reachable so a
+    // submission never fails outright over a storage hiccup.
+    const storedPath = await persistUpload(f).catch(() => `/uploads/${f.filename}`);
+
+    if (f.fieldname === "audio_note") {
+      const info2 = insertMedia.run(recordId, "audio", storedPath);
+      const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: "audio", file_path: storedPath };
+      // Queue transcription for the respondent's optional voice note — runs inline
+      // against the mock/Azure provider, see lib/audioTranscription.js.
+      if (audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
+      continue;
+    }
+    const mediaType = (f.mimetype || "").startsWith("video/") ? "video" : "photo";
+    const info2 = insertMedia.run(recordId, mediaType, storedPath);
+    const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: mediaType, file_path: storedPath };
+    // Queue brand detection for evidence that could show a product (photo or video).
+    // Runs inline against the mock/Azure provider — see lib/brandDetection.js.
+    if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
+  }
+
+  if (isSubmit && !isPractice) {
+    db.prepare("UPDATE respondents SET activation_status='active' WHERE id = ? AND activation_status != 'active'").run(respondent.id);
+    runQcForRecord(recordId);
+    checkCrossChannelDuplicate(respondent.id, periodLabel);
+  }
+  logAudit(respondent.respondent_code, isSubmit ? "diary_submit" : "diary_draft", "diary_records", recordId, { practice: !!isPractice });
+
+  res.redirect(`/r/${req.params.token}?saved=${isSubmit ? "submitted" : "draft"}`);
+});
+
+module.exports = router;

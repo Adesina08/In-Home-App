@@ -1,0 +1,221 @@
+<%- include('../partials/header', { title: 'Log Consumption — INICIO', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<div class="max-w-2xl mx-auto pb-24 sm:pb-0">
+  <div class="flex items-center justify-between mb-4 px-1">
+    <div>
+      <div class="text-brand-700 font-bold">INICIO</div>
+      <div class="text-slate-500 text-sm"><%= study.name %> <% if (practice) { %><span class="ml-2 text-xs px-2.5 py-1 rounded-full font-medium badge-amber">Practice entry — not used in production analysis</span><% } %></div>
+    </div>
+    <a href="/r/<%= respondent.unique_token %>" class="text-sm text-slate-400 hover:text-slate-600 shrink-0">← Back</a>
+  </div>
+
+  <div id="restoreBanner" style="display:none" class="mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200 items-center justify-between gap-3 sm:flex mx-1 sm:mx-0 shadow-card">
+    <span>We found unsaved answers from earlier on this device.</span>
+    <span class="flex gap-2 mt-2 sm:mt-0 shrink-0">
+      <button type="button" id="restoreBtn" class="text-xs bg-amber-600 text-white rounded-lg px-3 py-1.5 font-semibold hover:bg-amber-700 transition">Restore</button>
+      <button type="button" id="discardBtn" class="text-xs border border-amber-300 rounded-lg px-3 py-1.5 hover:bg-amber-100/60 transition">Discard</button>
+    </span>
+  </div>
+
+  <% if (typeof mode !== 'undefined' && mode === 'video') { %>
+    <div class="mb-4 flex items-start gap-2.5 bg-violet-50 text-violet-800 text-sm rounded-xl p-3.5 border border-violet-200 mx-1 sm:mx-0 shadow-card">
+      <%- icon('video', 'w-5 h-5 mt-0.5 shrink-0') %>
+      <div>
+        <div class="font-semibold mb-0.5">Video attached ✓</div>
+        <div class="text-violet-700"><%= typeof aiNote !== 'undefined' && aiNote ? aiNote : 'Your video is attached as evidence. Please answer the questions below.' %></div>
+      </div>
+    </div>
+  <% } %>
+
+  <form method="POST" action="/r/<%= respondent.unique_token %>/diary" enctype="multipart/form-data" id="diaryForm" class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-4 sm:p-6 space-y-6">
+    <input type="hidden" name="_practice" value="<%= practice ? '1' : '0' %>" />
+    <input type="hidden" name="_mode" value="<%= typeof mode !== 'undefined' ? mode : 'standard' %>" />
+    <% if (typeof pendingMedia !== 'undefined' && pendingMedia) { %>
+      <input type="hidden" name="_pending_media_path" value="<%= pendingMedia.path %>" />
+      <input type="hidden" name="_pending_media_mimetype" value="<%= pendingMedia.mimetype %>" />
+    <% } %>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-600 mb-1.5">When did this occasion happen?</label>
+      <input type="datetime-local" name="occurrence_time" required class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      <p class="text-xs text-slate-400 mt-1">Recall window: within <%= study.recall_window_hours %>h. Back-entry allowed up to <%= study.back_entry_hours %>h after the occasion.</p>
+    </div>
+
+    <% const pf = typeof prefill !== 'undefined' && prefill ? prefill : {}; %>
+    <% questions.forEach(q => { %>
+      <% const pv = q.code && pf[q.code] !== undefined ? pf[q.code] : null; %>
+      <div class="q-wrap border-t border-slate-100 pt-5" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>">
+        <label class="block text-base sm:text-sm font-medium text-slate-700 mb-2">
+          <%= q.text %> <% if(q.required){ %><span class="text-red-500">*</span><% } %>
+          <% if (pv !== null) { %><span class="ml-1.5 text-xs font-medium text-violet-600 bg-violet-50 rounded-full px-2 py-0.5 align-middle">AI-detected — verify</span><% } %>
+        </label>
+
+        <% if (q.type === 'single') { %>
+          <div class="space-y-2">
+            <% q.options.forEach((opt, oi) => { %>
+              <label class="flex items-center gap-3 text-base sm:text-sm rounded-xl border border-slate-200 px-4 py-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 active:bg-slate-50 transition">
+                <input type="radio" name="q_<%= q.id %>" value="<%= opt %>" <%= pv === opt ? 'checked' : '' %> <%= q.required ? 'required' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
+                <%= opt %>
+              </label>
+            <% }) %>
+          </div>
+        <% } else if (q.type === 'multi') { %>
+          <div class="space-y-2">
+            <% const pvArr = Array.isArray(pv) ? pv : (pv ? [pv] : []); %>
+            <% q.options.forEach(opt => { %>
+              <label class="flex items-center gap-3 text-base sm:text-sm rounded-xl border border-slate-200 px-4 py-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 active:bg-slate-50 transition">
+                <input type="checkbox" name="q_<%= q.id %>[]" value="<%= opt %>" <%= pvArr.includes(opt) ? 'checked' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
+                <%= opt %>
+              </label>
+            <% }) %>
+          </div>
+        <% } else if (q.type === 'numeric') { %>
+          <input type="number" name="q_<%= q.id %>" value="<%= pv !== null ? pv : '' %>" <%= q.min_value!==null ? 'min='+q.min_value : '' %> <%= q.max_value!==null ? 'max='+q.max_value : '' %> <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" inputmode="decimal" />
+        <% } else if (q.type === 'text') { %>
+          <textarea name="q_<%= q.id %>" <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" rows="3"><%= pv !== null ? pv : '' %></textarea>
+        <% } else if (q.type === 'date') { %>
+          <input type="datetime-local" name="q_<%= q.id %>" <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" />
+        <% } else if (q.type === 'photo') { %>
+          <label class="flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition">
+            📷 <span>Tap to take / choose a photo</span>
+            <input type="file" name="photo_q_<%= q.id %>" accept="image/*" capture="environment" class="hidden" onchange="this.previousElementSibling.textContent = this.files[0]?.name || 'Tap to take / choose a photo'" />
+          </label>
+        <% } else if (q.type === 'video') { %>
+          <label class="flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition">
+            🎥 <span>Tap to record / choose a short video</span>
+            <input type="file" name="video_q_<%= q.id %>" accept="video/*" capture="environment" class="hidden" onchange="this.previousElementSibling.textContent = this.files[0]?.name || 'Tap to record / choose a short video'" />
+          </label>
+          <p class="text-xs text-slate-400 mt-1">Used for brand detection on the packaging/product shown — see Admin → Media Review.</p>
+        <% } %>
+      </div>
+    <% }) %>
+
+    <% if (typeof mode !== 'undefined' && mode === 'audio') { %>
+      <div class="border-t border-slate-100 pt-5">
+        <label class="flex items-center gap-2 text-base sm:text-sm font-medium text-slate-700 mb-2"><%- icon('mic', 'w-4 h-4 text-sky-600') %> Voice Note (optional)</label>
+        <label class="flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition">
+          <%- icon('mic', 'w-5 h-5 text-slate-400') %> <span id="audioNoteLabel">Tap to record a quick voice summary</span>
+          <input type="file" name="audio_note" accept="audio/*" capture class="hidden" onchange="document.getElementById('audioNoteLabel').textContent = this.files[0]?.name || 'Tap to record a quick voice summary'" />
+        </label>
+        <p class="text-xs text-slate-400 mt-1">We'll keep it as a QC note alongside your answers above — see Admin → Media Review.</p>
+      </div>
+    <% } %>
+
+    <div class="hidden sm:flex gap-3 pt-2">
+      <button type="submit" name="_action" value="draft" class="border border-slate-300 rounded-lg px-5 py-2.5 text-sm hover:bg-slate-100">Save Draft</button>
+      <button type="submit" name="_action" value="submit" class="bg-brand text-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-brand-light">Submit Diary Entry</button>
+    </div>
+  </form>
+</div>
+
+<!-- Mobile sticky action bar -->
+<div class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 flex gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+  <button type="submit" form="diaryForm" name="_action" value="draft" class="flex-1 border border-slate-300 rounded-lg py-3 text-sm font-medium">Save Draft</button>
+  <button type="submit" form="diaryForm" name="_action" value="submit" class="flex-1 bg-brand text-white rounded-lg py-3 text-sm font-semibold">Submit</button>
+</div>
+
+<script>
+  const RULES = <%- JSON.stringify(rules) %>;
+
+  function getConditionValue(qid) {
+    const radios = document.querySelectorAll(`input[type=radio][data-qid="${qid}"]:checked`);
+    if (radios.length) return radios[0].value;
+    const checks = document.querySelectorAll(`input[type=checkbox][data-qid="${qid}"]:checked`);
+    if (checks.length) return Array.from(checks).map(c => c.value).join('|');
+    const other = document.querySelector(`.cond-input[data-qid="${qid}"]`);
+    return other ? other.value : '';
+  }
+
+  function evaluateSkipLogic() {
+    // default: visible, unless a 'show' rule targets it (then hidden until matched)
+    const defaultHidden = new Set(RULES.filter(r => r.action === 'show').map(r => r.target_question_id));
+    document.querySelectorAll('.q-wrap').forEach(w => {
+      const qid = parseInt(w.dataset.qid, 10);
+      w.style.display = defaultHidden.has(qid) ? 'none' : '';
+    });
+    RULES.forEach(rule => {
+      const val = getConditionValue(rule.condition_question_id);
+      const matches = rule.operator === 'not_equals' ? val !== rule.value : val === rule.value;
+      const wrap = document.getElementById('q-wrap-' + rule.target_question_id);
+      if (!wrap) return;
+      if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';
+      if (rule.action === 'hide') wrap.style.display = matches ? 'none' : '';
+    });
+  }
+
+  document.addEventListener('input', evaluateSkipLogic);
+  document.addEventListener('change', evaluateSkipLogic);
+  evaluateSkipLogic();
+
+  // ---- Local draft autosave (survives a dropped connection or accidental reload) ----
+  const DRAFT_KEY = 'inicio_local_draft:<%= respondent.unique_token %>';
+  const form = document.getElementById('diaryForm');
+
+  function serializeForm() {
+    const data = {};
+    form.querySelectorAll('input, textarea, select').forEach((el) => {
+      if (!el.name || el.type === 'file' || el.type === 'hidden') return;
+      if (el.type === 'radio' || el.type === 'checkbox') {
+        if (el.checked) {
+          data[el.name] = data[el.name] || [];
+          data[el.name].push(el.value);
+        }
+      } else {
+        data[el.name] = el.value;
+      }
+    });
+    return data;
+  }
+
+  function saveDraft() {
+    try {
+      const data = serializeForm();
+      const hasContent = Object.values(data).some((v) => (Array.isArray(v) ? v.length : v));
+      if (hasContent) localStorage.setItem(DRAFT_KEY, JSON.stringify({ data, savedAt: Date.now() }));
+    } catch (e) { /* localStorage unavailable — autosave is a nicety, not required */ }
+  }
+
+  function applyDraft(data) {
+    Object.entries(data).forEach(([name, value]) => {
+      const els = form.querySelectorAll(`[name="${CSS.escape(name)}"]`);
+      els.forEach((el) => {
+        if (el.type === 'radio' || el.type === 'checkbox') {
+          el.checked = Array.isArray(value) && value.includes(el.value);
+        } else if (Array.isArray(value)) {
+          el.value = value[0] || '';
+        } else {
+          el.value = value;
+        }
+      });
+    });
+    evaluateSkipLogic();
+  }
+
+  let saveTimer;
+  form.addEventListener('input', () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 600); });
+  form.addEventListener('change', saveDraft);
+  form.addEventListener('submit', () => { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} });
+
+  // Right after AI video analysis, the server just rendered the freshest state (any
+  // AI pre-fill included) — don't offer to overwrite it with an older local draft.
+  const JUST_ANALYZED_VIDEO = <%- (typeof pendingMedia !== 'undefined' && pendingMedia) ? 'true' : 'false' %>;
+  if (JUST_ANALYZED_VIDEO) { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
+
+  try {
+    const saved = JUST_ANALYZED_VIDEO ? null : JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (saved && saved.data && Date.now() - saved.savedAt < 24 * 60 * 60 * 1000) {
+      const banner = document.getElementById('restoreBanner');
+      banner.style.display = '';
+      document.getElementById('restoreBtn').addEventListener('click', () => {
+        applyDraft(saved.data);
+        banner.style.display = 'none';
+      });
+      document.getElementById('discardBtn').addEventListener('click', () => {
+        localStorage.removeItem(DRAFT_KEY);
+        banner.style.display = 'none';
+      });
+    }
+  } catch (e) { /* ignore malformed/unavailable local draft */ }
+</script>
+
+<%- include('../partials/footer') %>

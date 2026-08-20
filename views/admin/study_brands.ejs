@@ -1,0 +1,40 @@
+<%- include('../partials/header', { title: study.name + ' — Brand/SKU List', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+  <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-800 flex items-center gap-2"><%- icon('building', 'w-4 h-4 text-brand-500') %> Brand / Product Master</div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Category</th><th class="py-2.5">SKU</th><th class="py-2.5"></th></tr></thead>
+      <tbody>
+      <% brands.forEach(b => { %>
+        <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= b.active ? '' : 'opacity-40' %>">
+          <td class="px-5 py-2.5 font-medium text-slate-700"><%= b.name %></td>
+          <td class="py-2.5 text-slate-600"><%= b.category||'—' %></td>
+          <td class="py-2.5 font-mono text-xs text-slate-500"><%= b.sku||'—' %></td>
+          <td class="py-2.5 pr-5 text-right">
+            <% if (b.active) { %>
+            <form method="POST" action="/admin/studies/<%= study.id %>/brands/<%= b.id %>/delete">
+              <button class="text-red-500 text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+            </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (!brands.length) { %><tr><td colspan="4" class="px-5 py-8 text-slate-400 text-center">No brands yet — add the approved pilot brand/SKU list on the right.</td></tr><% } %>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Brand / Product</div>
+    <form method="POST" action="/admin/studies/<%= study.id %>/brands" class="space-y-3.5 text-sm">
+      <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label><input name="name" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+      <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label><input name="category" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+      <div><label class="block text-sm font-medium text-slate-600 mb-1.5">SKU</label><input name="sku" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add</button>
+    </form>
+  </div>
+</div>
+<%- include('../partials/footer') %>

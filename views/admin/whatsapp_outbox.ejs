@@ -1,0 +1,36 @@
+<%- include('../partials/header', { title: 'WhatsApp Outbox — INICIO', user }) %>
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+  <div>
+    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Messaging</div>
+    <h1 class="text-2xl font-bold text-slate-900">WhatsApp Outbox</h1>
+    <p class="text-slate-500 text-sm mt-1">Log of reminder messages sent by the engine.</p>
+  </div>
+</div>
+
+<div class="flex items-start gap-2.5 bg-amber-50 text-amber-800 text-sm rounded-xl p-3.5 mb-6 border border-amber-200">
+  <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+  <span>Running in <strong>mock</strong> mode — no real WhatsApp messages are sent. Every reminder the engine would have sent is logged below instead.
+  Configure <code>WHATSAPP_PROVIDER</code>, <code>WHATSAPP_API_TOKEN</code>, <code>WHATSAPP_PHONE_NUMBER_ID</code> in <code>.env</code> to go live — see PRODUCTION_READINESS.md section B1.</span>
+</div>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card">
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Respondent</th><th class="py-2.5">Template</th><th class="py-2.5">Payload</th><th class="py-2.5">Status</th><th class="py-2.5">Time</th></tr></thead>
+    <tbody>
+    <% messages.forEach(m => { %>
+      <tr class="border-t border-slate-100 hover:bg-slate-50/70">
+        <td class="px-5 py-2.5 font-mono text-xs text-slate-600"><%= m.respondent_code || m.respondent_id %></td>
+        <td class="py-2.5 text-slate-700"><%= m.template %></td>
+        <td class="py-2.5 text-xs text-slate-400 max-w-md truncate"><%= m.payload_json %></td>
+        <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full font-medium badge-amber"><%= m.status %></span></td>
+        <td class="py-2.5 text-xs text-slate-400"><%= m.created_at %></td>
+      </tr>
+    <% }) %>
+    <% if (!messages.length) { %><tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">No messages yet — run the reminder engine from the dashboard.</td></tr><% } %>
+    </tbody>
+  </table>
+  </div>
+</div>
+<%- include('../partials/footer') %>

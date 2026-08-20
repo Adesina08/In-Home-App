@@ -1,0 +1,19 @@
+<%- include('../partials/header', { title: 'Respondent Activated — INICIO', user }) %>
+
+<div class="max-w-lg mx-auto bg-white rounded-2xl border border-slate-200/70 p-8 text-center shadow-card">
+  <div class="w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+    <%- icon('check-circle', 'w-7 h-7') %>
+  </div>
+  <h1 class="text-xl font-bold text-slate-900 mb-1">Respondent Activated</h1>
+  <p class="text-slate-500 text-sm mb-4">Respondent code <strong class="text-slate-700"><%= code %></strong> is now active. Hand the device to the respondent, or share their personal diary link, for the practice entry.</p>
+  <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono break-all mb-5 text-slate-600"><%= '/r/' + token %></div>
+  <div class="flex flex-wrap gap-3 justify-center">
+    <a href="/r/<%= token %>" target="_blank" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('eye', 'w-4 h-4') %> Open Respondent Diary
+    </a>
+    <a href="/interviewer/register" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
+      <%- icon('plus', 'w-4 h-4') %> Register Another
+    </a>
+  </div>
+</div>
+<%- include('../partials/footer') %>

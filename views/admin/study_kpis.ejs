@@ -1,0 +1,37 @@
+<%- include('../partials/header', { title: study.name + ' — Client KPIs', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+  <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-800 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-brand-500') %> Agreed Launch KPIs (shown on Client Dashboard)</div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">KPI</th><th class="py-2.5">Key</th><th class="py-2.5">Enabled</th></tr></thead>
+      <tbody>
+      <% kpis.forEach(k => { %>
+        <tr class="border-t border-slate-100 hover:bg-slate-50/70">
+          <td class="px-5 py-2.5 font-medium text-slate-700"><%= k.label %></td>
+          <td class="py-2.5 font-mono text-xs text-slate-400"><%= k.kpi_key %></td>
+          <td class="py-2.5">
+            <form method="POST" action="/admin/studies/<%= study.id %>/kpis/<%= k.id %>/toggle">
+              <button class="text-xs px-3 py-1 rounded-full font-medium <%= k.enabled ? 'badge-green' : 'bg-slate-100 text-slate-500' %>"><%= k.enabled ? 'On' : 'Off' %></button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (!kpis.length) { %><tr><td colspan="3" class="px-5 py-8 text-slate-400 text-center">No KPIs configured yet.</td></tr><% } %>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Custom KPI</div>
+    <form method="POST" action="/admin/studies/<%= study.id %>/kpis" class="space-y-3.5 text-sm">
+      <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Key</label><input name="kpi_key" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. repertoire_size" /></div>
+      <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Label</label><input name="label" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Avg Brand Repertoire" /></div>
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add KPI</button>
+    </form>
+    <p class="text-xs text-slate-400 mt-3 leading-relaxed">Target 5–10 launch KPIs per the Day-1 dependency checklist.</p>
+  </div>
+</div>
+<%- include('../partials/footer') %>

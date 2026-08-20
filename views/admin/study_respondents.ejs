@@ -1,0 +1,27 @@
+<%- include('../partials/header', { title: study.name + ' — Respondents', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+      <th class="px-5 py-2.5">Code</th><th class="py-2.5">Name</th><th class="py-2.5">Mode</th><th class="py-2.5">Channel</th>
+      <th class="py-2.5">Consent</th><th class="py-2.5">Status</th><th class="py-2.5">Risk</th><th class="py-2.5">Link</th>
+    </tr></thead>
+    <tbody>
+    <% respondents.forEach(r => { %>
+      <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= r.is_practice ? 'opacity-50' : '' %>">
+        <td class="px-5 py-2.5 font-mono text-xs text-slate-600"><%= r.respondent_code %><% if(r.is_practice){ %> <span class="text-xs text-slate-400">(practice)</span><% } %></td>
+        <td class="py-2.5 font-medium text-slate-700"><%= r.name %></td>
+        <td class="py-2.5 uppercase text-xs text-slate-500"><%= r.recruitment_mode %></td>
+        <td class="py-2.5 text-xs text-slate-500"><%= r.preferred_channel %></td>
+        <td class="py-2.5 text-xs text-slate-600"><%= r.consent_status %></td>
+        <td class="py-2.5 text-xs capitalize text-slate-600"><%= r.activation_status %></td>
+        <td class="py-2.5"><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= r.risk==='red'?'badge-red':r.risk==='amber'?'badge-amber':'badge-green' %>"><%= r.risk %></span></td>
+        <td class="py-2.5 pr-5"><a class="text-brand-600 underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank">Open diary link</a></td>
+      </tr>
+    <% }) %>
+    <% if (!respondents.length) { %><tr><td colspan="8" class="px-5 py-8 text-slate-400 text-center">No respondents registered yet. Use Interviewer &gt; Register Respondent for F2F, or generate a remote invite link.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+<%- include('../partials/footer') %>

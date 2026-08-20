@@ -1,0 +1,122 @@
+<%- include('../partials/header', { title: study.name + ' — Settings', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 max-w-4xl">
+  <div class="flex items-start gap-2 text-sm text-slate-500 mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+    <%- icon('cog', 'w-4 h-4 mt-0.5 text-brand-500') %>
+    <span>This is the <strong class="text-slate-700">Developer / Config console</strong>: the real day-1 pilot inputs (diary frequency, recall window, QC thresholds, reminder schedule) are entered here — nothing on the respondent/QC side is hardcoded.</span>
+  </div>
+
+  <form method="POST" action="/admin/studies/<%= study.id %>/settings" class="space-y-8">
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('building', 'w-4 h-4 text-brand-500') %> Study Identity</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label>
+          <input name="name" value="<%= study.name %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Status</label>
+          <select name="status" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% ['draft','live','closed'].forEach(s => { %>
+              <option value="<%= s %>" <%= study.status===s?'selected':'' %>><%= s %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Market</label>
+          <input name="market" value="<%= study.market||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label>
+          <input name="category" value="<%= study.category||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('calendar', 'w-4 h-4 text-brand-500') %> Diary Frequency & Recruitment</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Diary mode</label>
+          <select name="diary_mode" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% [['realtime','Occasion (real-time)'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].forEach(([v,l]) => { %>
+              <option value="<%= v %>" <%= study.diary_mode===v?'selected':'' %>><%= l %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Recruitment mode</label>
+          <select name="recruitment_mode" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% ['f2f','remote','hybrid'].forEach(v => { %>
+              <option value="<%= v %>" <%= study.recruitment_mode===v?'selected':'' %>><%= v %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('photo', 'w-4 h-4 text-brand-500') %> Recall Window & Photo Evidence</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Back-entry window (hours)</label>
+          <input type="number" name="back_entry_hours" value="<%= study.back_entry_hours %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Recall window (hours)</label>
+          <input type="number" name="recall_window_hours" value="<%= study.recall_window_hours %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div class="flex items-center gap-2 pt-6">
+          <input type="checkbox" name="mandatory_photo" id="mandatory_photo" <%= study.mandatory_photo? 'checked':'' %> class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
+          <label for="mandatory_photo" class="text-sm text-slate-600">Photo evidence mandatory</label>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> QC Thresholds</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Duplicate similarity threshold (0–1)</label>
+          <input type="number" step="0.05" name="duplicate_similarity_threshold" value="<%= study.duplicate_similarity_threshold %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Burst-entry count threshold</label>
+          <input type="number" name="burst_entry_count_threshold" value="<%= study.burst_entry_count_threshold %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Burst-entry window (hours)</label>
+          <input type="number" name="burst_entry_window_hours" value="<%= study.burst_entry_window_hours %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('bell', 'w-4 h-4 text-brand-500') %> Reminder Schedule</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Due after (hours, blank = auto from diary mode)</label>
+          <input type="number" name="reminder_due_hours" value="<%= study.reminder_due_hours||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Missed after (hours, blank = 2x due)</label>
+          <input type="number" name="reminder_missed_hours" value="<%= study.reminder_missed_hours||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Default channel</label>
+          <select name="default_reminder_channel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <option value="whatsapp" <%= study.default_reminder_channel==='whatsapp'?'selected':'' %>>WhatsApp</option>
+            <option value="in-app" <%= study.default_reminder_channel==='in-app'?'selected':'' %>>In-app / Push</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-6 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('check', 'w-4 h-4') %> Save Settings
+    </button>
+  </form>
+</div>
+<%- include('../partials/footer') %>

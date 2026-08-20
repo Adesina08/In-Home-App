@@ -1,0 +1,61 @@
+<%- include('../partials/header', { title: 'Register Respondent — INICIO', user }) %>
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Fieldwork</div>
+    <h1 class="text-2xl font-bold text-slate-900">F2F Respondent Onboarding</h1>
+    <p class="text-slate-500 text-sm mt-1">Screen → Consent → Register → Verify → Activate, captured in one visit.</p>
+  </div>
+</div>
+
+<% if (typeof error !== 'undefined' && error) { %>
+  <div class="flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 max-w-xl border border-red-100">
+    <%- icon('warning', 'w-4 h-4 mt-0.5') %>
+    <span><%= error %></span>
+  </div>
+<% } %>
+
+<form method="POST" action="/interviewer/register" class="bg-white rounded-2xl border border-slate-200/70 p-6 max-w-xl space-y-5 shadow-card">
+  <div>
+    <label class="block text-sm font-medium text-slate-600 mb-1.5">Study</label>
+    <select name="study_id" onchange="window.location='/interviewer/register?study='+this.value" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+      <% studies.forEach(s => { %><option value="<%= s.id %>" <%= study && study.id===s.id ? 'selected':'' %>><%= s.name %></option><% }) %>
+    </select>
+  </div>
+
+  <div class="border-t border-slate-100 pt-4">
+    <div class="font-semibold text-slate-800 mb-2 text-sm flex items-center gap-2"><span class="w-5 h-5 rounded-full bg-brand-50 text-brand-600 text-[11px] font-bold flex items-center justify-center shrink-0">1</span> Screen</div>
+    <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="eligible" checked class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" /> Respondent meets eligibility criteria</label>
+  </div>
+
+  <div class="border-t border-slate-100 pt-4">
+    <div class="font-semibold text-slate-800 mb-2 text-sm flex items-center gap-2"><span class="w-5 h-5 rounded-full bg-brand-50 text-brand-600 text-[11px] font-bold flex items-center justify-center shrink-0">2</span> Consent</div>
+    <div class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3 mb-2 max-h-32 overflow-auto">
+      <%= consent ? consent.body : 'No approved consent wording found for this study yet — add and approve it under Study Config > Consent Wording before running a real pilot.' %>
+    </div>
+    <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="consent_given" required class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" /> Respondent has given consent (read aloud / shown above)</label>
+  </div>
+
+  <div class="border-t border-slate-100 pt-4">
+    <div class="font-semibold text-slate-800 mb-2 text-sm flex items-center gap-2"><span class="w-5 h-5 rounded-full bg-brand-50 text-brand-600 text-[11px] font-bold flex items-center justify-center shrink-0">3</span> Register</div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-xs font-medium text-slate-600 mb-1.5">Full name</label><input name="name" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+      <div><label class="block text-xs font-medium text-slate-600 mb-1.5">Phone / contact</label><input name="contact" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+    </div>
+  </div>
+
+  <div class="border-t border-slate-100 pt-4">
+    <div class="font-semibold text-slate-800 mb-2 text-sm flex items-center gap-2"><span class="w-5 h-5 rounded-full bg-brand-50 text-brand-600 text-[11px] font-bold flex items-center justify-center shrink-0">4</span> Verify &amp; Activate</div>
+    <label class="block text-xs font-medium text-slate-600 mb-1.5">Diary channel</label>
+    <select name="preferred_channel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+      <option value="app">App / Web</option>
+      <option value="whatsapp">WhatsApp</option>
+    </select>
+    <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="practice" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" /> Mark first entry as a practice/test entry (excluded from production analysis)</label>
+  </div>
+
+  <button class="w-full inline-flex items-center justify-center gap-2 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
+    <%- icon('check-circle', 'w-4 h-4') %> Activate Respondent
+  </button>
+</form>
+<%- include('../partials/footer') %>

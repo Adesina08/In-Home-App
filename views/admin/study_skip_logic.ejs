@@ -1,0 +1,69 @@
+<%- include('../partials/header', { title: study.name + ' — Skip Logic', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+  <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-800 flex items-center gap-2"><%- icon('arrow-right', 'w-4 h-4 text-brand-500') %> Skip Logic Rules</div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-5 py-2.5">Rule</th><th class="py-2.5"></th>
+      </tr></thead>
+      <tbody>
+      <% rules.forEach(r => { %>
+        <tr class="border-t border-slate-100 hover:bg-slate-50/70">
+          <td class="px-5 py-3.5 text-slate-700">
+            <span class="font-medium <%= r.action === 'show' ? 'text-emerald-600' : 'text-red-500' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span> "<strong><%= r.target_text %></strong>"
+            if "<%= r.condition_text %>" <%= r.operator === 'equals' ? '=' : '≠' %> <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs"><%= r.value %></span>
+          </td>
+          <td class="py-3 pr-5 text-right">
+            <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic/<%= r.id %>/delete">
+              <button class="text-red-500 text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-400 text-center">No skip logic yet — build the questionnaire first, then add rules here.</td></tr><% } %>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Skip Rule</div>
+    <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic" class="space-y-3.5 text-sm">
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Action</label>
+        <select name="action" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <option value="show">Show target question</option>
+          <option value="hide">Hide target question</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Target question</label>
+        <select name="target_question_id" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <% questions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">When condition question</label>
+        <select name="condition_question_id" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <% questions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Operator</label>
+        <select name="operator" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <option value="equals">Equals</option>
+          <option value="not_equals">Not equals</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Value</label>
+        <input name="value" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Yes / Brand A" />
+      </div>
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add Rule</button>
+    </form>
+  </div>
+</div>
+<%- include('../partials/footer') %>

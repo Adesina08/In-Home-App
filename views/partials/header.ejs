@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title><%= typeof title !== 'undefined' ? title : 'INICIO In-Home Consumption' %></title>
+  <link rel="stylesheet" href="/public/tailwind.css" />
+  <link rel="manifest" href="<%= typeof manifestUrl !== 'undefined' && manifestUrl ? manifestUrl : '/public/manifest.json' %>" />
+  <link rel="icon" href="/public/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/public/icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#1F3864" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="INICIO Diary" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    }
+  </script>
+  <style>
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    .badge-green { background:#E6F4EA; color:#1E7E34; }
+    .badge-amber { background:#FFF4E5; color:#B8860B; }
+    .badge-red { background:#FCE8E6; color:#C0392B; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 antialiased">
+<% if (typeof user !== 'undefined' && user) {
+  const navFor = {
+    admin: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'] ],
+    research: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'] ],
+    interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'] ],
+    client: [ ['/client','Client Dashboard','chart-bar'] ],
+  };
+  const links = navFor[user.role] || [];
+  const path = typeof currentPath !== 'undefined' ? currentPath : '';
+  const roleColor = { admin: 'bg-violet-400/90', research: 'bg-violet-400/90', interviewer: 'bg-sky-400/90', client: 'bg-emerald-400/90' }[user.role] || 'bg-slate-400/90';
+  const initials = (user.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+%>
+<header class="bg-brand-700 text-white sticky top-0 z-30 shadow-md">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center font-bold text-sm tracking-tight">IN</div>
+      <div class="leading-tight">
+        <div class="font-bold tracking-wide text-base">INICIO</div>
+        <div class="text-brand-200 text-[11px] hidden lg:block -mt-0.5">In-Home Consumption — Pilot MVP</div>
+      </div>
+    </div>
+    <nav class="flex items-center gap-1 sm:gap-1.5 text-sm overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <% links.forEach(([href, label, ic]) => {
+        const active = path === href || (href !== '/admin' && href !== '/interviewer' && href !== '/client' && path.startsWith(href));
+      %>
+        <a href="<%= href %>" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition <%= active ? 'bg-white/15 text-white font-semibold' : 'text-brand-100 hover:bg-white/10 hover:text-white' %>">
+          <%- icon(ic, 'w-4 h-4') %>
+          <span class="hidden md:inline"><%= label %></span>
+        </a>
+      <% }) %>
+      <span class="w-px h-5 bg-white/15 mx-1 hidden sm:block"></span>
+      <div class="flex items-center gap-2 pl-1 shrink-0">
+        <div class="w-7 h-7 rounded-full <%= roleColor %> text-white text-xs font-bold flex items-center justify-center hidden sm:flex"><%= initials %></div>
+        <span class="text-brand-100 hidden sm:inline text-xs"><%= user.name %> <span class="uppercase tracking-wide bg-white/10 rounded px-1.5 py-0.5 ml-1"><%= user.role %></span></span>
+        <a href="/logout" title="Log out" class="flex items-center gap-1 text-brand-100 hover:text-white shrink-0 px-2 py-1.5 rounded-lg hover:bg-white/10">
+          <%- icon('logout', 'w-4 h-4') %>
+          <span class="hidden lg:inline text-xs">Log out</span>
+        </a>
+      </div>
+    </nav>
+  </div>
+</header>
+<% } %>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">

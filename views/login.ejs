@@ -1,0 +1,67 @@
+<%- include('partials/header', { title: 'Log in — INICIO', user: null }) %>
+<div class="min-h-[80vh] flex items-center justify-center -mt-4">
+  <div class="w-full max-w-4xl grid md:grid-cols-2 rounded-3xl overflow-hidden shadow-pop border border-slate-200/70 bg-white">
+
+    <div class="hidden md:flex flex-col justify-between bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white p-10 relative overflow-hidden">
+      <div class="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-white/5"></div>
+      <div class="absolute -right-6 bottom-10 w-40 h-40 rounded-full bg-white/5"></div>
+      <div class="relative">
+        <div class="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center font-bold mb-8">IN</div>
+        <div class="text-2xl font-bold leading-snug">In-Home Consumption<br/>Research Platform</div>
+        <p class="text-brand-100 text-sm mt-3 max-w-xs">Recruitment, diary capture, QC, and client reporting for the pilot study — in one place.</p>
+      </div>
+      <div class="relative space-y-3 text-sm">
+        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Rule-based QC &amp; risk scoring</div>
+        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Mobile-first respondent diary</div>
+        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Video/photo evidence + brand detection</div>
+      </div>
+    </div>
+
+    <div class="p-8 sm:p-10 flex flex-col justify-center">
+      <div class="mb-7 md:hidden text-center">
+        <div class="text-brand-700 font-bold text-2xl tracking-wide">INICIO</div>
+        <div class="text-slate-500 text-sm">In-Home Consumption App — Pilot MVP</div>
+      </div>
+      <h1 class="text-xl font-bold text-slate-900 mb-1">Welcome back</h1>
+      <p class="text-sm text-slate-500 mb-6">Sign in to your staff account.</p>
+
+      <% if (error) { %>
+        <div class="flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 border border-red-100">
+          <%- icon('warning', 'w-4 h-4 mt-0.5') %>
+          <span><%= error %></span>
+        </div>
+      <% } %>
+
+      <form method="POST" action="/login" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Email</label>
+          <input name="email" type="email" required autofocus
+            class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition"
+            placeholder="you@example.com" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Password</label>
+          <input name="password" type="password" required
+            class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <button type="submit"
+          class="w-full inline-flex items-center justify-center gap-2 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
+          Log in
+          <%- icon('arrow-right', 'w-4 h-4') %>
+        </button>
+      </form>
+
+      <div class="mt-7 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <div class="font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5"><%- icon('users', 'w-3.5 h-3.5') %> Demo accounts (seeded sample data)</div>
+        <div class="space-y-0.5 font-mono text-[11px] leading-relaxed text-slate-500">
+          <div>admin@inicio.demo</div>
+          <div>research@inicio.demo</div>
+          <div>interviewer@inicio.demo</div>
+          <div>client@inicio.demo</div>
+        </div>
+        <div class="mt-1.5">Password for all: <span class="font-mono font-semibold text-slate-700">Demo1234!</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('partials/footer') %>

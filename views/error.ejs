@@ -1,0 +1,13 @@
+<%- include('partials/header', { title: 'Notice', user: user }) %>
+<div class="min-h-[70vh] flex items-center justify-center -mt-4">
+  <div class="max-w-md w-full bg-white border border-slate-200/70 rounded-3xl shadow-pop p-9 text-center">
+    <div class="w-14 h-14 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto mb-5">
+      <%- icon('warning', 'w-7 h-7') %>
+    </div>
+    <p class="text-slate-700 font-medium"><%= message %></p>
+    <a href="/" class="inline-flex items-center justify-center gap-1.5 mt-6 bg-brand-700 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('home', 'w-4 h-4') %> Go home
+    </a>
+  </div>
+</div>
+<%- include('partials/footer') %>

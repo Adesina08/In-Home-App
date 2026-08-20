@@ -1,0 +1,42 @@
+<%- include('../partials/header', { title: study.name + ' — Upload Questionnaire', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="max-w-2xl">
+  <% if (error) { %>
+    <div class="flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 border border-red-100">
+      <%- icon('warning', 'w-4 h-4 mt-0.5') %>
+      <span><%= error %></span>
+    </div>
+  <% } %>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6">
+    <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2"><%- icon('upload', 'w-4 h-4 text-brand-500') %> Upload a Questionnaire</div>
+    <p class="text-sm text-slate-500 mb-4">
+      Best results: a <strong>.csv or .xlsx</strong> with columns
+      <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">code, text, type, options, required, min, max</code>
+      (type = single / multi / numeric / text / date / photo / video; options separated by commas or semicolons).
+      A <strong>.docx, .pdf, or .txt</strong> questionnaire is also accepted — it's parsed best-effort from
+      lines like <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">Q: ... / Type: ... / Options: ...</code>,
+      and you'll get a chance to review and fix every row before anything is added to your study.
+    </p>
+    <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/upload" enctype="multipart/form-data" class="space-y-4">
+      <input type="file" name="file" required accept=".csv,.xlsx,.xls,.docx,.pdf,.txt" class="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      <div class="flex items-center gap-3">
+        <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+          <%- icon('upload', 'w-4 h-4') %> Upload &amp; Parse
+        </button>
+        <a href="/admin/studies/<%= study.id %>/questionnaire" class="text-sm text-slate-500 hover:text-slate-700">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="mt-6 bg-slate-50 rounded-2xl border border-slate-200 p-5 text-xs text-slate-500">
+    <div class="font-semibold text-slate-600 mb-2 flex items-center gap-1.5"><%- icon('clipboard', 'w-3.5 h-3.5') %> Example spreadsheet row</div>
+    <table class="w-full font-mono text-xs">
+      <tr class="text-slate-400"><td class="pr-4">code</td><td class="pr-4">text</td><td class="pr-4">type</td><td class="pr-4">options</td><td class="pr-4">required</td><td class="pr-4">min</td><td>max</td></tr>
+      <tr><td class="pr-4">brand</td><td class="pr-4">Which brand?</td><td class="pr-4">single</td><td class="pr-4">Brand A;Brand B</td><td class="pr-4">yes</td><td class="pr-4"></td><td></td></tr>
+      <tr><td class="pr-4">quantity</td><td class="pr-4">How many?</td><td class="pr-4">numeric</td><td class="pr-4"></td><td class="pr-4">yes</td><td class="pr-4">0</td><td>10</td></tr>
+    </table>
+  </div>
+</div>
+<%- include('../partials/footer') %>

@@ -1,0 +1,88 @@
+<%- include('../partials/header', { title: study.name + ' — Questionnaire', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<% if (typeof imported !== 'undefined' && imported) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %>
+    Imported <%= imported %> question<%= imported == 1 ? '' : 's' %> from your upload.
+  </div>
+<% } %>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card">
+    <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-800 flex items-center justify-between">
+      <span class="flex items-center gap-2"><%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Diary Questions (in order)</span>
+      <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
+      </a>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-5 py-2.5">#</th><th class="py-2.5">Code</th><th class="py-2.5">Question</th><th class="py-2.5">Type</th><th class="py-2.5">Required</th><th class="py-2.5"></th>
+      </tr></thead>
+      <tbody>
+      <% questions.forEach(q => { %>
+        <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= q.active ? '' : 'opacity-40' %>">
+          <td class="px-5 py-2.5 text-slate-400"><%= q.order_index %></td>
+          <td class="py-2.5 font-mono text-xs"><%= q.code||'—' %></td>
+          <td class="py-2.5"><%= q.text %><% if(q.options_json){ const o=JSON.parse(q.options_json); if(o.length){ %><div class="text-xs text-slate-400">options: <%= o.join(', ') %></div><% } } %></td>
+          <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium"><%= q.type %></span></td>
+          <td class="py-2.5"><%= q.required ? 'Yes' : 'No' %></td>
+          <td class="py-2.5 pr-5 text-right">
+            <% if (q.active) { %>
+            <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/<%= q.id %>/delete" onsubmit="return confirm('Remove this question?')">
+              <button class="inline-flex items-center gap-1 text-red-600 text-xs font-medium hover:underline"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+            </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (!questions.length) { %><tr><td colspan="6" class="px-5 py-6 text-slate-400">No questions yet — add the first one on the right.</td></tr><% } %>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Question</div>
+    <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire" class="space-y-3.5 text-sm">
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Code (used by skip logic / brand & occasion mapping)</label>
+        <input name="code" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. brand, occasion, quantity" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Question text</label>
+        <textarea name="text" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Type</label>
+        <select name="type" id="qtype" onchange="document.getElementById('optionsWrap').classList.toggle('hidden', !['single','multi'].includes(this.value)); document.getElementById('rangeWrap').classList.toggle('hidden', this.value!=='numeric')" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <option value="single">Single select</option>
+          <option value="multi">Multi-select</option>
+          <option value="numeric">Numeric</option>
+          <option value="text">Short/long text</option>
+          <option value="date">Date/time</option>
+          <option value="photo">Photo</option>
+          <option value="video">Video (brand detection)</option>
+        </select>
+      </div>
+      <div id="optionsWrap">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Options (comma separated)</label>
+        <input name="options" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="Brand A, Brand B, Brand C" />
+      </div>
+      <div id="rangeWrap" class="hidden grid grid-cols-2 gap-2">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Min</label><input type="number" name="min_value" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Max</label><input type="number" name="max_value" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="checkbox" name="required" id="required" checked class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
+        <label for="required" class="text-sm text-slate-600">Required</label>
+      </div>
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('plus', 'w-4 h-4') %> Add Question
+      </button>
+    </form>
+  </div>
+</div>
+<%- include('../partials/footer') %>
