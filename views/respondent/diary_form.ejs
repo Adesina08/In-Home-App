@@ -42,9 +42,17 @@
     </div>
 
     <% const pf = typeof prefill !== 'undefined' && prefill ? prefill : {}; %>
+    <% let lastSection = undefined; %>
     <% questions.forEach(q => { %>
       <% const pv = q.code && pf[q.code] !== undefined ? pf[q.code] : null; %>
-      <div class="q-wrap border-t border-slate-100 pt-5" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>">
+      <% if (q.section !== lastSection) { lastSection = q.section; %>
+        <% if (q.section) { %>
+          <div class="section-heading pt-5 first:pt-0" data-section="<%= q.section %>">
+            <div class="text-xs font-semibold uppercase tracking-wide text-brand-600">Section: <%= q.section %></div>
+          </div>
+        <% } %>
+      <% } %>
+      <div class="q-wrap border-t border-slate-100 pt-5" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>" data-section="<%= q.section || '' %>">
         <label class="block text-base sm:text-sm font-medium text-slate-700 mb-2">
           <%= q.text %> <% if(q.required){ %><span class="text-red-500">*</span><% } %>
           <% if (pv !== null) { %><span class="ml-1.5 text-xs font-medium text-violet-600 bg-violet-50 rounded-full px-2 py-0.5 align-middle">AI-detected — verify</span><% } %>
@@ -122,20 +130,42 @@
     if (radios.length) return radios[0].value;
     const checks = document.querySelectorAll(`input[type=checkbox][data-qid="${qid}"]:checked`);
     if (checks.length) return Array.from(checks).map(c => c.value).join('|');
-    const other = document.querySelector(`.cond-input[data-qid="${qid}"]`);
+    // Only fall through to reading .value directly for text/numeric/date-style inputs --
+    // an unchecked radio/checkbox still has a static "value" attribute, so without this
+    // exclusion an untouched single/multi question would misreport its first option as
+    // the answer instead of "no answer yet".
+    const other = document.querySelector(`.cond-input[data-qid="${qid}"]:not([type=radio]):not([type=checkbox])`);
     return other ? other.value : '';
+  }
+
+  function setSectionVisible(section, visible) {
+    document.querySelectorAll(`.q-wrap[data-section="${CSS.escape(section)}"]`).forEach(w => {
+      w.style.display = visible ? '' : 'none';
+    });
+    const heading = document.querySelector(`.section-heading[data-section="${CSS.escape(section)}"]`);
+    if (heading) heading.style.display = visible ? '' : 'none';
   }
 
   function evaluateSkipLogic() {
     // default: visible, unless a 'show' rule targets it (then hidden until matched)
-    const defaultHidden = new Set(RULES.filter(r => r.action === 'show').map(r => r.target_question_id));
+    const defaultHiddenQ = new Set(RULES.filter(r => r.action === 'show' && r.target_question_id).map(r => r.target_question_id));
+    const defaultHiddenSections = new Set(RULES.filter(r => r.action === 'show' && r.target_section).map(r => r.target_section));
     document.querySelectorAll('.q-wrap').forEach(w => {
       const qid = parseInt(w.dataset.qid, 10);
-      w.style.display = defaultHidden.has(qid) ? 'none' : '';
+      const inHiddenSection = w.dataset.section && defaultHiddenSections.has(w.dataset.section);
+      w.style.display = (defaultHiddenQ.has(qid) || inHiddenSection) ? 'none' : '';
+    });
+    document.querySelectorAll('.section-heading').forEach(h => {
+      h.style.display = defaultHiddenSections.has(h.dataset.section) ? 'none' : '';
     });
     RULES.forEach(rule => {
       const val = getConditionValue(rule.condition_question_id);
       const matches = rule.operator === 'not_equals' ? val !== rule.value : val === rule.value;
+      if (rule.target_section) {
+        // A section rule wins over any earlier per-question display for questions in that section.
+        setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);
+        return;
+      }
       const wrap = document.getElementById('q-wrap-' + rule.target_question_id);
       if (!wrap) return;
       if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';

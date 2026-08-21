@@ -138,13 +138,13 @@ router.get("/studies/:id/questionnaire", (req, res) => {
 });
 
 router.post("/studies/:id/questionnaire", (req, res) => {
-  const { code, type, text, required, options, min_value, max_value } = req.body;
+  const { code, type, text, required, options, min_value, max_value, section } = req.body;
   const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(req.params.id).m || 0;
   const optionsJson = options ? JSON.stringify(options.split(",").map((o) => o.trim()).filter(Boolean)) : null;
   db.prepare(
-    `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(req.params.id, maxOrder + 1, code, type, text, required ? 1 : 0, optionsJson, min_value || null, max_value || null);
+    `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value, section)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(req.params.id, maxOrder + 1, code, type, text, required ? 1 : 0, optionsJson, min_value || null, max_value || null, (section || "").trim() || null);
   logAudit(req.session.user.email, "add_question", "questions", null, req.body);
   res.redirect(`/admin/studies/${req.params.id}/questionnaire`);
 });
@@ -208,8 +208,8 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) =>
   const editedRows = Array.isArray(req.body.rows) ? req.body.rows : Object.values(req.body.rows || {});
   const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(study.id).m || 0;
   const insertQ = db.prepare(
-    `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value, section)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   let inserted = 0;
   editedRows.forEach((r, i) => {
@@ -227,7 +227,8 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) =>
       r.required ? 1 : 0,
       optionsArr.length ? JSON.stringify(optionsArr) : null,
       r.min !== undefined && r.min !== "" ? parseFloat(r.min) : null,
-      r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null
+      r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null,
+      r.section && r.section.trim() ? r.section.trim() : null
     );
     inserted++;
   });
@@ -246,23 +247,33 @@ router.post("/studies/:id/questionnaire/preview/:importId/discard", (req, res) =
 router.get("/studies/:id/skip-logic", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1 ORDER BY order_index").all(req.params.id);
+  const sections = [...new Set(questions.map((q) => q.section).filter(Boolean))];
   const rules = db
     .prepare(
       `SELECT sr.*, tq.text as target_text, cq.text as condition_text FROM skip_rules sr
-       JOIN questions tq ON tq.id = sr.target_question_id
+       LEFT JOIN questions tq ON tq.id = sr.target_question_id
        JOIN questions cq ON cq.id = sr.condition_question_id
        WHERE sr.study_id = ?`
     )
     .all(req.params.id);
-  res.render("admin/study_skip_logic", { study, questions, rules, tab: "skip-logic" });
+  res.render("admin/study_skip_logic", { study, questions, sections, rules, tab: "skip-logic" });
 });
 
 router.post("/studies/:id/skip-logic", (req, res) => {
-  const { target_question_id, condition_question_id, operator, value, action } = req.body;
+  const { target_type, target_question_id, target_section, condition_question_id, operator, value, action } = req.body;
+  const isSection = target_type === "section";
   db.prepare(
-    `INSERT INTO skip_rules (study_id, target_question_id, condition_question_id, operator, value, action)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(req.params.id, target_question_id, condition_question_id, operator, value, action);
+    `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    req.params.id,
+    isSection ? null : target_question_id || null,
+    isSection ? target_section || null : null,
+    condition_question_id,
+    operator,
+    value,
+    action
+  );
   logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
   res.redirect(`/admin/studies/${req.params.id}/skip-logic`);
 });

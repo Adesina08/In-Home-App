@@ -19,15 +19,22 @@
     <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
-        <th class="px-5 py-2.5">#</th><th class="py-2.5">Code</th><th class="py-2.5">Question</th><th class="py-2.5">Type</th><th class="py-2.5">Required</th><th class="py-2.5"></th>
+        <th class="px-5 py-2.5">#</th><th class="py-2.5">Code</th><th class="py-2.5">Question</th><th class="py-2.5">Type</th><th class="py-2.5">Section</th><th class="py-2.5">Required</th><th class="py-2.5"></th>
       </tr></thead>
       <tbody>
+      <% let lastSection = undefined; %>
       <% questions.forEach(q => { %>
+        <% if (q.section !== lastSection) { lastSection = q.section; %>
+          <tr class="border-t border-slate-100 bg-slate-50/70">
+            <td colspan="7" class="px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><%= q.section || 'No section' %></td>
+          </tr>
+        <% } %>
         <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= q.active ? '' : 'opacity-40' %>">
           <td class="px-5 py-2.5 text-slate-400"><%= q.order_index %></td>
           <td class="py-2.5 font-mono text-xs"><%= q.code||'—' %></td>
           <td class="py-2.5"><%= q.text %><% if(q.options_json){ const o=JSON.parse(q.options_json); if(o.length){ %><div class="text-xs text-slate-400">options: <%= o.join(', ') %></div><% } } %></td>
           <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium"><%= q.type %></span></td>
+          <td class="py-2.5 text-xs text-slate-500"><%= q.section || '—' %></td>
           <td class="py-2.5"><%= q.required ? 'Yes' : 'No' %></td>
           <td class="py-2.5 pr-5 text-right">
             <% if (q.active) { %>
@@ -38,7 +45,7 @@
           </td>
         </tr>
       <% }) %>
-      <% if (!questions.length) { %><tr><td colspan="6" class="px-5 py-6 text-slate-400">No questions yet — add the first one on the right.</td></tr><% } %>
+      <% if (!questions.length) { %><tr><td colspan="7" class="px-5 py-6 text-slate-400">No questions yet — add the first one on the right.</td></tr><% } %>
       </tbody>
     </table>
     </div>
@@ -54,6 +61,13 @@
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Question text</label>
         <textarea name="text" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Section (groups questions; also used to skip a whole section)</label>
+        <input name="section" list="sectionOptions" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Purchase Occasion" />
+        <datalist id="sectionOptions">
+          <% [...new Set(questions.map(q => q.section).filter(Boolean))].forEach(s => { %><option value="<%= s %>"></option><% }) %>
+        </datalist>
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Type</label>

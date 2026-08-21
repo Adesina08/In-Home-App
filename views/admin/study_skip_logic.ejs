@@ -13,7 +13,12 @@
       <% rules.forEach(r => { %>
         <tr class="border-t border-slate-100 hover:bg-slate-50/70">
           <td class="px-5 py-3.5 text-slate-700">
-            <span class="font-medium <%= r.action === 'show' ? 'text-emerald-600' : 'text-red-500' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span> "<strong><%= r.target_text %></strong>"
+            <span class="font-medium <%= r.action === 'show' ? 'text-emerald-600' : 'text-red-500' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
+            <% if (r.target_section) { %>
+              the whole <strong>"<%= r.target_section %>"</strong> section
+            <% } else { %>
+              "<strong><%= r.target_text %></strong>"
+            <% } %>
             if "<%= r.condition_text %>" <%= r.operator === 'equals' ? '=' : '≠' %> <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs"><%= r.value %></span>
           </td>
           <td class="py-3 pr-5 text-right">
@@ -40,10 +45,18 @@
         </select>
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">Target question</label>
-        <select name="target_question_id" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Target</label>
+        <div class="flex gap-4 mb-2 text-xs text-slate-600">
+          <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="question" checked onchange="toggleTargetType()" /> One question</label>
+          <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="section" onchange="toggleTargetType()" <%= sections.length ? '' : 'disabled' %> /> Whole section</label>
+        </div>
+        <select name="target_question_id" id="targetQuestionSelect" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
           <% questions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
         </select>
+        <select name="target_section" id="targetSectionSelect" class="hidden w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <% sections.forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+        </select>
+        <% if (!sections.length) { %><p class="text-xs text-slate-400 mt-1">No sections defined yet — add a "Section" to questions on the Questionnaire tab to skip a whole section at once.</p><% } %>
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">When condition question</label>
@@ -66,4 +79,13 @@
     </form>
   </div>
 </div>
+<script>
+  function toggleTargetType() {
+    const isSection = document.querySelector('input[name="target_type"]:checked').value === 'section';
+    document.getElementById('targetQuestionSelect').classList.toggle('hidden', isSection);
+    document.getElementById('targetQuestionSelect').required = !isSection;
+    document.getElementById('targetSectionSelect').classList.toggle('hidden', !isSection);
+    document.getElementById('targetSectionSelect').required = isSection;
+  }
+</script>
 <%- include('../partials/footer') %>

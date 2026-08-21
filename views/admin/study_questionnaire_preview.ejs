@@ -21,7 +21,7 @@
     <table class="w-full text-sm">
       <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
         <th class="px-3 py-2.5">✓</th><th class="py-2.5">Code</th><th class="py-2.5 min-w-[220px]">Question text</th>
-        <th class="py-2.5">Type</th><th class="py-2.5 min-w-[160px]">Options</th><th class="py-2.5">Req?</th>
+        <th class="py-2.5">Type</th><th class="py-2.5 min-w-[160px]">Options</th><th class="py-2.5">Section</th><th class="py-2.5">Req?</th>
         <th class="py-2.5">Min</th><th class="py-2.5">Max</th>
       </tr></thead>
       <tbody>
@@ -36,6 +36,7 @@
             </select>
           </td>
           <td class="py-2.5"><input class="f-options w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][options]" value="<%= (r.options||[]).join(', ') %>" oninput="renderPreview()" placeholder="A, B, C" /></td>
+          <td class="py-2.5"><input class="f-section w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][section]" value="<%= r.section||'' %>" oninput="renderPreview()" placeholder="e.g. Purchase" /></td>
           <td class="py-2.5 text-center"><input type="checkbox" class="f-required h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" name="rows[<%= i %>][required]" <%= r.required ? 'checked' : '' %> onchange="renderPreview()" /></td>
           <td class="py-2.5"><input class="f-min w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][min]" value="<%= r.min_value ?? '' %>" oninput="renderPreview()" /></td>
           <td class="py-2.5"><input class="f-max w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][max]" value="<%= r.max_value ?? '' %>" oninput="renderPreview()" /></td>
@@ -43,7 +44,7 @@
         <% if (r.warnings && r.warnings.length) { %>
           <tr class="bg-amber-50/60">
             <td></td>
-            <td colspan="7" class="px-2 py-1.5 text-xs text-amber-700"><% r.warnings.forEach(w => { %>⚠️ <%= w %> &nbsp; <% }) %></td>
+            <td colspan="8" class="px-2 py-1.5 text-xs text-amber-700"><% r.warnings.forEach(w => { %>⚠️ <%= w %> &nbsp; <% }) %></td>
           </tr>
         <% } %>
       <% }) %>
