@@ -19,7 +19,11 @@
             <% } else { %>
               "<strong><%= r.target_text %></strong>"
             <% } %>
-            if "<%= r.condition_text %>" <%= r.operator === 'equals' ? '=' : '≠' %> <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs"><%= r.value %></span>
+            <%
+              const opText = { equals: '=', not_equals: '≠', in: 'is one of', not_in: 'is none of', includes: 'includes' }[r.operator] || r.operator;
+              const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? r.value.split('|').join(', ') : r.value;
+            %>
+            if "<%= r.condition_text %>" <%= opText %> <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs"><%= valueDisplay %></span>
           </td>
           <td class="py-3 pr-5 text-right">
             <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic/<%= r.id %>/delete">
@@ -69,11 +73,14 @@
         <select name="operator" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
           <option value="equals">Equals</option>
           <option value="not_equals">Not equals</option>
+          <option value="in">Is one of (multiple values)</option>
+          <option value="not_in">Is none of (multiple values)</option>
+          <option value="includes">Includes (for multi-select condition questions)</option>
         </select>
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Value</label>
-        <input name="value" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Yes / Brand A" />
+        <input name="value" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Yes / Brand A -- for 'is one of' or 'is none of', separate values with a comma" />
       </div>
       <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add Rule</button>
     </form>

@@ -17,11 +17,54 @@
         <td class="py-2.5 text-xs text-slate-600"><%= r.consent_status %></td>
         <td class="py-2.5 text-xs capitalize text-slate-600"><%= r.activation_status %></td>
         <td class="py-2.5"><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= r.risk==='red'?'badge-red':r.risk==='amber'?'badge-amber':'badge-green' %>"><%= r.risk %></span></td>
-        <td class="py-2.5 pr-5"><a class="text-brand-600 underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank">Open diary link</a></td>
+        <td class="py-2.5 pr-5 flex items-center gap-3">
+          <a class="text-brand-600 underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank">Open diary link</a>
+          <button type="button" class="qr-open-btn inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition"
+            data-url="<%= r.diaryUrl %>" data-png="/admin/studies/<%= study.id %>/respondents/<%= r.id %>/qr.png" data-name="<%= r.respondent_code %>">
+            <%- icon('qrcode', 'w-3.5 h-3.5') %> QR
+          </button>
+        </td>
       </tr>
     <% }) %>
     <% if (!respondents.length) { %><tr><td colspan="8" class="px-5 py-8 text-slate-400 text-center">No respondents registered yet. Use Interviewer &gt; Register Respondent for F2F, or generate a remote invite link.</td></tr><% } %>
     </tbody>
   </table>
 </div>
+
+<!-- Single shared QR modal, hidden by default; the QR image is only fetched
+     once a row's "QR" button is clicked, so a large respondent list never
+     pays to render a code no one opens. -->
+<div id="qrModal" style="display:none" class="fixed inset-0 z-50 items-center justify-center bg-slate-900/50 p-4">
+  <div class="bg-white rounded-2xl shadow-card max-w-xs w-full p-6 text-center relative">
+    <button type="button" id="qrModalClose" class="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
+      <%- icon('x', 'w-5 h-5') %>
+    </button>
+    <h2 id="qrModalTitle" class="text-sm font-semibold text-slate-700 mb-3">Respondent QR code</h2>
+    <img id="qrModalImg" src="" alt="QR code that opens this respondent's diary link" class="mx-auto w-56 h-56 rounded-xl border border-slate-200 p-2 bg-white mb-3" />
+    <p class="text-xs text-slate-400 mb-3">Scan with a phone camera to open the diary link, then use the browser's "Add to Home Screen" option to install it.</p>
+    <div id="qrModalUrl" class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-[11px] font-mono break-all text-slate-600"></div>
+  </div>
+</div>
+<script>
+  (function () {
+    var modal = document.getElementById('qrModal');
+    var img = document.getElementById('qrModalImg');
+    var urlBox = document.getElementById('qrModalUrl');
+    var title = document.getElementById('qrModalTitle');
+    document.querySelectorAll('.qr-open-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        img.src = btn.getAttribute('data-png');
+        urlBox.textContent = btn.getAttribute('data-url');
+        title.textContent = 'QR code — ' + btn.getAttribute('data-name');
+        modal.style.display = 'flex';
+      });
+    });
+    document.getElementById('qrModalClose').addEventListener('click', function () {
+      modal.style.display = 'none';
+    });
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+  })();
+</script>
 <%- include('../partials/footer') %>

@@ -146,6 +146,24 @@
     if (heading) heading.style.display = visible ? '' : 'none';
   }
 
+  // rule.value is "|"-joined when a condition lists more than one value (e.g.
+  // "Show if Q1 equals A or B"), matching the same "|" convention getConditionValue()
+  // already uses for a multi-select answer's several checked values.
+  function matchesCondition(val, rule) {
+    const ruleValues = String(rule.value || '').split('|');
+    switch (rule.operator) {
+      case 'not_equals': return val !== rule.value;
+      case 'in': return ruleValues.includes(val);
+      case 'not_in': return !ruleValues.includes(val);
+      case 'includes': {
+        const valValues = String(val || '').split('|').filter(Boolean);
+        return ruleValues.some((rv) => valValues.includes(rv));
+      }
+      case 'equals':
+      default: return val === rule.value;
+    }
+  }
+
   function evaluateSkipLogic() {
     // default: visible, unless a 'show' rule targets it (then hidden until matched)
     const defaultHiddenQ = new Set(RULES.filter(r => r.action === 'show' && r.target_question_id).map(r => r.target_question_id));
@@ -160,7 +178,7 @@
     });
     RULES.forEach(rule => {
       const val = getConditionValue(rule.condition_question_id);
-      const matches = rule.operator === 'not_equals' ? val !== rule.value : val === rule.value;
+      const matches = matchesCondition(val, rule);
       if (rule.target_section) {
         // A section rule wins over any earlier per-question display for questions in that section.
         setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);

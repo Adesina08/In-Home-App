@@ -7,9 +7,11 @@ const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { classifyRisk } = require("../lib/qc");
 const { runReminderEngine } = require("../lib/reminders");
-const { parseUpload } = require("../lib/questionnaireParser");
+const { parseUpload, parseConditionText } = require("../lib/questionnaireParser");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
+const { qrPngToResponse } = require("../lib/qrcode");
+const { respondentDiaryUrl } = require("../lib/urls");
 
 const router = express.Router();
 router.use(requireRole("admin", "research"));
@@ -134,7 +136,12 @@ router.post("/studies/:id/settings", (req, res) => {
 router.get("/studies/:id/questionnaire", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? ORDER BY order_index").all(req.params.id);
-  res.render("admin/study_questionnaire", { study, questions, tab: "questionnaire", imported: req.query.imported });
+  res.render("admin/study_questionnaire", {
+    study, questions, tab: "questionnaire",
+    imported: req.query.imported,
+    rulesCreated: req.query.rulesCreated,
+    rulesSkipped: req.query.rulesSkipped,
+  });
 });
 
 router.post("/studies/:id/questionnaire", (req, res) => {
@@ -206,19 +213,24 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) =>
   if (!imp) return res.status(404).render("error", { message: "Import not found or already committed.", user: req.session.user });
 
   const editedRows = Array.isArray(req.body.rows) ? req.body.rows : Object.values(req.body.rows || {});
+  // The parsed-but-unedited rows carry metadata the edit form doesn't expose as
+  // fields (condition_raw, is_section_anchor, the template's own "#" number) --
+  // zip them back up by index with the edited text/type/options the user confirmed.
+  const originalRows = JSON.parse(imp.payload_json);
   const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(study.id).m || 0;
   const insertQ = db.prepare(
     `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value, section)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   let inserted = 0;
+  const questionIdByTemplateRow = new Map(); // template "#" -> newly inserted question id, included rows only
   editedRows.forEach((r, i) => {
     if (!r || !r.include || !r.text || !r.text.trim()) return;
     const optionsArr = (r.options || "")
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);
-    insertQ.run(
+    const info = insertQ.run(
       study.id,
       maxOrder + inserted + 1,
       r.code || null,
@@ -231,11 +243,55 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) =>
       r.section && r.section.trim() ? r.section.trim() : null
     );
     inserted++;
+    const orig = originalRows[i];
+    if (orig && orig.row !== undefined) questionIdByTemplateRow.set(orig.row, info.lastInsertRowid);
+  });
+
+  // Second pass: turn each row's parsed Condition into real skip_rules now that
+  // every included row has a question id. A section anchor's own condition
+  // becomes ONE section-level rule (covers every question in that section); a
+  // plain "Show if" on a non-anchor row, or a "; show if ..." tacked onto a
+  // "Same section as" reference, becomes a per-question rule targeting that row.
+  const insertRule = db.prepare(
+    `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
+     VALUES (?, ?, ?, ?, ?, ?, 'show')`
+  );
+  const sectionsRuled = new Set();
+  let rulesCreated = 0;
+  let rulesSkipped = 0;
+  originalRows.forEach((orig, i) => {
+    const edited = editedRows[i];
+    if (!edited || !edited.include || !questionIdByTemplateRow.has(orig.row)) return;
+    const parsed = parseConditionText(orig.condition_raw);
+    if (parsed.empty) return;
+
+    if (orig.is_section_anchor && parsed.own) {
+      const sectionKey = (edited.section || "").trim();
+      if (sectionKey && !sectionsRuled.has(sectionKey)) {
+        const conditionId = questionIdByTemplateRow.get(parsed.own.conditionRow);
+        if (conditionId) {
+          insertRule.run(study.id, null, sectionKey, conditionId, parsed.own.operator, parsed.own.values.join("|"));
+          sectionsRuled.add(sectionKey);
+          rulesCreated++;
+        } else {
+          rulesSkipped++;
+        }
+      }
+    } else if (parsed.own) {
+      const conditionId = questionIdByTemplateRow.get(parsed.own.conditionRow);
+      const targetId = questionIdByTemplateRow.get(orig.row);
+      if (conditionId && targetId) {
+        insertRule.run(study.id, targetId, null, conditionId, parsed.own.operator, parsed.own.values.join("|"));
+        rulesCreated++;
+      } else {
+        rulesSkipped++;
+      }
+    }
   });
 
   db.prepare("DELETE FROM question_imports WHERE id = ?").run(imp.id);
-  logAudit(req.session.user.email, "questionnaire_commit", "questions", null, { importId: imp.id, inserted });
-  res.redirect(`/admin/studies/${study.id}/questionnaire?imported=${inserted}`);
+  logAudit(req.session.user.email, "questionnaire_commit", "questions", null, { importId: imp.id, inserted, rulesCreated, rulesSkipped });
+  res.redirect(`/admin/studies/${study.id}/questionnaire?imported=${inserted}&rulesCreated=${rulesCreated}&rulesSkipped=${rulesSkipped}`);
 });
 
 router.post("/studies/:id/questionnaire/preview/:importId/discard", (req, res) => {
@@ -262,6 +318,12 @@ router.get("/studies/:id/skip-logic", (req, res) => {
 router.post("/studies/:id/skip-logic", (req, res) => {
   const { target_type, target_question_id, target_section, condition_question_id, operator, value, action } = req.body;
   const isSection = target_type === "section";
+  // "is one of" / "is none of" / "includes" accept a comma-separated value list
+  // in the form -- normalize to the same "|" join the auto-created (template
+  // import) rules and the respondent form's matching logic both use.
+  const storedValue = ["in", "not_in", "includes"].includes(operator)
+    ? String(value || "").split(",").map((v) => v.trim()).filter(Boolean).join("|")
+    : value;
   db.prepare(
     `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -271,7 +333,7 @@ router.post("/studies/:id/skip-logic", (req, res) => {
     isSection ? target_section || null : null,
     condition_question_id,
     operator,
-    value,
+    storedValue,
     action
   );
   logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
@@ -395,8 +457,23 @@ router.post("/qc/:id/action", (req, res) => {
 router.get("/studies/:id/respondents", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   const respondents = db.prepare("SELECT * FROM respondents WHERE study_id = ? ORDER BY id DESC").all(req.params.id);
-  const withRisk = respondents.map((r) => ({ ...r, risk: classifyRisk(r.id) }));
+  const withRisk = respondents.map((r) => ({
+    ...r,
+    risk: classifyRisk(r.id),
+    diaryUrl: respondentDiaryUrl(req, r.unique_token),
+  }));
   res.render("admin/study_respondents", { study, respondents: withRisk, tab: "respondents" });
+});
+
+// On-demand QR PNG for one respondent's diary link -- generated only when a
+// staff member actually opens it (rather than up front for every row), so a
+// study with hundreds of respondents doesn't pay to render codes no one views.
+router.get("/studies/:id/respondents/:respondentId/qr.png", async (req, res) => {
+  const respondent = db
+    .prepare("SELECT * FROM respondents WHERE id = ? AND study_id = ?")
+    .get(req.params.respondentId, req.params.id);
+  if (!respondent) return res.status(404).end();
+  await qrPngToResponse(res, respondentDiaryUrl(req, respondent.unique_token));
 });
 
 // ---------- Reminders / WhatsApp ----------

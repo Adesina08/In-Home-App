@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require("uuid");
 const db = require("../lib/db");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
+const { qrDataUrl } = require("../lib/qrcode");
+const { respondentDiaryUrl } = require("../lib/urls");
 
 const router = express.Router();
 router.use(requireRole("interviewer", "admin", "research"));
@@ -35,7 +37,7 @@ router.get("/register", (req, res) => {
 });
 
 // F2F flow: Screen -> Consent -> Register -> Verify -> Activate, captured as one submission for the pilot demo
-router.post("/register", (req, res) => {
+router.post("/register", async (req, res) => {
   const { study_id, name, contact, eligible, consent_given, preferred_channel, practice } = req.body;
   if (!eligible) {
     return res.render("interviewer/register", {
@@ -58,7 +60,17 @@ router.post("/register", (req, res) => {
       consent_given ? "given" : "declined", token, req.session.user.id, practice ? 1 : 0
     );
   logAudit(req.session.user.email, "f2f_onboard", "respondents", info.lastInsertRowid, { name, code });
-  res.render("interviewer/activated", { code, token, respondentId: info.lastInsertRowid });
+  const diaryUrl = respondentDiaryUrl(req, token);
+  // QR generation is a pure image-render, not a network call -- if it ever
+  // did throw, better to still show the activation screen (with a plain
+  // link) than lose the fact that the respondent was successfully registered.
+  let qr = null;
+  try {
+    qr = await qrDataUrl(diaryUrl);
+  } catch (e) {
+    console.error("QR generation failed:", e);
+  }
+  res.render("interviewer/activated", { code, token, respondentId: info.lastInsertRowid, diaryUrl, qr });
 });
 
 module.exports = router;

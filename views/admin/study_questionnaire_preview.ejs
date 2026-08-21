@@ -41,6 +41,15 @@
           <td class="py-2.5"><input class="f-min w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][min]" value="<%= r.min_value ?? '' %>" oninput="renderPreview()" /></td>
           <td class="py-2.5"><input class="f-max w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][max]" value="<%= r.max_value ?? '' %>" oninput="renderPreview()" /></td>
         </tr>
+        <% if (r.condition_raw) { %>
+          <tr class="bg-brand-50/50">
+            <td></td>
+            <td colspan="8" class="px-2 py-1.5 text-xs text-brand-700">
+              <%- icon('arrow-right', 'w-3.5 h-3.5 inline align-text-bottom') %>
+              Condition: "<%= r.condition_raw %>" — <%= r.is_section_anchor ? 'will become a skip rule for the whole "' + (r.section||'') + '" section' : 'will become a skip rule for this question, on commit' %>
+            </td>
+          </tr>
+        <% } %>
         <% if (r.warnings && r.warnings.length) { %>
           <tr class="bg-amber-50/60">
             <td></td>

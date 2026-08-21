@@ -7,6 +7,18 @@
     Imported <%= imported %> question<%= imported == 1 ? '' : 's' %> from your upload.
   </div>
 <% } %>
+<% if (typeof rulesCreated !== 'undefined' && rulesCreated) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('arrow-right', 'w-4 h-4') %>
+    Also created <%= rulesCreated %> skip rule<%= rulesCreated == 1 ? '' : 's' %> from the Condition column — review them on the Skip Logic tab.
+  </div>
+<% } %>
+<% if (typeof rulesSkipped !== 'undefined' && rulesSkipped && Number(rulesSkipped) > 0) { %>
+  <div class="flex items-center gap-2 mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
+    <%- icon('warning', 'w-4 h-4') %>
+    <%= rulesSkipped %> condition<%= rulesSkipped == 1 ? '' : 's' %> referenced a question that wasn't included in this import — set those up manually on the Skip Logic tab if still needed.
+  </div>
+<% } %>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
   <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card">
