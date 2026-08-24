@@ -102,12 +102,11 @@
     <% if (typeof mode !== 'undefined' && mode === 'audio') { %>
       <div class="border-t border-slate-100 pt-5">
         <label class="flex items-center gap-2 text-base sm:text-sm font-medium text-slate-700 mb-2"><%- icon('mic', 'w-4 h-4 text-sky-600') %> Voice Note (optional)</label>
-        <label class="flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition">
-          <%- icon('mic', 'w-5 h-5 text-slate-400') %> <span id="audioNoteLabel">Tap to record a quick voice summary</span>
-          <input type="file" name="audio_note" accept="audio/*" capture class="hidden" onchange="document.getElementById('audioNoteLabel').textContent = this.files[0]?.name || 'Tap to record a quick voice summary'" />
-        </label>
-        <p class="text-xs text-slate-400 mt-1">We'll keep it as a QC note alongside your answers above — see Admin → Media Review.</p>
+        <div id="voiceNoteRecorder" class="voice-note-recorder" data-target="audioNoteInput"></div>
+        <input type="file" id="audioNoteInput" name="audio_note" accept="audio/*" class="hidden" />
+        <p class="text-xs text-slate-400 mt-1">Hold the mic button to record, like a WhatsApp voice note — slide left to cancel, slide up to lock hands-free. We'll keep it as a QC note alongside your answers above, see Admin → Media Review.</p>
       </div>
+      <script src="/public/js/voice-note-recorder.js"></script>
     <% } %>
 
     <div class="hidden sm:flex gap-3 pt-2">
