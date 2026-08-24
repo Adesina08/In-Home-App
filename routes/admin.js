@@ -174,7 +174,95 @@ router.post("/studies/:id/questionnaire", (req, res) => {
 router.post("/studies/:id/questionnaire/:qid/delete", (req, res) => {
   db.prepare("UPDATE questions SET active = 0 WHERE id = ?").run(req.params.qid);
   logAudit(req.session.user.email, "deactivate_question", "questions", req.params.qid, {});
+  if (req.xhr) return res.json({ ok: true });
   res.redirect(`/admin/studies/${req.params.id}/questionnaire`);
+});
+
+// ---------- Questionnaire builder: inline editor JSON API ----------
+// The Questionnaire section of the combined page (study_questionnaire.ejs)
+// edits questions directly as cards -- these endpoints back that live
+// editing (fetch calls with header X-Requested-With: XMLHttpRequest, so
+// req.xhr is true). They return JSON instead of redirecting.
+
+// Create a new blank question, appended at the end of the questionnaire (or
+// of a given section). The client focuses its text field immediately after
+// creation; reordering it into a specific spot is done afterwards by drag.
+router.post("/studies/:id/questions", (req, res) => {
+  const section = (req.body.section || "").trim() || null;
+  const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(req.params.id).m || 0;
+  const info = db
+    .prepare(`INSERT INTO questions (study_id, order_index, type, text, required, section) VALUES (?, ?, 'text', '', 1, ?)`)
+    .run(req.params.id, maxOrder + 1, section);
+  logAudit(req.session.user.email, "add_question_inline", "questions", info.lastInsertRowid, { section });
+  const created = db.prepare("SELECT * FROM questions WHERE id = ?").get(info.lastInsertRowid);
+  res.json(created);
+});
+
+// Partial update of one question's fields -- whatever the card's autosave
+// sends (text on blur, type/required/section on change, the options array
+// whenever a row is added/removed/edited).
+router.patch("/studies/:id/questions/:qid", (req, res) => {
+  const q = db.prepare("SELECT * FROM questions WHERE id = ? AND study_id = ?").get(req.params.qid, req.params.id);
+  if (!q) return res.status(404).json({ error: "Question not found." });
+  const b = req.body || {};
+  const text = b.text !== undefined ? String(b.text).trim() : q.text;
+  if (!text) return res.status(400).json({ error: "Question text can't be empty." });
+  const next = {
+    code: b.code !== undefined ? (String(b.code).trim() || null) : q.code,
+    type: b.type !== undefined ? b.type : q.type,
+    text,
+    required: b.required !== undefined ? (b.required ? 1 : 0) : q.required,
+    options_json:
+      b.options !== undefined
+        ? (() => {
+            const cleaned = (Array.isArray(b.options) ? b.options : []).map((o) => String(o).trim()).filter(Boolean);
+            return cleaned.length ? JSON.stringify(cleaned) : null;
+          })()
+        : q.options_json,
+    min_value: b.min_value !== undefined ? (b.min_value === "" || b.min_value === null ? null : parseFloat(b.min_value)) : q.min_value,
+    max_value: b.max_value !== undefined ? (b.max_value === "" || b.max_value === null ? null : parseFloat(b.max_value)) : q.max_value,
+    section: b.section !== undefined ? (String(b.section).trim() || null) : q.section,
+  };
+  db.prepare(
+    `UPDATE questions SET code=?, type=?, text=?, required=?, options_json=?, min_value=?, max_value=?, section=? WHERE id=?`
+  ).run(next.code, next.type, next.text, next.required, next.options_json, next.min_value, next.max_value, next.section, q.id);
+  logAudit(req.session.user.email, "update_question_inline", "questions", q.id, b);
+  res.json(db.prepare("SELECT * FROM questions WHERE id = ?").get(q.id));
+});
+
+// Persist a full drag-and-drop reorder -- the client sends every active
+// question id in its new top-to-bottom order and this renumbers them 1..N.
+router.post("/studies/:id/questions/reorder", (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter((n) => Number.isInteger(n)) : [];
+  const stmt = db.prepare("UPDATE questions SET order_index = ? WHERE id = ? AND study_id = ?");
+  db.transaction((list) => {
+    list.forEach((id, i) => stmt.run(i + 1, id, req.params.id));
+  })(ids);
+  res.json({ ok: true });
+});
+
+// Rename a section across every question that carries it (and any
+// section-level skip rule pointed at the old name).
+router.patch("/studies/:id/sections", (req, res) => {
+  const oldName = (req.body.oldName || "").trim();
+  const newName = (req.body.newName || "").trim();
+  if (!oldName || !newName) return res.status(400).json({ error: "Section name can't be empty." });
+  db.prepare("UPDATE questions SET section = ? WHERE study_id = ? AND section = ?").run(newName, req.params.id, oldName);
+  db.prepare("UPDATE skip_rules SET target_section = ? WHERE study_id = ? AND target_section = ?").run(newName, req.params.id, oldName);
+  logAudit(req.session.user.email, "rename_section", "questions", null, { oldName, newName });
+  res.json({ ok: true });
+});
+
+// Ungroup a section: its questions go back to "No section" and any
+// section-level skip rule targeting it is removed (a rule with no section
+// to attach to would otherwise be orphaned).
+router.post("/studies/:id/sections/delete", (req, res) => {
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Section name can't be empty." });
+  db.prepare("UPDATE questions SET section = NULL WHERE study_id = ? AND section = ?").run(req.params.id, name);
+  db.prepare("DELETE FROM skip_rules WHERE study_id = ? AND target_section = ?").run(req.params.id, name);
+  logAudit(req.session.user.email, "delete_section", "questions", null, { name });
+  res.json({ ok: true });
 });
 
 // ---------- Questionnaire upload / parse / preview / commit ----------
@@ -331,24 +419,38 @@ router.post("/studies/:id/skip-logic", (req, res) => {
   const storedValue = ["in", "not_in", "includes"].includes(operator)
     ? String(value || "").split(",").map((v) => v.trim()).filter(Boolean).join("|")
     : value;
-  db.prepare(
-    `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    req.params.id,
-    isSection ? null : target_question_id || null,
-    isSection ? target_section || null : null,
-    condition_question_id,
-    operator,
-    storedValue,
-    action
-  );
+  const info = db
+    .prepare(
+      `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      req.params.id,
+      isSection ? null : target_question_id || null,
+      isSection ? target_section || null : null,
+      condition_question_id,
+      operator,
+      storedValue,
+      action
+    );
   logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
+  if (req.xhr) {
+    const rule = db
+      .prepare(
+        `SELECT sr.*, tq.text as target_text, cq.text as condition_text FROM skip_rules sr
+         LEFT JOIN questions tq ON tq.id = sr.target_question_id
+         JOIN questions cq ON cq.id = sr.condition_question_id
+         WHERE sr.id = ?`
+      )
+      .get(info.lastInsertRowid);
+    return res.json(rule);
+  }
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
 router.post("/studies/:id/skip-logic/:rid/delete", (req, res) => {
   db.prepare("DELETE FROM skip_rules WHERE id = ?").run(req.params.rid);
+  if (req.xhr) return res.json({ ok: true });
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 

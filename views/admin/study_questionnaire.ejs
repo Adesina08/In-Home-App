@@ -27,96 +27,45 @@
 </div>
 
 <!-- ============================= Questionnaire ============================= -->
-<div id="questionnaire" class="scroll-mt-24 grid grid-cols-1 lg:grid-cols-3 gap-6">
-  <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card">
-    <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-800 flex items-center justify-between">
-      <span class="flex items-center gap-2"><%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Diary Questions (in order)</span>
-      <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
-        <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
-      </a>
+<div id="questionnaire" class="scroll-mt-24">
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-2">
+      <%- icon('clipboard', 'w-5 h-5 text-brand-500') %>
+      <h2 class="text-lg font-bold text-slate-900">Questionnaire Builder</h2>
     </div>
-    <div class="overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
-        <th class="px-5 py-2.5">#</th><th class="py-2.5">Code</th><th class="py-2.5">Question</th><th class="py-2.5">Type</th><th class="py-2.5">Section</th><th class="py-2.5">Required</th><th class="py-2.5"></th>
-      </tr></thead>
-      <tbody>
-      <% let lastSection = undefined; %>
-      <% questions.forEach(q => { %>
-        <% if (q.section !== lastSection) { lastSection = q.section; %>
-          <tr class="border-t border-slate-100 bg-slate-50/70">
-            <td colspan="7" class="px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><%= q.section || 'No section' %></td>
-          </tr>
-        <% } %>
-        <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= q.active ? '' : 'opacity-40' %>">
-          <td class="px-5 py-2.5 text-slate-400"><%= q.order_index %></td>
-          <td class="py-2.5 font-mono text-xs"><%= q.code||'—' %></td>
-          <td class="py-2.5"><%= q.text %><% if(q.options_json){ const o=JSON.parse(q.options_json); if(o.length){ %><div class="text-xs text-slate-400">options: <%= o.join(', ') %></div><% } } %></td>
-          <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium"><%= q.type %></span></td>
-          <td class="py-2.5 text-xs text-slate-500"><%= q.section || '—' %></td>
-          <td class="py-2.5"><%= q.required ? 'Yes' : 'No' %></td>
-          <td class="py-2.5 pr-5 text-right">
-            <% if (q.active) { %>
-            <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/<%= q.id %>/delete" onsubmit="return confirm('Remove this question?')">
-              <button class="inline-flex items-center gap-1 text-red-600 text-xs font-medium hover:underline"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
-            </form>
-            <% } %>
-          </td>
-        </tr>
-      <% }) %>
-      <% if (!questions.length) { %><tr><td colspan="7" class="px-5 py-6 text-slate-400">No questions yet — add the first one on the right.</td></tr><% } %>
-      </tbody>
-    </table>
+    <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
+    </a>
+  </div>
+
+  <!-- Question sections -->
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+    <div class="flex items-center gap-2 mb-1">
+      <%- icon('building', 'w-4 h-4 text-brand-500') %>
+      <span class="font-semibold text-slate-800">Question sections</span>
+      <span id="sectionsSummary" class="text-xs text-slate-400"></span>
+    </div>
+    <p class="text-xs text-slate-400 mb-3">A section's own condition can only use questions outside that section. Click "Condition" on a section, or "+ Add Condition" on a question below, to gate its visibility.</p>
+    <div id="sectionsList" class="space-y-2 mb-3"></div>
+    <div class="flex gap-2">
+      <input id="newSectionInput" placeholder="New section title" class="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card shrink-0"><%- icon('plus', 'w-4 h-4') %> Add section</button>
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
-    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Question</div>
-    <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire" class="space-y-3.5 text-sm">
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">Code (used by skip logic / brand & occasion mapping)</label>
-        <input name="code" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. brand, occasion, quantity" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">Question text</label>
-        <textarea name="text" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2"></textarea>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">Section (groups questions; also used to skip a whole section)</label>
-        <input name="section" list="sectionOptions" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Purchase Occasion" />
-        <datalist id="sectionOptions">
-          <% [...new Set(questions.map(q => q.section).filter(Boolean))].forEach(s => { %><option value="<%= s %>"></option><% }) %>
-        </datalist>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">Type</label>
-        <select name="type" id="qtype" onchange="document.getElementById('optionsWrap').classList.toggle('hidden', !['single','multi'].includes(this.value)); document.getElementById('rangeWrap').classList.toggle('hidden', this.value!=='numeric')" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
-          <option value="single">Single select</option>
-          <option value="multi">Multi-select</option>
-          <option value="numeric">Numeric</option>
-          <option value="text">Short/long text</option>
-          <option value="date">Date/time</option>
-          <option value="photo">Photo</option>
-          <option value="video">Video (brand detection)</option>
-        </select>
-      </div>
-      <div id="optionsWrap">
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">Options (comma separated)</label>
-        <input name="options" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="Brand A, Brand B, Brand C" />
-      </div>
-      <div id="rangeWrap" class="hidden grid grid-cols-2 gap-2">
-        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Min</label><input type="number" name="min_value" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
-        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Max</label><input type="number" name="max_value" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
-      </div>
-      <div class="flex items-center gap-2">
-        <input type="checkbox" name="required" id="required" checked class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-        <label for="required" class="text-sm text-slate-600">Required</label>
-      </div>
-      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
-        <%- icon('plus', 'w-4 h-4') %> Add Question
-      </button>
-    </form>
-  </div>
+  <p class="text-xs text-slate-400 mb-3">Every field below saves automatically as you edit. Drag a card by its handle to reorder.</p>
+  <div id="questionCards" class="space-y-4"></div>
+
+  <button type="button" id="addQuestionBtn" class="mt-4 w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 text-slate-500 rounded-2xl py-3 text-sm font-semibold hover:border-brand-400 hover:text-brand-600 transition">
+    <%- icon('plus', 'w-4 h-4') %> Add question
+  </button>
+
+  <datalist id="sectionOptionsDatalist"></datalist>
+  <script type="application/json" id="qb-data"><%- JSON.stringify({
+    studyId: study.id,
+    questions: questions.filter(function (q) { return q.active; }),
+    rules: rules,
+  }).replace(/</g, "\\u003c") %></script>
 </div>
 
 <!-- ============================= Skip Logic ============================= -->
@@ -262,5 +211,496 @@
     document.getElementById('targetSectionSelect').classList.toggle('hidden', !isSection);
     document.getElementById('targetSectionSelect').required = isSection;
   }
+</script>
+
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById('qb-data').textContent);
+  const STUDY_ID = DATA.studyId;
+  let questions = DATA.questions; // active only, ordered by order_index
+  let rules = DATA.rules;
+
+  const TYPE_LABELS = {
+    single: 'Single select', multi: 'Multi-select', numeric: 'Numeric',
+    text: 'Short/long text', date: 'Date/time', photo: 'Photo', video: 'Video (brand detection)',
+  };
+  const OP_LABELS = { equals: 'Equals', not_equals: 'Not equals', in: 'Is one of', not_in: 'Is none of', includes: 'Includes' };
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function api(method, url, body) {
+    const res = await fetch(url, {
+      method,
+      headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Something went wrong saving that.');
+    return data;
+  }
+
+  function orderedSections() {
+    const seen = [];
+    questions.forEach((q) => { if (q.section && !seen.includes(q.section)) seen.push(q.section); });
+    return seen;
+  }
+
+  function flash(el) {
+    if (!el) return;
+    el.classList.remove('opacity-0');
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => el.classList.add('opacity-0'), 1200);
+  }
+
+  function closeAllConditionForms() {
+    document.querySelectorAll('.section-condition-form, .q-condition-form').forEach((f) => { f.classList.add('hidden'); f.innerHTML = ''; });
+  }
+
+  function conditionFormHtml(kind, excludeFn) {
+    const opts = questions
+      .filter((q) => !excludeFn(q))
+      .map((q) => `<option value="${q.id}">${escapeHtml(q.text || '(untitled question)')}</option>`)
+      .join('');
+    return `
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <select class="cf-action border border-slate-300 rounded-lg px-2 py-1.5 bg-white">
+            <option value="show">Show ${kind}</option>
+            <option value="hide">Hide ${kind}</option>
+          </select>
+          <select class="cf-operator border border-slate-300 rounded-lg px-2 py-1.5 bg-white">
+            <option value="equals">Equals</option>
+            <option value="not_equals">Not equals</option>
+            <option value="in">Is one of</option>
+            <option value="not_in">Is none of</option>
+            <option value="includes">Includes</option>
+          </select>
+        </div>
+        <select class="cf-condition border border-slate-300 rounded-lg px-2 py-1.5 bg-white w-full">${opts || '<option value="">No other questions available yet</option>'}</select>
+        <input class="cf-value border border-slate-300 rounded-lg px-2 py-1.5 w-full" placeholder="Value (comma-separate for 'is one of' / 'is none of')" />
+        <div class="flex gap-2">
+          <button type="button" class="cf-submit flex-1 bg-brand-700 text-white rounded-lg py-1.5 font-semibold hover:bg-brand-600">Add Condition</button>
+          <button type="button" class="cf-cancel px-3 rounded-lg border border-slate-300 hover:bg-slate-100">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  function conditionChipHtml(r) {
+    const opText = OP_LABELS[r.operator] || r.operator;
+    const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? String(r.value || '').split('|').join(', ') : r.value;
+    return `<div class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 text-xs rounded-full px-2.5 py-1 mr-1.5 mb-1.5">
+      <span>${r.action === 'show' ? 'Show' : 'Hide'} if "${escapeHtml(r.condition_text)}" ${opText} <strong>${escapeHtml(valueDisplay)}</strong></span>
+      <button type="button" class="chip-delete text-slate-400 hover:text-red-500" data-rule-id="${r.id}">&#10005;</button>
+    </div>`;
+  }
+
+  async function submitConditionForm(btn, ctx) {
+    const form = btn.closest('.section-condition-form, .q-condition-form');
+    const conditionId = form.querySelector('.cf-condition').value;
+    const value = form.querySelector('.cf-value').value.trim();
+    if (!conditionId) return alert('No other question is available to use as the condition.');
+    if (!value) return alert('Enter a value to compare against.');
+    const body = {
+      target_type: ctx.kind,
+      action: form.querySelector('.cf-action').value,
+      operator: form.querySelector('.cf-operator').value,
+      value,
+      condition_question_id: conditionId,
+    };
+    if (ctx.kind === 'section') body.target_section = ctx.targetSection;
+    else body.target_question_id = ctx.targetQuestionId;
+    try {
+      const rule = await api('POST', `/admin/studies/${STUDY_ID}/skip-logic`, body);
+      rules.push(rule);
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function onDeleteRule(ruleId) {
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/skip-logic/${ruleId}/delete`);
+      rules = rules.filter((r) => String(r.id) !== String(ruleId));
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  // ---------------- Sections card ----------------
+  function renderSections() {
+    const list = document.getElementById('sectionsList');
+    const secs = orderedSections();
+    document.getElementById('sectionsSummary').textContent = secs.length
+      ? `· ${secs.length} section${secs.length === 1 ? '' : 's'} · ${questions.length} question${questions.length === 1 ? '' : 's'} total`
+      : '';
+    list.innerHTML =
+      secs
+        .map((name) => {
+          const count = questions.filter((q) => q.section === name).length;
+          const hasCond = rules.some((r) => r.target_section === name);
+          return `
+        <div class="section-item border border-slate-200 rounded-xl p-3" data-section="${escapeHtml(name)}">
+          <div class="flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-slate-800 section-name-display truncate cursor-text" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>
+              <div class="text-xs text-slate-400 mt-0.5">${count} Q &middot; <span class="${hasCond ? 'text-brand-600 font-medium' : ''}">${hasCond ? 'Has visibility condition' : 'Always shown'}</span></div>
+            </div>
+            <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition shrink-0">Condition</button>
+            <button type="button" class="section-delete-btn text-xs font-medium px-2.5 py-1.5 rounded-lg text-red-500 hover:bg-red-50 transition shrink-0">Remove</button>
+          </div>
+          <div class="section-condition-form hidden mt-2"></div>
+        </div>`;
+        })
+        .join('') || `<div class="text-xs text-slate-400">No sections yet — everything below is ungrouped. Add one below, or just set a Section on any question card.</div>`;
+
+    document.getElementById('sectionOptionsDatalist').innerHTML = secs.map((s) => `<option value="${escapeHtml(s)}"></option>`).join('');
+  }
+
+  document.getElementById('sectionsList').addEventListener('click', (e) => {
+    const item = e.target.closest('.section-item');
+    if (!item) return;
+    const name = item.dataset.section;
+    if (e.target.classList.contains('section-condition-btn')) {
+      const formWrap = item.querySelector('.section-condition-form');
+      const wasHidden = formWrap.classList.contains('hidden');
+      closeAllConditionForms();
+      if (wasHidden) {
+        formWrap.innerHTML = conditionFormHtml('this section', (q) => q.section === name);
+        formWrap.classList.remove('hidden');
+      }
+    } else if (e.target.classList.contains('section-delete-btn')) {
+      onDeleteSection(name);
+    } else if (e.target.classList.contains('cf-submit')) {
+      submitConditionForm(e.target, { kind: 'section', targetSection: name });
+    } else if (e.target.classList.contains('cf-cancel')) {
+      const formWrap = item.querySelector('.section-condition-form');
+      formWrap.classList.add('hidden');
+      formWrap.innerHTML = '';
+    }
+  });
+
+  document.getElementById('sectionsList').addEventListener(
+    'blur',
+    (e) => {
+      if (e.target.classList && e.target.classList.contains('section-name-display')) onSectionNameBlur(e.target);
+    },
+    true
+  );
+
+  async function onSectionNameBlur(el) {
+    const wrapper = el.closest('[data-section]');
+    const oldName = wrapper.dataset.section;
+    const newName = el.textContent.trim();
+    if (!newName || newName === oldName) {
+      el.textContent = oldName;
+      return;
+    }
+    try {
+      await api('PATCH', `/admin/studies/${STUDY_ID}/sections`, { oldName, newName });
+      questions.forEach((q) => { if (q.section === oldName) q.section = newName; });
+      rules.forEach((r) => { if (r.target_section === oldName) r.target_section = newName; });
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+      el.textContent = oldName;
+    }
+  }
+
+  async function onDeleteSection(name) {
+    if (!confirm(`Remove the "${name}" section? Its questions become ungrouped, and any section-level condition on it is removed.`)) return;
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/sections/delete`, { name });
+      questions.forEach((q) => { if (q.section === name) q.section = null; });
+      rules = rules.filter((r) => r.target_section !== name);
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  document.getElementById('addSectionBtn').addEventListener('click', async () => {
+    const input = document.getElementById('newSectionInput');
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, { section: name });
+      questions.push(created);
+      input.value = '';
+      renderAll();
+      const card = document.getElementById('qcard-' + created.id);
+      if (card) card.querySelector('.q-text').focus();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  // ---------------- Question cards ----------------
+  function renderQuestions() {
+    const container = document.getElementById('questionCards');
+    let html = '';
+    let lastSection;
+    questions.forEach((q, idx) => {
+      if (q.section !== lastSection) {
+        lastSection = q.section;
+        html += `<div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 pt-2 first:pt-0">${escapeHtml(q.section || 'No section')}</div>`;
+      }
+      html += questionCardHtml(q, idx + 1);
+    });
+    container.innerHTML = html || '<div class="text-sm text-slate-400 bg-white rounded-2xl border border-slate-200/70 p-8 text-center">No questions yet — click "Add question" below.</div>';
+  }
+
+  function questionCardHtml(q, n) {
+    const options = q.options_json ? JSON.parse(q.options_json) : [];
+    const qRules = rules.filter((r) => r.target_question_id === q.id);
+    return `
+    <div class="question-card bg-white rounded-2xl border border-slate-200/70 shadow-card p-4" id="qcard-${q.id}" data-id="${q.id}">
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <span class="drag-handle cursor-grab text-slate-300 hover:text-slate-500 select-none px-0.5" draggable="true" title="Drag to reorder">&#8942;&#8942;</span>
+        <span class="text-xs font-bold px-2 py-1 rounded-lg bg-brand-700 text-white shrink-0">Q${n}</span>
+        <select class="q-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs">
+          ${Object.entries(TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${q.type === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+        <input class="q-code border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono w-28" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
+        <label class="flex items-center gap-1 text-xs text-slate-600 ml-1"><input type="checkbox" class="q-required h-3.5 w-3.5" ${q.required ? 'checked' : ''} /> Required</label>
+        <span class="save-indicator text-[10px] text-emerald-500 ml-1 opacity-0 transition-opacity">Saved</span>
+        <button type="button" class="q-delete ml-auto text-red-500 hover:text-red-600 text-xs font-medium">&#10005; Remove</button>
+      </div>
+      <textarea class="q-text w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm mb-3" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
+      <div class="q-typebody mb-3">${typeBodyHtml(q, options)}</div>
+      <div class="flex items-center gap-2 mb-3">
+        <label class="text-xs text-slate-500 shrink-0">Section</label>
+        <input class="q-section border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs flex-1" list="sectionOptionsDatalist" value="${escapeHtml(q.section || '')}" placeholder="e.g. Purchase Occasion" />
+      </div>
+      <div class="border-t border-slate-100 pt-2.5">
+        ${qRules.map(conditionChipHtml).join('')}
+        <button type="button" class="q-add-condition-btn text-xs font-medium text-brand-600 hover:underline">+ Add Condition</button>
+        <div class="q-condition-form hidden mt-2"></div>
+      </div>
+    </div>`;
+  }
+
+  function typeBodyHtml(q, options) {
+    if (q.type === 'single' || q.type === 'multi') {
+      return `
+        <div class="q-options space-y-1.5">${options.map(optionRowHtml).join('')}</div>
+        <button type="button" class="q-add-option text-xs font-medium text-brand-600 hover:underline mt-1.5">+ Add option</button>`;
+    }
+    if (q.type === 'numeric') {
+      return `
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="text-xs text-slate-500">Min</label><input type="number" class="q-min w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs" value="${q.min_value ?? ''}" /></div>
+          <div><label class="text-xs text-slate-500">Max</label><input type="number" class="q-max w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs" value="${q.max_value ?? ''}" /></div>
+        </div>`;
+    }
+    return '';
+  }
+
+  function optionRowHtml(value, i) {
+    return `<div class="flex items-center gap-2 q-option-row" data-idx="${i}">
+      <input class="q-option-input flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs" value="${escapeHtml(value)}" placeholder="Option ${i + 1}" />
+      <button type="button" class="q-remove-option text-slate-400 hover:text-red-500 text-xs px-1">&#10005;</button>
+    </div>`;
+  }
+
+  function collectCardPatch(card) {
+    const type = card.querySelector('.q-type').value;
+    const patch = {
+      text: card.querySelector('.q-text').value,
+      type,
+      code: card.querySelector('.q-code').value,
+      required: card.querySelector('.q-required').checked,
+      section: card.querySelector('.q-section').value,
+    };
+    if (type === 'single' || type === 'multi') {
+      patch.options = Array.from(card.querySelectorAll('.q-option-input')).map((i) => i.value);
+    } else if (type === 'numeric') {
+      patch.min_value = card.querySelector('.q-min').value;
+      patch.max_value = card.querySelector('.q-max').value;
+    }
+    return patch;
+  }
+
+  async function saveCard(card) {
+    const id = Number(card.dataset.id);
+    const patch = collectCardPatch(card);
+    // A freshly-created question starts blank -- don't autosave (or alert)
+    // until it actually has text; nothing meaningful to persist yet.
+    if (!patch.text || !patch.text.trim()) return;
+    try {
+      const updated = await api('PATCH', `/admin/studies/${STUDY_ID}/questions/${id}`, patch);
+      const idx = questions.findIndex((q) => q.id === updated.id);
+      if (idx >= 0) questions[idx] = updated;
+      flash(card.querySelector('.save-indicator'));
+      renderSections();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function onTypeChange(select) {
+    const card = select.closest('.question-card');
+    const id = Number(card.dataset.id);
+    const q = questions.find((x) => x.id === id);
+    q.type = select.value;
+    if (q.type === 'single' || q.type === 'multi') {
+      const existing = q.options_json ? JSON.parse(q.options_json) : [];
+      if (!existing.length) q.options_json = JSON.stringify(['']);
+    }
+    renderQuestions();
+    const newCard = document.getElementById('qcard-' + id);
+    await saveCard(newCard);
+  }
+
+  function onAddOption(card) {
+    const id = Number(card.dataset.id);
+    const q = questions.find((x) => x.id === id);
+    const opts = q.options_json ? JSON.parse(q.options_json) : [];
+    opts.push('');
+    q.options_json = JSON.stringify(opts);
+    renderQuestions();
+    const newCard = document.getElementById('qcard-' + id);
+    const inputs = newCard.querySelectorAll('.q-option-input');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }
+
+  function onRemoveOption(btn) {
+    const card = btn.closest('.question-card');
+    const id = Number(card.dataset.id);
+    const row = btn.closest('.q-option-row');
+    const idx = Number(row.dataset.idx);
+    const q = questions.find((x) => x.id === id);
+    const opts = q.options_json ? JSON.parse(q.options_json) : [];
+    opts.splice(idx, 1);
+    q.options_json = opts.length ? JSON.stringify(opts) : null;
+    renderQuestions();
+    saveCard(document.getElementById('qcard-' + id));
+  }
+
+  async function onDeleteQuestion(card) {
+    const id = card.dataset.id;
+    if (!confirm('Remove this question?')) return;
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/questionnaire/${id}/delete`);
+      questions = questions.filter((q) => String(q.id) !== String(id));
+      rules = rules.filter((r) => String(r.target_question_id) !== String(id));
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  document.getElementById('addQuestionBtn').addEventListener('click', async () => {
+    try {
+      const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, {});
+      questions.push(created);
+      renderAll();
+      const card = document.getElementById('qcard-' + created.id);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.querySelector('.q-text').focus();
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  const cardsEl = document.getElementById('questionCards');
+
+  cardsEl.addEventListener('click', (e) => {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    const id = Number(card.dataset.id);
+    if (e.target.classList.contains('q-delete')) return onDeleteQuestion(card);
+    if (e.target.classList.contains('q-add-option')) return onAddOption(card);
+    if (e.target.classList.contains('q-remove-option')) return onRemoveOption(e.target);
+    if (e.target.classList.contains('chip-delete')) return onDeleteRule(e.target.dataset.ruleId);
+    if (e.target.classList.contains('q-add-condition-btn')) {
+      const formWrap = card.querySelector('.q-condition-form');
+      const wasHidden = formWrap.classList.contains('hidden');
+      closeAllConditionForms();
+      if (wasHidden) {
+        formWrap.innerHTML = conditionFormHtml('this question', (q) => q.id === id);
+        formWrap.classList.remove('hidden');
+      }
+      return;
+    }
+    if (e.target.classList.contains('cf-submit')) return submitConditionForm(e.target, { kind: 'question', targetQuestionId: id });
+    if (e.target.classList.contains('cf-cancel')) {
+      const formWrap = card.querySelector('.q-condition-form');
+      formWrap.classList.add('hidden');
+      formWrap.innerHTML = '';
+    }
+  });
+
+  cardsEl.addEventListener('change', (e) => {
+    const card = e.target.closest('.question-card');
+    if (!card) return;
+    if (e.target.classList.contains('q-type')) return onTypeChange(e.target);
+    if (e.target.classList.contains('q-required')) return saveCard(card);
+  });
+
+  cardsEl.addEventListener(
+    'blur',
+    (e) => {
+      const card = e.target.closest && e.target.closest('.question-card');
+      if (!card) return;
+      if (e.target.matches('.q-text, .q-code, .q-min, .q-max, .q-section, .q-option-input')) saveCard(card);
+    },
+    true
+  );
+
+  // Drag-and-drop reorder (grip handle only, so text selection inside the
+  // card's inputs/textarea isn't hijacked by the browser's native drag).
+  let dragId = null;
+  cardsEl.addEventListener('dragstart', (e) => {
+    if (!e.target.classList || !e.target.classList.contains('drag-handle')) return;
+    const card = e.target.closest('.question-card');
+    dragId = card.dataset.id;
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('opacity-40');
+  });
+  cardsEl.addEventListener('dragend', (e) => {
+    const card = e.target.closest && e.target.closest('.question-card');
+    if (card) card.classList.remove('opacity-40');
+    dragId = null;
+  });
+  cardsEl.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    const overCard = e.target.closest('.question-card');
+    if (!overCard || overCard.dataset.id === dragId) return;
+    const dragging = document.getElementById('qcard-' + dragId);
+    if (!dragging) return;
+    const rect = overCard.getBoundingClientRect();
+    const before = e.clientY - rect.top < rect.height / 2;
+    overCard.parentElement.insertBefore(dragging, before ? overCard : overCard.nextSibling);
+  });
+  cardsEl.addEventListener('drop', async (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    await persistOrder();
+  });
+
+  async function persistOrder() {
+    const ids = Array.from(cardsEl.querySelectorAll('.question-card')).map((el) => Number(el.dataset.id));
+    questions.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/questions/reorder`, { ids });
+      renderQuestions();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  function renderAll() {
+    renderSections();
+    renderQuestions();
+  }
+  renderAll();
+})();
 </script>
 <%- include('../partials/footer') %>
