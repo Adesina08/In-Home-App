@@ -99,6 +99,16 @@ app.use("/", require("./routes/auth"));
 app.use("/admin", requireLogin, require("./routes/admin"));
 app.use("/interviewer", requireLogin, require("./routes/interviewer"));
 app.use("/client", requireLogin, require("./routes/client"));
+
+// Plain-language "how do I use this page" guide, one per staff role -- same
+// content that's compiled into public/docs/INICIO-User-Guide.docx (see
+// lib/helpContent.js, the single source both are built from).
+app.get("/help", requireLogin, (req, res) => {
+  const helpContent = require("./lib/helpContent");
+  const content = helpContent[req.session.user.role] || helpContent.admin;
+  res.render("help", { content, user: req.session.user, currentPath: "/help" });
+});
+
 app.use("/r", require("./routes/respondent")); // token-based, no session login
 
 app.use((req, res) => {

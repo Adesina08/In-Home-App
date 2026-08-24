@@ -18,6 +18,10 @@
       <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
       <span id="unlockErrorText">Something went wrong. Please try again.</span>
     </div>
+
+    <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-brand-700 transition mt-5">
+      <%- icon('help', 'w-3.5 h-3.5') %> Need help?
+    </a>
   </div>
 </div>
 

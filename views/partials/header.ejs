@@ -28,10 +28,10 @@
 <body class="bg-slate-50 min-h-screen text-slate-800 antialiased">
 <% if (typeof user !== 'undefined' && user) {
   const navFor = {
-    admin: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'] ],
-    research: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'] ],
-    interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'] ],
-    client: [ ['/client','Client Dashboard','chart-bar'] ],
+    admin: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ],
+    research: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ],
+    interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'], ['/help','Help','help'] ],
+    client: [ ['/client','Client Dashboard','chart-bar'], ['/help','Help','help'] ],
   };
   const links = navFor[user.role] || [];
   const path = typeof currentPath !== 'undefined' ? currentPath : '';

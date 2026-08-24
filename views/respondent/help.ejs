@@ -1,0 +1,27 @@
+<%- include('../partials/header', { title: 'Help — INICIO', user: null }) %>
+
+<div class="max-w-2xl mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 mb-4">
+    <a href="/r/<%= respondent.unique_token %>" class="inline-flex items-center gap-1.5 text-brand-600 text-sm font-medium mb-3 hover:underline">
+      <%- icon('arrow-right', 'w-3.5 h-3.5 rotate-180') %> Back to my diary
+    </a>
+    <h1 class="text-lg font-bold text-slate-900 mb-1"><%= content.title %></h1>
+    <p class="text-sm text-slate-500 mb-3"><%= content.intro %></p>
+    <a href="/public/docs/INICIO-User-Guide.docx" download class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:underline">
+      <%- icon('download', 'w-3.5 h-3.5') %> Download the full guide (Word)
+    </a>
+  </div>
+
+  <div class="space-y-4">
+    <% content.sections.forEach(s => { %>
+      <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-5">
+        <div class="font-semibold text-slate-800 mb-2 flex items-center gap-2"><%- icon('help', 'w-4 h-4 text-brand-500') %> <%= s.heading %></div>
+        <div class="space-y-2 text-sm text-slate-600 leading-relaxed">
+          <% s.body.forEach(p => { %><p><%= p %></p><% }) %>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

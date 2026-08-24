@@ -152,10 +152,19 @@ router.post("/:token/lock/exempt", (req, res) => {
   res.json({ exempted: true });
 });
 
+// Plain-language usage guide -- reachable regardless of lock state (someone
+// stuck on the lock/unlock screen needs to be able to get help without first
+// getting past it) and contains nothing respondent-specific or sensitive.
+router.get("/:token/help", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  res.render("respondent/help", { respondent, content: require("../lib/helpContent").respondent });
+});
+
 // Applied to every respondent route below this point (registered after the
-// /lock/* routes above, so those always stay reachable regardless of lock state).
+// /lock/* and /help routes above, so those always stay reachable regardless of lock state).
 router.use("/:token", (req, res, next) => {
-  if (req.path === "/manifest.json") return next(); // PWA metadata, not sensitive
+  if (req.path === "/manifest.json" || req.path === "/help") return next(); // not sensitive
   const respondent = getRespondentByToken(req.params.token);
   if (!respondent) return next(); // let the real route handler 404 normally
   if (respondent.biometric_exempt) return next();

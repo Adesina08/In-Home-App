@@ -2,8 +2,15 @@
 
 <div class="max-w-2xl mx-auto">
   <div class="bg-white rounded-2xl border border-slate-200/70 p-6 mb-6 shadow-card">
-    <div class="text-brand-700 font-bold text-lg mb-1">INICIO</div>
-    <div class="text-slate-500 text-sm mb-4"><%= study.name %></div>
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <div class="text-brand-700 font-bold text-lg mb-1">INICIO</div>
+        <div class="text-slate-500 text-sm mb-4"><%= study.name %></div>
+      </div>
+      <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition shrink-0">
+        <%- icon('help', 'w-4 h-4') %> Help
+      </a>
+    </div>
     <div class="text-slate-700">Hi <strong><%= respondent.name %></strong> 👋</div>
     <div class="text-xs text-slate-400 mt-1">Respondent code: <%= respondent.respondent_code %> · Diary mode: <%= study.diary_mode %></div>
 
