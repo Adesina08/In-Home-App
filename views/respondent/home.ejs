@@ -34,6 +34,22 @@
     <% } %>
   </div>
 
+  <% if (pushEnabled && respondent.consent_status === 'given') { %>
+  <div id="pushOptIn" data-token="<%= respondent.unique_token %>" data-vapid-key="<%= vapidPublicKey %>"
+       class="hidden bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-6 flex items-start gap-3">
+    <span class="w-9 h-9 rounded-xl bg-white text-brand-600 flex items-center justify-center shrink-0 shadow-sm"><%- icon('bell', 'w-4 h-4') %></span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-semibold text-slate-800">Get a reminder to log your entry</div>
+      <div class="text-xs text-slate-500 mt-0.5 mb-3">We'll only notify you here on this device when it's time to fill in your diary.</div>
+      <div class="flex gap-2">
+        <button type="button" id="pushOptInEnable" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition"><%- icon('bell', 'w-3.5 h-3.5') %> Enable reminders</button>
+        <button type="button" id="pushOptInDismiss" class="inline-flex items-center gap-1.5 text-slate-500 rounded-lg px-3.5 py-2 text-xs font-medium hover:bg-white/60 transition">Not now</button>
+      </div>
+    </div>
+  </div>
+  <script src="/public/js/push-subscribe.js"></script>
+  <% } %>
+
   <div class="bg-white rounded-2xl border border-slate-200/70 p-6 shadow-card">
     <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('clipboard', 'w-4 h-4 text-brand-500') %> My Diary History</div>
     <div class="overflow-x-auto">

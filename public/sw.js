@@ -54,3 +54,43 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// Diary reminder notifications (see lib/push.js on the server, and
+// public/js/push-subscribe.js which registers the subscription this depends
+// on). The reminder engine sends a small JSON payload -- title/body/url --
+// so this handler stays generic and doesn't need updating for new reminder
+// wording.
+self.addEventListener("push", (event) => {
+  let data = { title: "INICIO", body: "You have a reminder.", url: "/" };
+  if (event.data) {
+    try {
+      data = Object.assign(data, event.data.json());
+    } catch (e) {
+      data.body = event.data.text() || data.body;
+    }
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/public/icons/icon-192.png",
+      badge: "/public/icons/icon-192.png",
+      data: { url: data.url || "/" },
+      tag: data.tag || "inicio-reminder",
+    })
+  );
+});
+
+// Focuses an already-open diary tab for this respondent instead of opening a
+// duplicate one, falling back to opening a new tab if none is open.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(targetUrl) && "focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })
+  );
+});

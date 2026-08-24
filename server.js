@@ -137,4 +137,5 @@ process.on("uncaughtException", (err) => {
 
 app.listen(PORT, () => {
   console.log(`INICIO In-Home Consumption MVP running on http://localhost:${PORT}`);
+  require("./lib/scheduler").start();
 });

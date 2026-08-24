@@ -11,6 +11,7 @@ const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFi
 const { persistUpload } = require("../lib/mediaStorage");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const webauthn = require("../lib/webauthn");
+const push = require("../lib/push");
 
 const router = express.Router();
 // 60MB cap accommodates a short brand-evidence video clip from a phone camera, not just photos.
@@ -169,7 +170,27 @@ router.get("/:token", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
   const consent = db.prepare("SELECT * FROM consent_versions WHERE study_id = ? AND status='approved' ORDER BY version DESC LIMIT 1").get(study.id);
   const records = db.prepare("SELECT * FROM diary_records WHERE respondent_id = ? ORDER BY datetime(entry_time) DESC").all(respondent.id);
-  res.render("respondent/home", { respondent, study, consent, records });
+  res.render("respondent/home", {
+    respondent, study, consent, records,
+    pushEnabled: push.isEnabled(),
+    vapidPublicKey: push.getPublicKey(),
+  });
+});
+
+// ---- Diary reminder push notifications (Web Push / VAPID, see lib/push.js) ----
+router.post("/:token/push/subscribe", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  const ok = push.saveSubscription(respondent.id, req.body, req.get("user-agent"));
+  if (!ok) return res.status(400).json({ error: "Malformed subscription." });
+  res.json({ subscribed: true });
+});
+
+router.post("/:token/push/unsubscribe", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  if (req.body && req.body.endpoint) push.removeSubscription(respondent.id, req.body.endpoint);
+  res.json({ unsubscribed: true });
 });
 
 router.post("/:token/consent", (req, res) => {

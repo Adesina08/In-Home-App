@@ -60,7 +60,7 @@ The schema tracks `is_practice` (excludes test data from analysis) and timestamp
 The app writes an `audit_log` table (who did what, when) but has no external monitoring yet. Before pilot:
 1. Add structured request logging (e.g. `pino` or `morgan`) and ship logs to your platform's log aggregator.
 2. Add uptime/error alerting (Sentry for exceptions, a simple uptime check hitting `/login`).
-3. The reminder engine currently runs on a manual "Run Reminder Engine" button (Admin dashboard) — in production this needs a real scheduler (cron/queue worker) calling `runReminderEngine()` in `lib/reminders.js` on an interval, with alerting if a run fails or doesn't happen.
+3. The reminder engine now also runs automatically on an interval (`lib/scheduler.js`, default every 15 minutes — set `REMINDER_ENGINE_INTERVAL_MINUTES` to change it, or `REMINDER_ENGINE_AUTORUN=false` to disable and go back to manual-only) in addition to the "Run Reminder Engine" button, which still works for an on-demand run. This is a single-process `setInterval`, which is fine for one App Service instance; if you ever scale to multiple instances, move it to a real external scheduler/queue worker so it isn't triggered redundantly by every instance, with alerting if a run fails or doesn't happen.
 
 ## B9 — Brand detection on photo/video evidence (Azure AI Vision) — implemented, needs a real resource
 
@@ -86,6 +86,19 @@ The app writes an `audit_log` table (who did what, when) but has no external mon
 2. Set in `.env`: `AUDIO_TRANSCRIPTION_PROVIDER=azure_speech`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT` (copy the exact value from the resource's "Keys and Endpoint" Portal page — most reliable; `AZURE_SPEECH_REGION` works as a fallback if you only have the region).
 3. That's it — no code changes needed. Until you do this, `AUDIO_TRANSCRIPTION_PROVIDER=mock` keeps transcription `unavailable` for every voice note; the recording itself is always saved and playable from Media Review either way, since it's an independent QC artifact regardless of transcription.
 
+## B11 — Diary reminder push notifications (Web Push) — implemented and configured
+
+**Where it plugs in:** `lib/push.js` (send/store), `public/js/push-subscribe.js` (respondent opt-in on the diary home screen), `public/sw.js` (`push` / `notificationclick` handlers), `lib/reminders.js` (sends when a study's `default_reminder_channel` is "In-app / Push" instead of WhatsApp).
+
+**Unlike B9/B10, this needed no external account to wire up.** Web Push (the same "Allow notifications?" prompt any website can ask for) authenticates via a VAPID key pair the app generates itself — no Firebase project, no Apple Developer Program, no API to sign up for. A real key pair is already set in `.env` (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`) — **copy the same three values into Azure App Service → Configuration → Application settings** so the deployed app can send real notifications (they're not secret the way an API key to a paid service is, but treat `VAPID_PRIVATE_KEY` like any other credential — rotating it invalidates every respondent's existing subscription, so only do that if it actually leaks).
+
+**How it behaves:** the first time a respondent opens their diary (past consent), they see a small "Enable reminders" card — accepting triggers the real browser permission prompt and subscribes that device. The reminder engine (B8, now running automatically) sends a push to every device a respondent has enabled reminders on whenever they're due/missed per the study's Reminder Schedule settings (Admin → Study Config → Settings). A respondent who denies or dismisses the prompt is never nagged again (respected, not retried), and a device that later reports its subscription as gone is pruned automatically.
+
+**Known limits:**
+- This reaches an installed/home-screen **PWA or a browser tab** left open or reopened — the standard web platform mechanism. It does **not** reach the Capacitor-wrapped native app shells in `mobile/` — those load the same site in a plain WebView, which has no access to the browser's push service. Real push into the App Store/Play Store app specifically would need `@capacitor/push-notifications` wired to Firebase Cloud Messaging (Android) and an APNs key (iOS), both of which require accounts only you can create, plus a native rebuild — a separate, larger piece of work if the store apps specifically (not just the installed PWA) need this.
+- iOS Safari only supports web push for a PWA actually added to the home screen (iOS 16.4+), not for a regular Safari tab — respondents on iPhone need to use "Add to Home Screen" (the QR code flow already in Admin → Respondents does this) for reminders to reach them.
+- The due/missed timing is relative to each respondent's own last entry (Admin → Study Config → Reminder Schedule: "due after X hours" / "missed after Y hours"), not a fixed clock time — e.g. "due after 24 hours" fires whenever it's actually been 24 hours since their last entry, whatever time of day that is. If you'd rather notify everyone at fixed times of day (e.g. always 9am and 8pm) instead, that's a different, fairly small follow-up change to `lib/reminders.js` and the study settings, not implemented here.
+
 ---
 
 ## C — Release Validation (needs a real environment and human stakeholders)
@@ -108,7 +121,8 @@ These cannot be done in this sandbox — they need the real deployment from tier
 | Session/auth | `server.js` (session config), `routes/auth.js`, `lib/auth.js` |
 | Database connection & schema | `lib/db.js` |
 | Photo upload storage | `routes/respondent.js` (multer config), `server.js` (`/uploads` static route) |
-| Reminder scheduling | `lib/reminders.js` (called manually from `routes/admin.js` `/reminders/run` — wire to a real scheduler) |
+| Reminder scheduling | `lib/reminders.js`, auto-run every interval by `lib/scheduler.js` (also callable on demand from `routes/admin.js` `/reminders/run`) |
+| Push notifications | `lib/push.js`, `public/js/push-subscribe.js`, `public/sw.js`, VAPID keys in `.env` |
 | QC rule thresholds | Set per-study via Admin → Study Config → Settings & Thresholds (no code change needed) |
 | Questionnaire, skip logic, brands, consent, KPIs | All configurable via Admin → Study Config (Developer/Config console) — no code change needed |
 | Questionnaire spreadsheet/document import | `lib/questionnaireParser.js`, `routes/admin.js` (`/questionnaire/upload`, `/questionnaire/preview/:id`) |
