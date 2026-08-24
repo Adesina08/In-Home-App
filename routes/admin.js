@@ -579,10 +579,13 @@ router.post("/qc/:id/action", (req, res) => {
 router.get("/studies/:id/respondents", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   const respondents = db.prepare("SELECT * FROM respondents WHERE study_id = ? ORDER BY id DESC").all(req.params.id);
+  const lockCounts = db.prepare("SELECT respondent_id, COUNT(*) c FROM respondent_credentials GROUP BY respondent_id").all();
+  const lockCountByRespondent = Object.fromEntries(lockCounts.map((row) => [row.respondent_id, row.c]));
   const withRisk = respondents.map((r) => ({
     ...r,
     risk: classifyRisk(r.id),
     diaryUrl: respondentDiaryUrl(req, r.unique_token),
+    hasLock: !!lockCountByRespondent[r.id],
   }));
   res.render("admin/study_respondents", { study, respondents: withRisk, tab: "respondents" });
 });

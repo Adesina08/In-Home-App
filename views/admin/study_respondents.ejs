@@ -5,7 +5,7 @@
   <table class="w-full text-sm">
     <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
       <th class="px-5 py-2.5">Code</th><th class="py-2.5">Name</th><th class="py-2.5">Mode</th><th class="py-2.5">Channel</th>
-      <th class="py-2.5">Consent</th><th class="py-2.5">Status</th><th class="py-2.5">Risk</th><th class="py-2.5">Link</th>
+      <th class="py-2.5">Consent</th><th class="py-2.5">Status</th><th class="py-2.5">Risk</th><th class="py-2.5">Lock</th><th class="py-2.5">Link</th>
     </tr></thead>
     <tbody>
     <% respondents.forEach(r => { %>
@@ -17,6 +17,15 @@
         <td class="py-2.5 text-xs text-slate-600"><%= r.consent_status %></td>
         <td class="py-2.5 text-xs capitalize text-slate-600"><%= r.activation_status %></td>
         <td class="py-2.5"><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= r.risk==='red'?'badge-red':r.risk==='amber'?'badge-amber':'badge-green' %>"><%= r.risk %></span></td>
+        <td class="py-2.5">
+          <% if (r.hasLock) { %>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium badge-green" title="Has registered a device fingerprint/Face ID lock">Locked</span>
+          <% } else if (r.biometric_exempt) { %>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium badge-amber" title="This device has no fingerprint/Face ID support, so the lock can't be enforced">Exempt</span>
+          <% } else { %>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500" title="Hasn't opened their diary link yet, or hasn't finished lock setup">Pending</span>
+          <% } %>
+        </td>
         <td class="py-2.5 pr-5 flex items-center gap-3">
           <a class="text-brand-600 underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank">Open diary link</a>
           <button type="button" class="qr-open-btn inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition"
@@ -26,7 +35,7 @@
         </td>
       </tr>
     <% }) %>
-    <% if (!respondents.length) { %><tr><td colspan="8" class="px-5 py-8 text-slate-400 text-center">No respondents registered yet. Use Interviewer &gt; Register Respondent for F2F, or generate a remote invite link.</td></tr><% } %>
+    <% if (!respondents.length) { %><tr><td colspan="9" class="px-5 py-8 text-slate-400 text-center">No respondents registered yet. Use Interviewer &gt; Register Respondent for F2F, or generate a remote invite link.</td></tr><% } %>
     </tbody>
   </table>
 </div>

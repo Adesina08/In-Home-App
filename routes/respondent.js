@@ -10,6 +10,7 @@ const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTran
 const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
 const { persistUpload } = require("../lib/mediaStorage");
 const { loadQuestionnaire } = require("../lib/questionnaire");
+const webauthn = require("../lib/webauthn");
 
 const router = express.Router();
 // 60MB cap accommodates a short brand-evidence video clip from a phone camera, not just photos.
@@ -44,6 +45,122 @@ router.get("/:token/manifest.json", (req, res) => {
       { src: "/public/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   });
+});
+
+// ---- Device lock (fingerprint / Face ID / device PIN via WebAuthn) ----
+// Every respondent must lock their diary behind their device's own biometric/PIN
+// check. Registration happens once per device; every later visit needs a fresh
+// unlock (see the requireLock middleware below, applied to every other /:token
+// route). A device with no platform authenticator at all (older phone, desktop
+// with no fingerprint reader) can't have this enforced -- see the /lock/exempt
+// route -- so this is "required everywhere it's technically possible," not a
+// feature that can silently brick the pilot for someone's older phone.
+
+router.get("/:token/lock", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid. Please contact your interviewer.", user: null });
+  const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
+  if (respondent.biometric_exempt) return res.redirect(next);
+  const hasCredential = webauthn.getCredentialsForRespondent(respondent.id).length > 0;
+  return res.redirect(`/r/${req.params.token}/lock/${hasCredential ? "unlock" : "setup"}?next=${encodeURIComponent(next)}`);
+});
+
+router.get("/:token/lock/setup", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
+  res.render("respondent/lock_setup", { respondent, study, next });
+});
+
+router.get("/:token/lock/unlock", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
+  res.render("respondent/lock_unlock", { respondent, study, next });
+});
+
+router.post("/:token/lock/registration-options", async (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  try {
+    const options = await webauthn.buildRegistrationOptions(req, respondent);
+    res.json(options);
+  } catch (e) {
+    console.error("WebAuthn registration-options failed:", e.message);
+    res.status(500).json({ error: "Could not start device lock setup." });
+  }
+});
+
+router.post("/:token/lock/registration-verify", async (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  try {
+    const ok = await webauthn.verifyRegistration(req, respondent, req.body);
+    if (!ok) return res.status(400).json({ error: "Could not verify that device." });
+    req.session.bioVerified = req.session.bioVerified || {};
+    req.session.bioVerified[req.params.token] = true;
+    res.json({ verified: true });
+  } catch (e) {
+    console.error("WebAuthn registration-verify failed:", e.message);
+    res.status(400).json({ error: "Could not verify that device." });
+  }
+});
+
+router.post("/:token/lock/auth-options", async (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  try {
+    const options = await webauthn.buildAuthenticationOptions(req, respondent);
+    res.json(options);
+  } catch (e) {
+    console.error("WebAuthn auth-options failed:", e.message);
+    res.status(500).json({ error: "Could not start unlock." });
+  }
+});
+
+router.post("/:token/lock/auth-verify", async (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  try {
+    const ok = await webauthn.verifyAuthentication(req, respondent, req.body);
+    if (!ok) return res.status(400).json({ error: "Unlock failed. Please try again." });
+    req.session.bioVerified = req.session.bioVerified || {};
+    req.session.bioVerified[req.params.token] = true;
+    res.json({ verified: true });
+  } catch (e) {
+    console.error("WebAuthn auth-verify failed:", e.message);
+    res.status(400).json({ error: "Unlock failed. Please try again." });
+  }
+});
+
+// Only reached when the client-side check has confirmed this device has no
+// platform authenticator at all -- there is nothing to "require" on hardware
+// that doesn't support it, so this respondent is exempted and logged as such
+// (visible via the respondents list) rather than being locked out entirely.
+router.post("/:token/lock/exempt", (req, res) => {
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).json({ error: "Invalid link." });
+  db.prepare("UPDATE respondents SET biometric_exempt = 1 WHERE id = ?").run(respondent.id);
+  logAudit(respondent.respondent_code, "biometric_lock_exempted", "respondents", respondent.id, {
+    reason: "no platform authenticator available on this device",
+  });
+  req.session.bioVerified = req.session.bioVerified || {};
+  req.session.bioVerified[req.params.token] = true;
+  res.json({ exempted: true });
+});
+
+// Applied to every respondent route below this point (registered after the
+// /lock/* routes above, so those always stay reachable regardless of lock state).
+router.use("/:token", (req, res, next) => {
+  if (req.path === "/manifest.json") return next(); // PWA metadata, not sensitive
+  const respondent = getRespondentByToken(req.params.token);
+  if (!respondent) return next(); // let the real route handler 404 normally
+  if (respondent.biometric_exempt) return next();
+  if (req.session.bioVerified && req.session.bioVerified[req.params.token]) return next();
+  const next_ = encodeURIComponent(req.originalUrl);
+  return res.redirect(`/r/${req.params.token}/lock?next=${next_}`);
 });
 
 router.get("/:token", (req, res) => {
