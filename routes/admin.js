@@ -136,8 +136,23 @@ router.post("/studies/:id/settings", (req, res) => {
 router.get("/studies/:id/questionnaire", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? ORDER BY order_index").all(req.params.id);
+  // This page also carries the Skip Logic and Brand/SKU sections (previously
+  // separate tabs, merged onto one scrollable page) -- so it loads their data
+  // too. Skip Logic's dropdowns/section list only ever consider active
+  // (non-removed) questions, same filter the old standalone route used.
+  const activeQuestions = questions.filter((q) => q.active);
+  const sections = [...new Set(activeQuestions.map((q) => q.section).filter(Boolean))];
+  const rules = db
+    .prepare(
+      `SELECT sr.*, tq.text as target_text, cq.text as condition_text FROM skip_rules sr
+       LEFT JOIN questions tq ON tq.id = sr.target_question_id
+       JOIN questions cq ON cq.id = sr.condition_question_id
+       WHERE sr.study_id = ?`
+    )
+    .all(req.params.id);
+  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? ORDER BY name").all(req.params.id);
   res.render("admin/study_questionnaire", {
-    study, questions, tab: "questionnaire",
+    study, questions, activeQuestions, sections, rules, brands, tab: "questionnaire",
     imported: req.query.imported,
     rulesCreated: req.query.rulesCreated,
     rulesSkipped: req.query.rulesSkipped,
@@ -300,19 +315,11 @@ router.post("/studies/:id/questionnaire/preview/:importId/discard", (req, res) =
 });
 
 // ---------- Skip logic ----------
+// Skip Logic now lives as a section on the combined Questionnaire Builder
+// page (see GET /studies/:id/questionnaire) rather than its own tab -- this
+// route just redirects old links/bookmarks to that section.
 router.get("/studies/:id/skip-logic", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1 ORDER BY order_index").all(req.params.id);
-  const sections = [...new Set(questions.map((q) => q.section).filter(Boolean))];
-  const rules = db
-    .prepare(
-      `SELECT sr.*, tq.text as target_text, cq.text as condition_text FROM skip_rules sr
-       LEFT JOIN questions tq ON tq.id = sr.target_question_id
-       JOIN questions cq ON cq.id = sr.condition_question_id
-       WHERE sr.study_id = ?`
-    )
-    .all(req.params.id);
-  res.render("admin/study_skip_logic", { study, questions, sections, rules, tab: "skip-logic" });
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
 router.post("/studies/:id/skip-logic", (req, res) => {
@@ -337,31 +344,31 @@ router.post("/studies/:id/skip-logic", (req, res) => {
     action
   );
   logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
-  res.redirect(`/admin/studies/${req.params.id}/skip-logic`);
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
 router.post("/studies/:id/skip-logic/:rid/delete", (req, res) => {
   db.prepare("DELETE FROM skip_rules WHERE id = ?").run(req.params.rid);
-  res.redirect(`/admin/studies/${req.params.id}/skip-logic`);
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
 // ---------- Brands / SKU ----------
+// Brand/SKU List now lives as a section on the combined Questionnaire
+// Builder page too -- see GET /studies/:id/questionnaire.
 router.get("/studies/:id/brands", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? ORDER BY name").all(req.params.id);
-  res.render("admin/study_brands", { study, brands, tab: "brands" });
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
 });
 
 router.post("/studies/:id/brands", (req, res) => {
   const { name, category, sku } = req.body;
   db.prepare("INSERT INTO brands (study_id, name, category, sku) VALUES (?, ?, ?, ?)").run(req.params.id, name, category, sku);
   logAudit(req.session.user.email, "add_brand", "brands", null, req.body);
-  res.redirect(`/admin/studies/${req.params.id}/brands`);
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
 });
 
 router.post("/studies/:id/brands/:bid/delete", (req, res) => {
   db.prepare("UPDATE brands SET active = 0 WHERE id = ?").run(req.params.bid);
-  res.redirect(`/admin/studies/${req.params.id}/brands`);
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
 });
 
 // ---------- Consent ----------

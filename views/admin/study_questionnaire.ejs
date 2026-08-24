@@ -10,17 +10,24 @@
 <% if (typeof rulesCreated !== 'undefined' && rulesCreated) { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
     <%- icon('arrow-right', 'w-4 h-4') %>
-    Also created <%= rulesCreated %> skip rule<%= rulesCreated == 1 ? '' : 's' %> from the Condition column — review them on the Skip Logic tab.
+    Also created <%= rulesCreated %> skip rule<%= rulesCreated == 1 ? '' : 's' %> from the Condition column — review them in the Skip Logic section below.
   </div>
 <% } %>
 <% if (typeof rulesSkipped !== 'undefined' && rulesSkipped && Number(rulesSkipped) > 0) { %>
   <div class="flex items-center gap-2 mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
     <%- icon('warning', 'w-4 h-4') %>
-    <%= rulesSkipped %> condition<%= rulesSkipped == 1 ? '' : 's' %> referenced a question that wasn't included in this import — set those up manually on the Skip Logic tab if still needed.
+    <%= rulesSkipped %> condition<%= rulesSkipped == 1 ? '' : 's' %> referenced a question that wasn't included in this import — set those up manually in the Skip Logic section below if still needed.
   </div>
 <% } %>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="flex flex-wrap gap-2 mb-6 text-sm">
+  <a href="#questionnaire" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition flex items-center gap-1.5"><%- icon('clipboard', 'w-3.5 h-3.5') %> Questionnaire</a>
+  <a href="#skip-logic" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition flex items-center gap-1.5"><%- icon('arrow-right', 'w-3.5 h-3.5') %> Skip Logic</a>
+  <a href="#brands" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition flex items-center gap-1.5"><%- icon('building', 'w-3.5 h-3.5') %> Brand / SKU List</a>
+</div>
+
+<!-- ============================= Questionnaire ============================= -->
+<div id="questionnaire" class="scroll-mt-24 grid grid-cols-1 lg:grid-cols-3 gap-6">
   <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card">
     <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-800 flex items-center justify-between">
       <span class="flex items-center gap-2"><%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Diary Questions (in order)</span>
@@ -111,4 +118,149 @@
     </form>
   </div>
 </div>
+
+<!-- ============================= Skip Logic ============================= -->
+<div id="skip-logic" class="scroll-mt-24 mt-10">
+  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-slate-200">
+    <%- icon('arrow-right', 'w-5 h-5 text-brand-500') %>
+    <h2 class="text-lg font-bold text-slate-900">Skip Logic Rules</h2>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+          <th class="px-5 py-2.5">Rule</th><th class="py-2.5"></th>
+        </tr></thead>
+        <tbody>
+        <% rules.forEach(r => { %>
+          <tr class="border-t border-slate-100 hover:bg-slate-50/70">
+            <td class="px-5 py-3.5 text-slate-700">
+              <span class="font-medium <%= r.action === 'show' ? 'text-emerald-600' : 'text-red-500' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
+              <% if (r.target_section) { %>
+                the whole <strong>"<%= r.target_section %>"</strong> section
+              <% } else { %>
+                "<strong><%= r.target_text %></strong>"
+              <% } %>
+              <%
+                const opText = { equals: '=', not_equals: '≠', in: 'is one of', not_in: 'is none of', includes: 'includes' }[r.operator] || r.operator;
+                const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? r.value.split('|').join(', ') : r.value;
+              %>
+              if "<%= r.condition_text %>" <%= opText %> <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs"><%= valueDisplay %></span>
+            </td>
+            <td class="py-3 pr-5 text-right">
+              <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic/<%= r.id %>/delete">
+                <button class="text-red-500 text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-400 text-center">No skip logic yet — build the questionnaire above, then add rules here.</td></tr><% } %>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+      <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Skip Rule</div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic" class="space-y-3.5 text-sm">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Action</label>
+          <select name="action" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <option value="show">Show target question</option>
+            <option value="hide">Hide target question</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Target</label>
+          <div class="flex gap-4 mb-2 text-xs text-slate-600">
+            <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="question" checked onchange="toggleTargetType()" /> One question</label>
+            <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="section" onchange="toggleTargetType()" <%= sections.length ? '' : 'disabled' %> /> Whole section</label>
+          </div>
+          <select name="target_question_id" id="targetQuestionSelect" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% activeQuestions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
+          </select>
+          <select name="target_section" id="targetSectionSelect" class="hidden w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% sections.forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+          </select>
+          <% if (!sections.length) { %><p class="text-xs text-slate-400 mt-1">No sections defined yet — add a "Section" to questions above to skip a whole section at once.</p><% } %>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">When condition question</label>
+          <select name="condition_question_id" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% activeQuestions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Operator</label>
+          <select name="operator" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <option value="equals">Equals</option>
+            <option value="not_equals">Not equals</option>
+            <option value="in">Is one of (multiple values)</option>
+            <option value="not_in">Is none of (multiple values)</option>
+            <option value="includes">Includes (for multi-select condition questions)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Value</label>
+          <input name="value" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Yes / Brand A -- for 'is one of' or 'is none of', separate values with a comma" />
+        </div>
+        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add Rule</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= Brand / SKU List ============================= -->
+<div id="brands" class="scroll-mt-24 mt-10">
+  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-slate-200">
+    <%- icon('building', 'w-5 h-5 text-brand-500') %>
+    <h2 class="text-lg font-bold text-slate-900">Brand / SKU List</h2>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Category</th><th class="py-2.5">SKU</th><th class="py-2.5"></th></tr></thead>
+        <tbody>
+        <% brands.forEach(b => { %>
+          <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= b.active ? '' : 'opacity-40' %>">
+            <td class="px-5 py-2.5 font-medium text-slate-700"><%= b.name %></td>
+            <td class="py-2.5 text-slate-600"><%= b.category||'—' %></td>
+            <td class="py-2.5 font-mono text-xs text-slate-500"><%= b.sku||'—' %></td>
+            <td class="py-2.5 pr-5 text-right">
+              <% if (b.active) { %>
+              <form method="POST" action="/admin/studies/<%= study.id %>/brands/<%= b.id %>/delete">
+                <button class="text-red-500 text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+              </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (!brands.length) { %><tr><td colspan="4" class="px-5 py-8 text-slate-400 text-center">No brands yet — add the approved pilot brand/SKU list on the right.</td></tr><% } %>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+      <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Brand / Product</div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/brands" class="space-y-3.5 text-sm">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label><input name="name" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label><input name="category" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">SKU</label><input name="sku" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
+        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleTargetType() {
+    const isSection = document.querySelector('input[name="target_type"]:checked').value === 'section';
+    document.getElementById('targetQuestionSelect').classList.toggle('hidden', isSection);
+    document.getElementById('targetQuestionSelect').required = !isSection;
+    document.getElementById('targetSectionSelect').classList.toggle('hidden', !isSection);
+    document.getElementById('targetSectionSelect').required = isSection;
+  }
+</script>
 <%- include('../partials/footer') %>
