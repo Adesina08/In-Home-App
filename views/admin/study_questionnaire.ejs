@@ -33,9 +33,14 @@
       <%- icon('clipboard', 'w-5 h-5 text-brand-500') %>
       <h2 class="text-lg font-bold text-slate-900">Questionnaire Builder</h2>
     </div>
-    <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
-      <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
-    </a>
+    <div class="flex gap-2">
+      <a href="/admin/studies/<%= study.id %>/questionnaire/live-preview" target="_blank" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
+        <%- icon('eye', 'w-3.5 h-3.5') %> Preview
+      </a>
+      <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
+      </a>
+    </div>
   </div>
 
   <!-- Question sections -->
@@ -225,6 +230,14 @@
     text: 'Short/long text', date: 'Date/time', photo: 'Photo', video: 'Video (brand detection)',
   };
   const OP_LABELS = { equals: 'Equals', not_equals: 'Not equals', in: 'Is one of', not_in: 'Is none of', includes: 'Includes' };
+  // Rendered server-side once and reused as plain strings inside the client-side
+  // template literals below, so the inline card editor stays consistent with the
+  // rest of the app's icon set without duplicating SVG markup by hand.
+  const ICON_LAYERS = <%- JSON.stringify(icon('building', 'w-4 h-4')) %>;
+  const ICON_TRASH_SM = <%- JSON.stringify(icon('trash', 'w-4 h-4')) %>;
+  const ICON_TRASH = <%- JSON.stringify(icon('trash', 'w-3.5 h-3.5')) %>;
+  const ICON_GRIP = <%- JSON.stringify(icon('grip', 'w-4 h-5')) %>;
+  const ICON_X = <%- JSON.stringify(icon('x', 'w-3 h-3')) %>;
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -343,14 +356,18 @@
           const count = questions.filter((q) => q.section === name).length;
           const hasCond = rules.some((r) => r.target_section === name);
           return `
-        <div class="section-item border border-slate-200 rounded-xl p-3" data-section="${escapeHtml(name)}">
+        <div class="section-item border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition" data-section="${escapeHtml(name)}">
           <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">${ICON_LAYERS}</span>
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-slate-800 section-name-display truncate cursor-text" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>
-              <div class="text-xs text-slate-400 mt-0.5">${count} Q &middot; <span class="${hasCond ? 'text-brand-600 font-medium' : ''}">${hasCond ? 'Has visibility condition' : 'Always shown'}</span></div>
+              <div class="font-medium text-slate-800 section-name-display truncate cursor-text rounded px-1 -mx-1 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-300" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>
+              <div class="text-xs text-slate-400 mt-0.5">
+                <span class="inline-flex items-center justify-center text-[10px] font-semibold bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 mr-1">${count} Q</span>
+                <span class="${hasCond ? 'text-brand-600 font-medium' : ''}">${hasCond ? 'Has visibility condition' : 'Always shown'}</span>
+              </div>
             </div>
             <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition shrink-0">Condition</button>
-            <button type="button" class="section-delete-btn text-xs font-medium px-2.5 py-1.5 rounded-lg text-red-500 hover:bg-red-50 transition shrink-0">Remove</button>
+            <button type="button" class="section-delete-btn w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition shrink-0 flex items-center justify-center" title="Remove section">${ICON_TRASH_SM}</button>
           </div>
           <div class="section-condition-form hidden mt-2"></div>
         </div>`;
@@ -372,7 +389,7 @@
         formWrap.innerHTML = conditionFormHtml('this section', (q) => q.section === name);
         formWrap.classList.remove('hidden');
       }
-    } else if (e.target.classList.contains('section-delete-btn')) {
+    } else if (e.target.closest('.section-delete-btn')) {
       onDeleteSection(name);
     } else if (e.target.classList.contains('cf-submit')) {
       submitConditionForm(e.target, { kind: 'section', targetSection: name });
@@ -446,7 +463,7 @@
     questions.forEach((q, idx) => {
       if (q.section !== lastSection) {
         lastSection = q.section;
-        html += `<div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 pt-2 first:pt-0">${escapeHtml(q.section || 'No section')}</div>`;
+        html += `<div class="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 bg-brand-50 rounded-full px-3 py-1 mt-3 first:mt-0 mb-0.5">${escapeHtml(q.section || 'No section')}</div>`;
       }
       html += questionCardHtml(q, idx + 1);
     });
@@ -457,28 +474,30 @@
     const options = q.options_json ? JSON.parse(q.options_json) : [];
     const qRules = rules.filter((r) => r.target_question_id === q.id);
     return `
-    <div class="question-card bg-white rounded-2xl border border-slate-200/70 shadow-card p-4" id="qcard-${q.id}" data-id="${q.id}">
-      <div class="flex items-center gap-2 mb-3 flex-wrap">
-        <span class="drag-handle cursor-grab text-slate-300 hover:text-slate-500 select-none px-0.5" draggable="true" title="Drag to reorder">&#8942;&#8942;</span>
-        <span class="text-xs font-bold px-2 py-1 rounded-lg bg-brand-700 text-white shrink-0">Q${n}</span>
-        <select class="q-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs">
-          ${Object.entries(TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${q.type === v ? 'selected' : ''}>${l}</option>`).join('')}
-        </select>
-        <input class="q-code border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono w-28" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
-        <label class="flex items-center gap-1 text-xs text-slate-600 ml-1"><input type="checkbox" class="q-required h-3.5 w-3.5" ${q.required ? 'checked' : ''} /> Required</label>
-        <span class="save-indicator text-[10px] text-emerald-500 ml-1 opacity-0 transition-opacity">Saved</span>
-        <button type="button" class="q-delete ml-auto text-red-500 hover:text-red-600 text-xs font-medium">&#10005; Remove</button>
-      </div>
-      <textarea class="q-text w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm mb-3" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
-      <div class="q-typebody mb-3">${typeBodyHtml(q, options)}</div>
-      <div class="flex items-center gap-2 mb-3">
-        <label class="text-xs text-slate-500 shrink-0">Section</label>
-        <input class="q-section border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs flex-1" list="sectionOptionsDatalist" value="${escapeHtml(q.section || '')}" placeholder="e.g. Purchase Occasion" />
-      </div>
-      <div class="border-t border-slate-100 pt-2.5">
-        ${qRules.map(conditionChipHtml).join('')}
-        <button type="button" class="q-add-condition-btn text-xs font-medium text-brand-600 hover:underline">+ Add Condition</button>
-        <div class="q-condition-form hidden mt-2"></div>
+    <div class="question-card group bg-white rounded-2xl border border-slate-200/70 shadow-card hover:shadow-card-hover transition flex" id="qcard-${q.id}" data-id="${q.id}">
+      <div class="drag-handle shrink-0 w-8 flex items-start justify-center pt-4 cursor-grab active:cursor-grabbing text-slate-300 group-hover:text-slate-400 hover:!text-brand-500 transition rounded-l-2xl" draggable="true" title="Drag to reorder">${ICON_GRIP}</div>
+      <div class="flex-1 min-w-0 py-4 pr-4">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <span class="text-xs font-bold px-2 py-1 rounded-lg bg-brand-700 text-white shrink-0">Q${n}</span>
+          <select class="q-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            ${Object.entries(TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${q.type === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <input class="q-code border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono w-24 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
+          <label class="flex items-center gap-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg pl-2 pr-2.5 py-1.5 bg-slate-50/70 cursor-pointer hover:bg-slate-100 transition"><input type="checkbox" class="q-required h-3.5 w-3.5 accent-brand-700" ${q.required ? 'checked' : ''} /> Required</label>
+          <span class="save-indicator text-[10px] font-medium text-emerald-600 ml-0.5 opacity-0 transition-opacity flex items-center gap-1">&#10003; Saved</span>
+          <button type="button" class="q-delete ml-auto w-7 h-7 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove question">${ICON_TRASH}</button>
+        </div>
+        <textarea class="q-text w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
+        <div class="q-typebody mb-3">${typeBodyHtml(q, options)}</div>
+        <div class="flex items-center gap-2 mb-3">
+          <label class="text-xs text-slate-500 shrink-0">Section</label>
+          <input class="q-section border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" list="sectionOptionsDatalist" value="${escapeHtml(q.section || '')}" placeholder="e.g. Purchase Occasion" />
+        </div>
+        <div class="border-t border-slate-100 pt-2.5">
+          ${qRules.map(conditionChipHtml).join('')}
+          <button type="button" class="q-add-condition-btn text-xs font-medium text-brand-600 hover:underline inline-flex items-center gap-1">+ Add Condition</button>
+          <div class="q-condition-form hidden mt-2"></div>
+        </div>
       </div>
     </div>`;
   }
@@ -500,9 +519,10 @@
   }
 
   function optionRowHtml(value, i) {
-    return `<div class="flex items-center gap-2 q-option-row" data-idx="${i}">
-      <input class="q-option-input flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs" value="${escapeHtml(value)}" placeholder="Option ${i + 1}" />
-      <button type="button" class="q-remove-option text-slate-400 hover:text-red-500 text-xs px-1">&#10005;</button>
+    return `<div class="flex items-center gap-2 q-option-row border border-slate-200 rounded-lg pl-3 pr-1.5 py-1 bg-slate-50/40" data-idx="${i}">
+      <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-300 shrink-0"></span>
+      <input class="q-option-input flex-1 border-0 bg-transparent px-1 py-1 text-xs focus:outline-none" value="${escapeHtml(value)}" placeholder="Option ${i + 1}" />
+      <button type="button" class="q-remove-option w-6 h-6 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove option">${ICON_X}</button>
     </div>`;
   }
 
@@ -614,9 +634,9 @@
     const card = e.target.closest('.question-card');
     if (!card) return;
     const id = Number(card.dataset.id);
-    if (e.target.classList.contains('q-delete')) return onDeleteQuestion(card);
+    if (e.target.closest('.q-delete')) return onDeleteQuestion(card);
     if (e.target.classList.contains('q-add-option')) return onAddOption(card);
-    if (e.target.classList.contains('q-remove-option')) return onRemoveOption(e.target);
+    if (e.target.closest('.q-remove-option')) return onRemoveOption(e.target.closest('.q-remove-option'));
     if (e.target.classList.contains('chip-delete')) return onDeleteRule(e.target.dataset.ruleId);
     if (e.target.classList.contains('q-add-condition-btn')) {
       const formWrap = card.querySelector('.q-condition-form');

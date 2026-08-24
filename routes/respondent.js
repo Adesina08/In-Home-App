@@ -9,6 +9,7 @@ const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetectio
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
 const { persistUpload } = require("../lib/mediaStorage");
+const { loadQuestionnaire } = require("../lib/questionnaire");
 
 const router = express.Router();
 // 60MB cap accommodates a short brand-evidence video clip from a phone camera, not just photos.
@@ -19,15 +20,6 @@ const upload = multer({ dest: uploadsRoot, limits: { fileSize: 60 * 1024 * 1024 
 
 function getRespondentByToken(token) {
   return db.prepare("SELECT * FROM respondents WHERE unique_token = ?").get(token);
-}
-
-function loadQuestionnaire(studyId) {
-  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1 ORDER BY order_index").all(studyId);
-  const rules = db.prepare("SELECT * FROM skip_rules WHERE study_id = ?").all(studyId);
-  questions.forEach((q) => {
-    q.options = q.options_json ? JSON.parse(q.options_json) : [];
-  });
-  return { questions, rules };
 }
 
 // Per-respondent PWA manifest so "Add to Home Screen" reopens straight into

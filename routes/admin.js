@@ -12,6 +12,7 @@ const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetectio
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl } = require("../lib/urls");
+const { loadQuestionnaire } = require("../lib/questionnaire");
 
 const router = express.Router();
 router.use(requireRole("admin", "research"));
@@ -157,6 +158,18 @@ router.get("/studies/:id/questionnaire", (req, res) => {
     rulesCreated: req.query.rulesCreated,
     rulesSkipped: req.query.rulesSkipped,
   });
+});
+
+// Read-only, respondent-view preview of the questionnaire as it stands right
+// now -- reuses the exact same active-question + skip-rule query the live
+// respondent diary form uses (lib/questionnaire.js), so what an admin sees
+// here (including which questions the skip logic shows/hides as they click
+// around) matches production exactly. Nothing here is ever saved.
+router.get("/studies/:id/questionnaire/live-preview", (req, res) => {
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
+  const { questions, rules } = loadQuestionnaire(study.id);
+  res.render("admin/study_questionnaire_live_preview", { study, questions, rules, tab: "questionnaire" });
 });
 
 router.post("/studies/:id/questionnaire", (req, res) => {
