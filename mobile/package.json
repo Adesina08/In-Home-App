@@ -1,0 +1,22 @@
+{
+  "name": "inicio-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native app shell for the INICIO In-Home Consumption App -- wraps the deployed web app (Express/EJS) in a Capacitor container so it can be published to the App Store / Play Store, instead of relying on browser \"Add to Home Screen\".",
+  "scripts": {
+    "sync": "npx cap sync",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "build:android": "cd android && ./gradlew assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "appId": "com.inicio.inhome",
+  "appName": "INICIO",
+  "webDir": "www",
+  "server": {
+    "url": "https://REPLACE-WITH-YOUR-DEPLOYED-URL.azurewebsites.net",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "backgroundColor": "#1F3864",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    }
+  }
+}
