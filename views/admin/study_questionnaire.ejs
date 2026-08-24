@@ -1,6 +1,47 @@
 <%- include('../partials/header', { title: study.name + ' — Questionnaire', user }) %>
 <%- include('../partials/study_tabs', { study, tab }) %>
 
+<!--
+  This page's visual language is deliberately different from a generic
+  SaaS builder: it borrows from paper survey instruments -- a coding sheet
+  and its cross-reference index -- since that's the real artifact this page
+  replaces. A vertical "spine" running down the question list stands for
+  sequence (it's literally the order respondents answer in); numbered
+  circular nodes sit on it like stops on a line; section and condition tags
+  are cut as small flags rather than plain pills. Colors and type are scoped
+  to .qb-canvas so the rest of the app (nav, other tabs) is unaffected.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  .qb-canvas {
+    --qb-ink: #14213D;
+    --qb-paper: #EEF2F7;
+    --qb-card: #FBFCFD;
+    --qb-line: #C7D0DE;
+    --qb-signal: #E8A33D;
+    --qb-branch: #2F8F82;
+    --qb-branch-tint: #E7F3F1;
+    --qb-branch-soft: #7FADA6;
+    --qb-danger: #C4533D;
+    font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    color: var(--qb-ink);
+    background: var(--qb-paper);
+    border-radius: 1.5rem;
+    padding: 1.75rem;
+    margin: 0 -0.25rem;
+  }
+  .qb-canvas .qb-display { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
+  .qb-canvas .qb-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  .qb-canvas .qb-flag {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+  }
+  .qb-canvas ::selection { background: var(--qb-signal); color: var(--qb-ink); }
+</style>
+
+<div class="qb-canvas">
+
 <% if (typeof imported !== 'undefined' && imported) { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
     <%- icon('check-circle', 'w-4 h-4') %>
@@ -20,48 +61,48 @@
   </div>
 <% } %>
 
-<div class="flex flex-wrap gap-2 mb-6 text-sm">
-  <a href="#questionnaire" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition flex items-center gap-1.5"><%- icon('clipboard', 'w-3.5 h-3.5') %> Questionnaire</a>
-  <a href="#skip-logic" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition flex items-center gap-1.5"><%- icon('arrow-right', 'w-3.5 h-3.5') %> Skip Logic</a>
-  <a href="#brands" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition flex items-center gap-1.5"><%- icon('building', 'w-3.5 h-3.5') %> Brand / SKU List</a>
+<div class="flex flex-wrap gap-2 mb-6 text-sm qb-mono uppercase tracking-wide text-xs">
+  <a href="#questionnaire" class="px-3 py-1.5 rounded bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition flex items-center gap-1.5"><%- icon('clipboard', 'w-3.5 h-3.5') %> Questionnaire</a>
+  <a href="#skip-logic" class="px-3 py-1.5 rounded bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition flex items-center gap-1.5"><%- icon('arrow-right', 'w-3.5 h-3.5') %> Skip Logic</a>
+  <a href="#brands" class="px-3 py-1.5 rounded bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition flex items-center gap-1.5"><%- icon('building', 'w-3.5 h-3.5') %> Brand / SKU List</a>
 </div>
 
 <!-- ============================= Questionnaire ============================= -->
 <div id="questionnaire" class="scroll-mt-24">
-  <div class="flex items-center justify-between mb-4">
-    <div class="flex items-center gap-2">
-      <%- icon('clipboard', 'w-5 h-5 text-brand-500') %>
-      <h2 class="text-lg font-bold text-slate-900">Questionnaire Builder</h2>
+  <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+    <div>
+      <div class="qb-mono text-[10px] uppercase tracking-[0.2em] text-[var(--qb-branch)] font-semibold mb-1">Study Instrument &middot; Form <%= study.id %></div>
+      <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Questionnaire</h2>
     </div>
     <div class="flex gap-2">
-      <a href="/admin/studies/<%= study.id %>/questionnaire/live-preview" target="_blank" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
+      <a href="/admin/studies/<%= study.id %>/questionnaire/live-preview" target="_blank" class="inline-flex items-center gap-1.5 bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] rounded px-3.5 py-2 text-xs font-semibold hover:border-[var(--qb-ink)] transition">
         <%- icon('eye', 'w-3.5 h-3.5') %> Preview
       </a>
-      <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+      <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3.5 py-2 text-xs font-semibold hover:opacity-90 transition">
         <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
       </a>
     </div>
   </div>
 
-  <!-- Question sections -->
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+  <!-- Question sections: rendered like a document's cross-reference index -->
+  <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-5 mb-6">
     <div class="flex items-center gap-2 mb-1">
-      <%- icon('building', 'w-4 h-4 text-brand-500') %>
-      <span class="font-semibold text-slate-800">Question sections</span>
-      <span id="sectionsSummary" class="text-xs text-slate-400"></span>
+      <span class="qb-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--qb-ink)] text-white">INDEX</span>
+      <span class="qb-display font-semibold text-[var(--qb-ink)]">Section Index</span>
+      <span id="sectionsSummary" class="text-xs text-slate-500 qb-mono"></span>
     </div>
-    <p class="text-xs text-slate-400 mb-3">A section's own condition can only use questions outside that section. Click "Condition" on a section, or "+ Add Condition" on a question below, to gate its visibility.</p>
+    <p class="text-xs text-slate-500 mb-3">A section's own condition can only use questions outside that section. Click "Condition" on a section, or "+ Add Condition" on a question below, to gate its visibility.</p>
     <div id="sectionsList" class="space-y-2 mb-3"></div>
     <div class="flex gap-2">
-      <input id="newSectionInput" placeholder="New section title" class="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
-      <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card shrink-0"><%- icon('plus', 'w-4 h-4') %> Add section</button>
+      <input id="newSectionInput" placeholder="New section title" class="flex-1 min-w-0 border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" />
+      <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3.5 py-2.5 text-sm font-semibold hover:opacity-90 transition shrink-0"><%- icon('plus', 'w-4 h-4') %> Add section</button>
     </div>
   </div>
 
-  <p class="text-xs text-slate-400 mb-3">Every field below saves automatically as you edit. Drag a card by its handle to reorder.</p>
-  <div id="questionCards" class="space-y-4"></div>
+  <p class="text-xs text-slate-500 mb-4">Every field below saves automatically as you edit. Drag a node's card by its handle to reorder the sequence.</p>
+  <div id="questionCards" class="relative space-y-5 ml-10 before:content-[''] before:absolute before:top-1 before:bottom-1 before:-left-5 before:w-0.5 before:bg-[var(--qb-line)]"></div>
 
-  <button type="button" id="addQuestionBtn" class="mt-4 w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 text-slate-500 rounded-2xl py-3 text-sm font-semibold hover:border-brand-400 hover:text-brand-600 transition">
+  <button type="button" id="addQuestionBtn" class="mt-5 ml-10 w-[calc(100%-2.5rem)] inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-3 text-sm font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition">
     <%- icon('plus', 'w-4 h-4') %> Add question
   </button>
 
@@ -75,22 +116,22 @@
 
 <!-- ============================= Skip Logic ============================= -->
 <div id="skip-logic" class="scroll-mt-24 mt-10">
-  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-slate-200">
-    <%- icon('arrow-right', 'w-5 h-5 text-brand-500') %>
-    <h2 class="text-lg font-bold text-slate-900">Skip Logic Rules</h2>
+  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-[var(--qb-line)]">
+    <%- icon('arrow-right', 'w-5 h-5 text-[var(--qb-branch)]') %>
+    <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Skip Logic Rules</h2>
   </div>
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-    <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="lg:col-span-2 bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] overflow-hidden">
       <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+        <thead><tr class="text-left text-slate-500 text-xs uppercase tracking-wide qb-mono">
           <th class="px-5 py-2.5">Rule</th><th class="py-2.5"></th>
         </tr></thead>
         <tbody>
         <% rules.forEach(r => { %>
-          <tr class="border-t border-slate-100 hover:bg-slate-50/70">
-            <td class="px-5 py-3.5 text-slate-700">
-              <span class="font-medium <%= r.action === 'show' ? 'text-emerald-600' : 'text-red-500' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
+          <tr class="border-t border-[var(--qb-line)] hover:bg-white/60">
+            <td class="px-5 py-3.5 text-[var(--qb-ink)]">
+              <span class="font-semibold <%= r.action === 'show' ? 'text-[var(--qb-branch)]' : 'text-[var(--qb-danger)]' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
               <% if (r.target_section) { %>
                 the whole <strong>"<%= r.target_section %>"</strong> section
               <% } else { %>
@@ -100,27 +141,27 @@
                 const opText = { equals: '=', not_equals: '≠', in: 'is one of', not_in: 'is none of', includes: 'includes' }[r.operator] || r.operator;
                 const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? r.value.split('|').join(', ') : r.value;
               %>
-              if "<%= r.condition_text %>" <%= opText %> <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs"><%= valueDisplay %></span>
+              if "<%= r.condition_text %>" <%= opText %> <span class="qb-mono bg-white border border-[var(--qb-line)] px-1.5 py-0.5 rounded text-xs"><%= valueDisplay %></span>
             </td>
             <td class="py-3 pr-5 text-right">
               <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic/<%= r.id %>/delete">
-                <button class="text-red-500 text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+                <button class="text-[var(--qb-danger)] text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
               </form>
             </td>
           </tr>
         <% }) %>
-        <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-400 text-center">No skip logic yet — build the questionnaire above, then add rules here.</td></tr><% } %>
+        <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-500 text-center">No skip logic yet — build the questionnaire above, then add rules here.</td></tr><% } %>
         </tbody>
       </table>
       </div>
     </div>
 
-    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
-      <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Skip Rule</div>
+    <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-5 h-fit">
+      <div class="qb-display font-semibold text-[var(--qb-ink)] mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-[var(--qb-branch)]') %> Add Skip Rule</div>
       <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic" class="space-y-3.5 text-sm">
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Action</label>
-          <select name="action" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <select name="action" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <option value="show">Show target question</option>
             <option value="hide">Hide target question</option>
           </select>
@@ -131,23 +172,23 @@
             <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="question" checked onchange="toggleTargetType()" /> One question</label>
             <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="section" onchange="toggleTargetType()" <%= sections.length ? '' : 'disabled' %> /> Whole section</label>
           </div>
-          <select name="target_question_id" id="targetQuestionSelect" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <select name="target_question_id" id="targetQuestionSelect" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <% activeQuestions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
           </select>
-          <select name="target_section" id="targetSectionSelect" class="hidden w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <select name="target_section" id="targetSectionSelect" class="hidden w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <% sections.forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
           </select>
-          <% if (!sections.length) { %><p class="text-xs text-slate-400 mt-1">No sections defined yet — add a "Section" to questions above to skip a whole section at once.</p><% } %>
+          <% if (!sections.length) { %><p class="text-xs text-slate-500 mt-1">No sections defined yet — add a "Section" to questions above to skip a whole section at once.</p><% } %>
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">When condition question</label>
-          <select name="condition_question_id" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <select name="condition_question_id" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <% activeQuestions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
           </select>
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Operator</label>
-          <select name="operator" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <select name="operator" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <option value="equals">Equals</option>
             <option value="not_equals">Not equals</option>
             <option value="in">Is one of (multiple values)</option>
@@ -157,9 +198,9 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Value</label>
-          <input name="value" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Yes / Brand A -- for 'is one of' or 'is none of', separate values with a comma" />
+          <input name="value" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" placeholder="e.g. Yes / Brand A -- for 'is one of' or 'is none of', separate values with a comma" />
         </div>
-        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add Rule</button>
+        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-[var(--qb-ink)] text-white rounded py-2.5 font-semibold text-sm hover:opacity-90 transition"><%- icon('plus', 'w-4 h-4') %> Add Rule</button>
       </form>
     </div>
   </div>
@@ -167,46 +208,48 @@
 
 <!-- ============================= Brand / SKU List ============================= -->
 <div id="brands" class="scroll-mt-24 mt-10">
-  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-slate-200">
-    <%- icon('building', 'w-5 h-5 text-brand-500') %>
-    <h2 class="text-lg font-bold text-slate-900">Brand / SKU List</h2>
+  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-[var(--qb-line)]">
+    <%- icon('building', 'w-5 h-5 text-[var(--qb-branch)]') %>
+    <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Brand / SKU List</h2>
   </div>
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-    <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="lg:col-span-2 bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] overflow-hidden">
       <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Category</th><th class="py-2.5">SKU</th><th class="py-2.5"></th></tr></thead>
+        <thead><tr class="text-left text-slate-500 text-xs uppercase tracking-wide qb-mono"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Category</th><th class="py-2.5">SKU</th><th class="py-2.5"></th></tr></thead>
         <tbody>
         <% brands.forEach(b => { %>
-          <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= b.active ? '' : 'opacity-40' %>">
-            <td class="px-5 py-2.5 font-medium text-slate-700"><%= b.name %></td>
+          <tr class="border-t border-[var(--qb-line)] hover:bg-white/60 <%= b.active ? '' : 'opacity-40' %>">
+            <td class="px-5 py-2.5 font-medium text-[var(--qb-ink)]"><%= b.name %></td>
             <td class="py-2.5 text-slate-600"><%= b.category||'—' %></td>
-            <td class="py-2.5 font-mono text-xs text-slate-500"><%= b.sku||'—' %></td>
+            <td class="py-2.5 qb-mono text-xs text-slate-500"><%= b.sku||'—' %></td>
             <td class="py-2.5 pr-5 text-right">
               <% if (b.active) { %>
               <form method="POST" action="/admin/studies/<%= study.id %>/brands/<%= b.id %>/delete">
-                <button class="text-red-500 text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+                <button class="text-[var(--qb-danger)] text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
               </form>
               <% } %>
             </td>
           </tr>
         <% }) %>
-        <% if (!brands.length) { %><tr><td colspan="4" class="px-5 py-8 text-slate-400 text-center">No brands yet — add the approved pilot brand/SKU list on the right.</td></tr><% } %>
+        <% if (!brands.length) { %><tr><td colspan="4" class="px-5 py-8 text-slate-500 text-center">No brands yet — add the approved pilot brand/SKU list on the right.</td></tr><% } %>
         </tbody>
       </table>
       </div>
     </div>
-    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
-      <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Add Brand / Product</div>
+    <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-5 h-fit">
+      <div class="qb-display font-semibold text-[var(--qb-ink)] mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-[var(--qb-branch)]') %> Add Brand / Product</div>
       <form method="POST" action="/admin/studies/<%= study.id %>/brands" class="space-y-3.5 text-sm">
-        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label><input name="name" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
-        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label><input name="category" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
-        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">SKU</label><input name="sku" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" /></div>
-        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card"><%- icon('plus', 'w-4 h-4') %> Add</button>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label><input name="name" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label><input name="category" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">SKU</label><input name="sku" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" /></div>
+        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-[var(--qb-ink)] text-white rounded py-2.5 font-semibold text-sm hover:opacity-90 transition"><%- icon('plus', 'w-4 h-4') %> Add</button>
       </form>
     </div>
   </div>
 </div>
+
+</div><!-- /.qb-canvas -->
 
 <script>
   function toggleTargetType() {
@@ -233,7 +276,6 @@
   // Rendered server-side once and reused as plain strings inside the client-side
   // template literals below, so the inline card editor stays consistent with the
   // rest of the app's icon set without duplicating SVG markup by hand.
-  const ICON_LAYERS = <%- JSON.stringify(icon('building', 'w-4 h-4')) %>;
   const ICON_TRASH_SM = <%- JSON.stringify(icon('trash', 'w-4 h-4')) %>;
   const ICON_TRASH = <%- JSON.stringify(icon('trash', 'w-3.5 h-3.5')) %>;
   const ICON_GRIP = <%- JSON.stringify(icon('grip', 'w-4 h-5')) %>;
@@ -277,13 +319,13 @@
       .map((q) => `<option value="${q.id}">${escapeHtml(q.text || '(untitled question)')}</option>`)
       .join('');
     return `
-      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+      <div class="bg-white border border-[var(--qb-line)] rounded p-3 space-y-2 text-xs">
         <div class="grid grid-cols-2 gap-2">
-          <select class="cf-action border border-slate-300 rounded-lg px-2 py-1.5 bg-white">
+          <select class="cf-action qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 bg-white">
             <option value="show">Show ${kind}</option>
             <option value="hide">Hide ${kind}</option>
           </select>
-          <select class="cf-operator border border-slate-300 rounded-lg px-2 py-1.5 bg-white">
+          <select class="cf-operator border border-[var(--qb-line)] rounded px-2 py-1.5 bg-white">
             <option value="equals">Equals</option>
             <option value="not_equals">Not equals</option>
             <option value="in">Is one of</option>
@@ -291,11 +333,11 @@
             <option value="includes">Includes</option>
           </select>
         </div>
-        <select class="cf-condition border border-slate-300 rounded-lg px-2 py-1.5 bg-white w-full">${opts || '<option value="">No other questions available yet</option>'}</select>
-        <input class="cf-value border border-slate-300 rounded-lg px-2 py-1.5 w-full" placeholder="Value (comma-separate for 'is one of' / 'is none of')" />
+        <select class="cf-condition border border-[var(--qb-line)] rounded px-2 py-1.5 bg-white w-full">${opts || '<option value="">No other questions available yet</option>'}</select>
+        <input class="cf-value border border-[var(--qb-line)] rounded px-2 py-1.5 w-full" placeholder="Value (comma-separate for 'is one of' / 'is none of')" />
         <div class="flex gap-2">
-          <button type="button" class="cf-submit flex-1 bg-brand-700 text-white rounded-lg py-1.5 font-semibold hover:bg-brand-600">Add Condition</button>
-          <button type="button" class="cf-cancel px-3 rounded-lg border border-slate-300 hover:bg-slate-100">Cancel</button>
+          <button type="button" class="cf-submit flex-1 bg-[var(--qb-branch)] text-white rounded py-1.5 font-semibold hover:opacity-90">Add Condition</button>
+          <button type="button" class="cf-cancel px-3 rounded border border-[var(--qb-line)] hover:bg-slate-50">Cancel</button>
         </div>
       </div>`;
   }
@@ -303,9 +345,9 @@
   function conditionChipHtml(r) {
     const opText = OP_LABELS[r.operator] || r.operator;
     const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? String(r.value || '').split('|').join(', ') : r.value;
-    return `<div class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 text-xs rounded-full px-2.5 py-1 mr-1.5 mb-1.5">
+    return `<div class="inline-flex items-center gap-1.5 bg-[var(--qb-branch-tint)] text-[var(--qb-branch)] text-xs pl-3 pr-2.5 py-1 mr-1.5 mb-1.5 border-l-2 border-[var(--qb-branch)]">
       <span>${r.action === 'show' ? 'Show' : 'Hide'} if "${escapeHtml(r.condition_text)}" ${opText} <strong>${escapeHtml(valueDisplay)}</strong></span>
-      <button type="button" class="chip-delete text-slate-400 hover:text-red-500" data-rule-id="${r.id}">&#10005;</button>
+      <button type="button" class="chip-delete text-[var(--qb-branch-soft)] hover:text-[var(--qb-danger)]" data-rule-id="${r.id}">&#10005;</button>
     </div>`;
   }
 
@@ -352,27 +394,27 @@
       : '';
     list.innerHTML =
       secs
-        .map((name) => {
+        .map((name, i) => {
           const count = questions.filter((q) => q.section === name).length;
           const hasCond = rules.some((r) => r.target_section === name);
           return `
-        <div class="section-item border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition" data-section="${escapeHtml(name)}">
+        <div class="section-item border border-[var(--qb-line)] bg-white rounded p-3 hover:border-[var(--qb-ink)] transition" data-section="${escapeHtml(name)}">
           <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">${ICON_LAYERS}</span>
+            <span class="qb-mono w-7 h-7 rounded-full border border-[var(--qb-line)] text-[var(--qb-ink)] text-[11px] font-bold flex items-center justify-center shrink-0">${String(i + 1).padStart(2, '0')}</span>
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-slate-800 section-name-display truncate cursor-text rounded px-1 -mx-1 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-300" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>
-              <div class="text-xs text-slate-400 mt-0.5">
-                <span class="inline-flex items-center justify-center text-[10px] font-semibold bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 mr-1">${count} Q</span>
-                <span class="${hasCond ? 'text-brand-600 font-medium' : ''}">${hasCond ? 'Has visibility condition' : 'Always shown'}</span>
+              <div class="qb-display font-semibold text-[var(--qb-ink)] section-name-display truncate cursor-text rounded px-1 -mx-1 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[var(--qb-signal)]" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>
+              <div class="text-xs text-slate-500 mt-0.5 qb-mono">
+                <span class="inline-flex items-center justify-center text-[10px] font-semibold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mr-1">${count} Q</span>
+                <span class="${hasCond ? 'text-[var(--qb-branch)] font-semibold' : ''}">${hasCond ? 'HAS VISIBILITY CONDITION' : 'ALWAYS SHOWN'}</span>
               </div>
             </div>
-            <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition shrink-0">Condition</button>
-            <button type="button" class="section-delete-btn w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition shrink-0 flex items-center justify-center" title="Remove section">${ICON_TRASH_SM}</button>
+            <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition shrink-0">Condition</button>
+            <button type="button" class="section-delete-btn w-8 h-8 rounded text-slate-400 hover:text-[var(--qb-danger)] hover:bg-red-50 transition shrink-0 flex items-center justify-center" title="Remove section">${ICON_TRASH_SM}</button>
           </div>
           <div class="section-condition-form hidden mt-2"></div>
         </div>`;
         })
-        .join('') || `<div class="text-xs text-slate-400">No sections yet — everything below is ungrouped. Add one below, or just set a Section on any question card.</div>`;
+        .join('') || `<div class="text-xs text-slate-500">No sections yet — everything below is ungrouped. Add one below, or just set a Section on any question card.</div>`;
 
     document.getElementById('sectionOptionsDatalist').innerHTML = secs.map((s) => `<option value="${escapeHtml(s)}"></option>`).join('');
   }
@@ -463,39 +505,39 @@
     questions.forEach((q, idx) => {
       if (q.section !== lastSection) {
         lastSection = q.section;
-        html += `<div class="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 bg-brand-50 rounded-full px-3 py-1 mt-3 first:mt-0 mb-0.5">${escapeHtml(q.section || 'No section')}</div>`;
+        html += `<div class="qb-flag qb-mono inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-white bg-[var(--qb-branch)] pl-3 pr-4 py-1.5 -ml-10 mt-4 first:mt-0 mb-1">${escapeHtml(q.section || 'No section')}</div>`;
       }
       html += questionCardHtml(q, idx + 1);
     });
-    container.innerHTML = html || '<div class="text-sm text-slate-400 bg-white rounded-2xl border border-slate-200/70 p-8 text-center">No questions yet — click "Add question" below.</div>';
+    container.innerHTML = html || '<div class="text-sm text-slate-500 bg-[var(--qb-card)] border border-dashed border-[var(--qb-line)] p-8 text-center">No questions yet — click "Add question" below.</div>';
   }
 
   function questionCardHtml(q, n) {
     const options = q.options_json ? JSON.parse(q.options_json) : [];
     const qRules = rules.filter((r) => r.target_question_id === q.id);
     return `
-    <div class="question-card group bg-white rounded-2xl border border-slate-200/70 shadow-card hover:shadow-card-hover transition flex" id="qcard-${q.id}" data-id="${q.id}">
-      <div class="drag-handle shrink-0 w-8 flex items-start justify-center pt-4 cursor-grab active:cursor-grabbing text-slate-300 group-hover:text-slate-400 hover:!text-brand-500 transition rounded-l-2xl" draggable="true" title="Drag to reorder">${ICON_GRIP}</div>
+    <div class="question-card group relative bg-[var(--qb-card)] border border-[var(--qb-line)] rounded-lg hover:border-[var(--qb-ink)] transition flex" id="qcard-${q.id}" data-id="${q.id}">
+      <div class="absolute -left-9 top-4 w-8 h-8 rounded-full bg-[var(--qb-ink)] text-white qb-mono text-[11px] font-bold flex items-center justify-center z-10 ring-4 ring-[var(--qb-paper)] shrink-0">${n}</div>
+      <div class="drag-handle shrink-0 w-7 flex items-start justify-center pt-4 cursor-grab active:cursor-grabbing text-slate-300 group-hover:text-slate-400 hover:!text-[var(--qb-signal)] transition" draggable="true" title="Drag to reorder">${ICON_GRIP}</div>
       <div class="flex-1 min-w-0 py-4 pr-4">
         <div class="flex items-center gap-2 mb-3 flex-wrap">
-          <span class="text-xs font-bold px-2 py-1 rounded-lg bg-brand-700 text-white shrink-0">Q${n}</span>
-          <select class="q-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <select class="q-type qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             ${Object.entries(TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${q.type === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
-          <input class="q-code border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono w-24 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
-          <label class="flex items-center gap-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg pl-2 pr-2.5 py-1.5 bg-slate-50/70 cursor-pointer hover:bg-slate-100 transition"><input type="checkbox" class="q-required h-3.5 w-3.5 accent-brand-700" ${q.required ? 'checked' : ''} /> Required</label>
-          <span class="save-indicator text-[10px] font-medium text-emerald-600 ml-0.5 opacity-0 transition-opacity flex items-center gap-1">&#10003; Saved</span>
-          <button type="button" class="q-delete ml-auto w-7 h-7 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove question">${ICON_TRASH}</button>
+          <input class="q-code qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 text-xs w-24 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
+          <label class="flex items-center gap-1.5 text-xs font-medium text-[var(--qb-ink)] border border-[var(--qb-line)] rounded pl-2 pr-2.5 py-1.5 bg-white cursor-pointer hover:border-[var(--qb-ink)] transition"><input type="checkbox" class="q-required h-3.5 w-3.5 accent-[var(--qb-ink)]" ${q.required ? 'checked' : ''} /> Required</label>
+          <span class="save-indicator qb-mono text-[10px] font-semibold text-[var(--qb-branch)] ml-0.5 opacity-0 transition-opacity flex items-center gap-1">&#10003; SAVED</span>
+          <button type="button" class="q-delete ml-auto w-7 h-7 rounded text-slate-300 hover:text-[var(--qb-danger)] hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove question">${ICON_TRASH}</button>
         </div>
-        <textarea class="q-text w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
+        <textarea class="q-text w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
         <div class="q-typebody mb-3">${typeBodyHtml(q, options)}</div>
         <div class="flex items-center gap-2 mb-3">
-          <label class="text-xs text-slate-500 shrink-0">Section</label>
-          <input class="q-section border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" list="sectionOptionsDatalist" value="${escapeHtml(q.section || '')}" placeholder="e.g. Purchase Occasion" />
+          <label class="text-xs text-slate-500 shrink-0 qb-mono">SECTION</label>
+          <input class="q-section border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" list="sectionOptionsDatalist" value="${escapeHtml(q.section || '')}" placeholder="e.g. Purchase Occasion" />
         </div>
-        <div class="border-t border-slate-100 pt-2.5">
+        <div class="border-t border-[var(--qb-line)] pt-2.5">
           ${qRules.map(conditionChipHtml).join('')}
-          <button type="button" class="q-add-condition-btn text-xs font-medium text-brand-600 hover:underline inline-flex items-center gap-1">+ Add Condition</button>
+          <button type="button" class="q-add-condition-btn text-xs font-semibold text-[var(--qb-branch)] hover:underline inline-flex items-center gap-1">+ Add Condition</button>
           <div class="q-condition-form hidden mt-2"></div>
         </div>
       </div>
@@ -506,23 +548,23 @@
     if (q.type === 'single' || q.type === 'multi') {
       return `
         <div class="q-options space-y-1.5">${options.map(optionRowHtml).join('')}</div>
-        <button type="button" class="q-add-option text-xs font-medium text-brand-600 hover:underline mt-1.5">+ Add option</button>`;
+        <button type="button" class="q-add-option text-xs font-semibold text-[var(--qb-branch)] hover:underline mt-1.5">+ Add option</button>`;
     }
     if (q.type === 'numeric') {
       return `
         <div class="grid grid-cols-2 gap-2">
-          <div><label class="text-xs text-slate-500">Min</label><input type="number" class="q-min w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs" value="${q.min_value ?? ''}" /></div>
-          <div><label class="text-xs text-slate-500">Max</label><input type="number" class="q-max w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs" value="${q.max_value ?? ''}" /></div>
+          <div><label class="text-xs text-slate-500 qb-mono">MIN</label><input type="number" class="q-min w-full border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs" value="${q.min_value ?? ''}" /></div>
+          <div><label class="text-xs text-slate-500 qb-mono">MAX</label><input type="number" class="q-max w-full border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs" value="${q.max_value ?? ''}" /></div>
         </div>`;
     }
     return '';
   }
 
   function optionRowHtml(value, i) {
-    return `<div class="flex items-center gap-2 q-option-row border border-slate-200 rounded-lg pl-3 pr-1.5 py-1 bg-slate-50/40" data-idx="${i}">
-      <span class="w-3.5 h-3.5 rounded-full border-2 border-slate-300 shrink-0"></span>
-      <input class="q-option-input flex-1 border-0 bg-transparent px-1 py-1 text-xs focus:outline-none" value="${escapeHtml(value)}" placeholder="Option ${i + 1}" />
-      <button type="button" class="q-remove-option w-6 h-6 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove option">${ICON_X}</button>
+    return `<div class="flex items-center gap-2 q-option-row border-l-2 border-dashed border-[var(--qb-line)] pl-3 pr-1.5 py-1" data-idx="${i}">
+      <span class="qb-mono text-[10px] text-slate-400 w-4 shrink-0">${String.fromCharCode(65 + i)}</span>
+      <input class="q-option-input flex-1 border-0 border-b border-transparent hover:border-[var(--qb-line)] bg-transparent px-1 py-1 text-xs focus:outline-none focus:border-[var(--qb-signal)] transition" value="${escapeHtml(value)}" placeholder="Option ${i + 1}" />
+      <button type="button" class="q-remove-option w-6 h-6 rounded text-slate-300 hover:text-[var(--qb-danger)] hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove option">${ICON_X}</button>
     </div>`;
   }
 
