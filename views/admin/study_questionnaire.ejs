@@ -10,6 +10,17 @@
   circular nodes sit on it like stops on a line; section and condition tags
   are cut as small flags rather than plain pills. Colors and type are scoped
   to .qb-canvas so the rest of the app (nav, other tabs) is unaffected.
+
+  Structure (reworked from the original one-long-scroll layout): Questions /
+  Skip Logic / Brand-SKU List are real panels switched by the buttons below
+  (synced to the URL hash so old "#skip-logic"-style links still work), not
+  anchor jumps down one page. Within Questions, a left Section Index rail is
+  pure navigation -- click a section to scroll to and expand it in the main
+  column, where sections are collapsible accordions and each question is a
+  single collapsed row (drag handle, type dot, text, required/conditional
+  markers) that expands inline to the full editor on click. A question's
+  Section is a dropdown populated from the sections that actually exist,
+  not a free-text field, so it can't silently create a typo'd phantom section.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,6 +49,10 @@
     clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
   }
   .qb-canvas ::selection { background: var(--qb-signal); color: var(--qb-ink); }
+  .qb-canvas .qb-mode-btn.is-active { background: var(--qb-ink); color: #fff; border-color: var(--qb-ink); }
+  .qb-canvas .qb-mode-btn:not(.is-active) { background: #fff; color: var(--qb-ink); }
+  .qb-canvas .q-row-chevron, .qb-canvas .section-toggle-btn { transition: transform 0.15s ease; }
+  .qb-canvas .q-row-chevron.is-open, .qb-canvas .section-toggle-btn.is-open { transform: rotate(90deg); }
 </style>
 
 <div class="qb-canvas">
@@ -51,24 +66,24 @@
 <% if (typeof rulesCreated !== 'undefined' && rulesCreated) { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
     <%- icon('arrow-right', 'w-4 h-4') %>
-    Also created <%= rulesCreated %> skip rule<%= rulesCreated == 1 ? '' : 's' %> from the Condition column — review them in the Skip Logic section below.
+    Also created <%= rulesCreated %> skip rule<%= rulesCreated == 1 ? '' : 's' %> from the Condition column — review them in <a href="#skip-logic" class="underline font-semibold">Skip Logic</a>.
   </div>
 <% } %>
 <% if (typeof rulesSkipped !== 'undefined' && rulesSkipped && Number(rulesSkipped) > 0) { %>
   <div class="flex items-center gap-2 mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
     <%- icon('warning', 'w-4 h-4') %>
-    <%= rulesSkipped %> condition<%= rulesSkipped == 1 ? '' : 's' %> referenced a question that wasn't included in this import — set those up manually in the Skip Logic section below if still needed.
+    <%= rulesSkipped %> condition<%= rulesSkipped == 1 ? '' : 's' %> referenced a question that wasn't included in this import — set those up manually in <a href="#skip-logic" class="underline font-semibold">Skip Logic</a> if still needed.
   </div>
 <% } %>
 
-<div class="flex flex-wrap gap-2 mb-6 text-sm qb-mono uppercase tracking-wide text-xs">
-  <a href="#questionnaire" class="px-3 py-1.5 rounded bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition flex items-center gap-1.5"><%- icon('clipboard', 'w-3.5 h-3.5') %> Questionnaire</a>
-  <a href="#skip-logic" class="px-3 py-1.5 rounded bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition flex items-center gap-1.5"><%- icon('arrow-right', 'w-3.5 h-3.5') %> Skip Logic</a>
-  <a href="#brands" class="px-3 py-1.5 rounded bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition flex items-center gap-1.5"><%- icon('building', 'w-3.5 h-3.5') %> Brand / SKU List</a>
+<div class="flex flex-wrap gap-2 mb-6">
+  <button type="button" class="qb-mode-btn is-active px-4 py-2 rounded text-sm font-semibold qb-mono uppercase tracking-wide text-xs transition border border-[var(--qb-line)] flex items-center gap-1.5" data-mode="questionnaire"><%- icon('clipboard', 'w-3.5 h-3.5') %> Questionnaire</button>
+  <button type="button" class="qb-mode-btn px-4 py-2 rounded text-sm font-semibold qb-mono uppercase tracking-wide text-xs transition border border-[var(--qb-line)] flex items-center gap-1.5" data-mode="skip-logic"><%- icon('arrow-right', 'w-3.5 h-3.5') %> Skip Logic</button>
+  <button type="button" class="qb-mode-btn px-4 py-2 rounded text-sm font-semibold qb-mono uppercase tracking-wide text-xs transition border border-[var(--qb-line)] flex items-center gap-1.5" data-mode="brands"><%- icon('building', 'w-3.5 h-3.5') %> Brand / SKU List</button>
 </div>
 
 <!-- ============================= Questionnaire ============================= -->
-<div id="questionnaire" class="scroll-mt-24">
+<div id="questionnaire" class="qb-panel">
   <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
     <div>
       <div class="qb-mono text-[10px] uppercase tracking-[0.2em] text-[var(--qb-branch)] font-semibold mb-1">Study Instrument &middot; Form <%= study.id %></div>
@@ -84,29 +99,35 @@
     </div>
   </div>
 
-  <!-- Question sections: rendered like a document's cross-reference index -->
-  <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-5 mb-6">
-    <div class="flex items-center gap-2 mb-1">
-      <span class="qb-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--qb-ink)] text-white">INDEX</span>
-      <span class="qb-display font-semibold text-[var(--qb-ink)]">Section Index</span>
-      <span id="sectionsSummary" class="text-xs text-slate-500 qb-mono"></span>
-    </div>
-    <p class="text-xs text-slate-500 mb-3">A section's own condition can only use questions outside that section. Click "Condition" on a section, or "+ Add Condition" on a question below, to gate its visibility.</p>
-    <div id="sectionsList" class="space-y-2 mb-3"></div>
-    <div class="flex gap-2">
-      <input id="newSectionInput" placeholder="New section title" class="flex-1 min-w-0 border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" />
-      <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3.5 py-2.5 text-sm font-semibold hover:opacity-90 transition shrink-0"><%- icon('plus', 'w-4 h-4') %> Add section</button>
+  <p class="text-xs text-slate-500 mb-4">Every field auto-saves as you edit. Click a question row to open its editor, or a section header to collapse it. Drag a row's grip handle to reorder it within its section — move it to a different section using the Section dropdown inside its editor.</p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+    <!-- Section Index: pure navigation -- click scrolls to and expands a section in the main column. Renaming/deleting/conditions live on the section header itself. -->
+    <aside class="lg:sticky lg:top-20 lg:self-start space-y-3">
+      <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-3">
+        <div class="flex items-center justify-between mb-2 px-1">
+          <span class="qb-display font-semibold text-sm text-[var(--qb-ink)]">Section Index</span>
+          <span id="sectionsSummary" class="text-[11px] text-slate-500 qb-mono"></span>
+        </div>
+        <div id="sectionIndexList" class="space-y-1"></div>
+      </div>
+      <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-3">
+        <div class="flex gap-2">
+          <input id="newSectionInput" placeholder="New section title" class="flex-1 min-w-0 border border-[var(--qb-line)] bg-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" />
+          <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3 py-2 text-sm font-semibold hover:opacity-90 transition shrink-0"><%- icon('plus', 'w-4 h-4') %></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main column: accordion sections, each holding collapsed-by-default question rows -->
+    <div>
+      <div id="sectionAccordions" class="space-y-3"></div>
+      <button type="button" id="addQuestionBtn" class="mt-3 w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-3 text-sm font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition">
+        <%- icon('plus', 'w-4 h-4') %> Add question
+      </button>
     </div>
   </div>
 
-  <p class="text-xs text-slate-500 mb-4">Every field below saves automatically as you edit. Drag a node's card by its handle to reorder the sequence.</p>
-  <div id="questionCards" class="relative space-y-5 ml-10 before:content-[''] before:absolute before:top-1 before:bottom-1 before:-left-5 before:w-0.5 before:bg-[var(--qb-line)]"></div>
-
-  <button type="button" id="addQuestionBtn" class="mt-5 ml-10 w-[calc(100%-2.5rem)] inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-3 text-sm font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition">
-    <%- icon('plus', 'w-4 h-4') %> Add question
-  </button>
-
-  <datalist id="sectionOptionsDatalist"></datalist>
   <script type="application/json" id="qb-data"><%- JSON.stringify({
     studyId: study.id,
     questions: questions.filter(function (q) { return q.active; }),
@@ -115,8 +136,8 @@
 </div>
 
 <!-- ============================= Skip Logic ============================= -->
-<div id="skip-logic" class="scroll-mt-24 mt-10">
-  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-[var(--qb-line)]">
+<div id="skip-logic" class="qb-panel hidden">
+  <div class="flex items-center gap-2 mb-4">
     <%- icon('arrow-right', 'w-5 h-5 text-[var(--qb-branch)]') %>
     <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Skip Logic Rules</h2>
   </div>
@@ -159,7 +180,7 @@
             </td>
           </tr>
         <% }) %>
-        <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-500 text-center">No skip logic yet — build the questionnaire above, then add rules here.</td></tr><% } %>
+        <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-500 text-center">No skip logic yet — build the <a href="#questionnaire" class="underline font-semibold">questionnaire</a> first, then add rules here.</td></tr><% } %>
         </tbody>
       </table>
       </div>
@@ -188,7 +209,7 @@
           <select name="target_section" id="targetSectionSelect" class="hidden w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <% sections.forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
           </select>
-          <% if (!sections.length) { %><p class="text-xs text-slate-500 mt-1">No sections defined yet — add a "Section" to questions above to skip a whole section at once.</p><% } %>
+          <% if (!sections.length) { %><p class="text-xs text-slate-500 mt-1">No sections defined yet — add one back in <a href="#questionnaire" class="underline font-semibold">Questionnaire</a> to skip a whole section at once.</p><% } %>
         </div>
         <div id="terminateScopeBlock" class="hidden">
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Scope</label>
@@ -225,8 +246,8 @@
 </div>
 
 <!-- ============================= Brand / SKU List ============================= -->
-<div id="brands" class="scroll-mt-24 mt-10">
-  <div class="flex items-center gap-2 mb-4 pt-6 border-t border-[var(--qb-line)]">
+<div id="brands" class="qb-panel hidden">
+  <div class="flex items-center gap-2 mb-4">
     <%- icon('building', 'w-5 h-5 text-[var(--qb-branch)]') %>
     <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Brand / SKU List</h2>
   </div>
@@ -270,6 +291,31 @@
 </div><!-- /.qb-canvas -->
 
 <script>
+  // Real mode switching (Questionnaire / Skip Logic / Brands) instead of the
+  // old anchor-jump pills that just scrolled down one very long page -- each
+  // is its own panel now, and the visible one is synced to the URL hash so
+  // existing "#skip-logic"-style links (see the banners above, and bookmarks
+  // to this page) keep working exactly as before.
+  (function () {
+    const modeButtons = document.querySelectorAll('.qb-mode-btn');
+    const panels = {
+      questionnaire: document.getElementById('questionnaire'),
+      'skip-logic': document.getElementById('skip-logic'),
+      brands: document.getElementById('brands'),
+    };
+    function setMode(mode) {
+      if (!panels[mode]) mode = 'questionnaire';
+      Object.entries(panels).forEach(([key, el]) => el.classList.toggle('hidden', key !== mode));
+      modeButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.mode === mode));
+    }
+    modeButtons.forEach((btn) => btn.addEventListener('click', () => {
+      setMode(btn.dataset.mode);
+      if (history.replaceState) history.replaceState(null, '', '#' + btn.dataset.mode);
+    }));
+    window.addEventListener('hashchange', () => setMode(location.hash.slice(1)));
+    setMode(location.hash ? location.hash.slice(1) : 'questionnaire');
+  })();
+
   function toggleTargetType() {
     const isSection = document.querySelector('input[name="target_type"]:checked').value === 'section';
     document.getElementById('targetQuestionSelect').classList.toggle('hidden', isSection);
@@ -306,6 +352,10 @@
     single: 'Single select', multi: 'Multi-select', numeric: 'Numeric',
     text: 'Short/long text', date: 'Date/time', photo: 'Photo', video: 'Video (brand detection)',
   };
+  const TYPE_COLOR = {
+    single: '#3B82F6', multi: '#8B5CF6', numeric: '#D97706', text: '#64748B',
+    date: '#0D9488', photo: '#DB2777', video: '#4F46E5',
+  };
   const OP_LABELS = { equals: 'Equals', not_equals: 'Not equals', in: 'Is one of', not_in: 'Is none of', includes: 'Includes' };
   // Rendered server-side once and reused as plain strings inside the client-side
   // template literals below, so the inline card editor stays consistent with the
@@ -314,6 +364,7 @@
   const ICON_TRASH = <%- JSON.stringify(icon('trash', 'w-3.5 h-3.5')) %>;
   const ICON_GRIP = <%- JSON.stringify(icon('grip', 'w-4 h-5')) %>;
   const ICON_X = <%- JSON.stringify(icon('x', 'w-3 h-3')) %>;
+  const ICON_CHEVRON = <%- JSON.stringify(icon('chevron', 'w-3.5 h-3.5')) %>;
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -335,6 +386,16 @@
     questions.forEach((q) => { if (q.section && !seen.includes(q.section)) seen.push(q.section); });
     return seen;
   }
+
+  // Which sections/questions are expanded right now -- kept outside the
+  // render functions so a full re-render (needed whenever the underlying
+  // data changes shape: add/delete/reorder/condition edits) doesn't collapse
+  // everything back shut. Sections start open (matches the old page's
+  // always-fully-visible behavior); individual questions start collapsed,
+  // which is the actual fix for "48 questions all expanded at once".
+  const openSections = new Set(orderedSections());
+  if (questions.some((q) => !q.section)) openSections.add('');
+  const openQuestions = new Set();
 
   function flash(el) {
     if (!el) return;
@@ -419,101 +480,51 @@
     }
   }
 
-  // ---------------- Sections card ----------------
-  function renderSections() {
-    const list = document.getElementById('sectionsList');
+  // ---------------- Section Index (sidebar nav) ----------------
+  function renderSectionIndex() {
+    const list = document.getElementById('sectionIndexList');
     const secs = orderedSections();
-    document.getElementById('sectionsSummary').textContent = secs.length
-      ? `· ${secs.length} section${secs.length === 1 ? '' : 's'} · ${questions.length} question${questions.length === 1 ? '' : 's'} total`
+    const ungroupedCount = questions.filter((q) => !q.section).length;
+    document.getElementById('sectionsSummary').textContent = secs.length || ungroupedCount
+      ? `${secs.length} section${secs.length === 1 ? '' : 's'} · ${questions.length} Q`
       : '';
-    list.innerHTML =
-      secs
-        .map((name, i) => {
-          const count = questions.filter((q) => q.section === name).length;
-          const hasCond = rules.some((r) => r.target_section === name);
-          return `
-        <div class="section-item border border-[var(--qb-line)] bg-white rounded p-3 hover:border-[var(--qb-ink)] transition" data-section="${escapeHtml(name)}">
-          <div class="flex items-center gap-3">
-            <span class="qb-mono w-7 h-7 rounded-full border border-[var(--qb-line)] text-[var(--qb-ink)] text-[11px] font-bold flex items-center justify-center shrink-0">${String(i + 1).padStart(2, '0')}</span>
-            <div class="flex-1 min-w-0">
-              <div class="qb-display font-semibold text-[var(--qb-ink)] section-name-display truncate cursor-text rounded px-1 -mx-1 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[var(--qb-signal)]" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>
-              <div class="text-xs text-slate-500 mt-0.5 qb-mono">
-                <span class="inline-flex items-center justify-center text-[10px] font-semibold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mr-1">${count} Q</span>
-                <span class="${hasCond ? 'text-[var(--qb-branch)] font-semibold' : ''}">${hasCond ? 'HAS VISIBILITY CONDITION' : 'ALWAYS SHOWN'}</span>
-              </div>
-            </div>
-            <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition shrink-0">Condition</button>
-            <button type="button" class="section-delete-btn w-8 h-8 rounded text-slate-400 hover:text-[var(--qb-danger)] hover:bg-red-50 transition shrink-0 flex items-center justify-center" title="Remove section">${ICON_TRASH_SM}</button>
-          </div>
-          <div class="section-condition-form hidden mt-2"></div>
-        </div>`;
-        })
-        .join('') || `<div class="text-xs text-slate-500">No sections yet — everything below is ungrouped. Add one below, or just set a Section on any question card.</div>`;
-
-    document.getElementById('sectionOptionsDatalist').innerHTML = secs.map((s) => `<option value="${escapeHtml(s)}"></option>`).join('');
+    const rows = secs
+      .map((name, i) => {
+        const count = questions.filter((q) => q.section === name).length;
+        const hasCond = rules.some((r) => r.target_section === name);
+        return `
+      <button type="button" class="section-index-item w-full text-left flex items-center gap-2.5 px-2 py-2 rounded hover:bg-white border border-transparent hover:border-[var(--qb-line)] transition" data-section="${escapeHtml(name)}">
+        <span class="qb-mono w-6 h-6 rounded-full border border-[var(--qb-line)] bg-white text-[var(--qb-ink)] text-[10px] font-bold flex items-center justify-center shrink-0">${i + 1}</span>
+        <span class="flex-1 min-w-0">
+          <span class="block text-sm font-medium text-[var(--qb-ink)] truncate">${escapeHtml(name)}</span>
+          <span class="block text-[11px] text-slate-500 qb-mono">${count} Q &middot; ${hasCond ? 'CONDITIONAL' : 'ALWAYS SHOWN'}</span>
+        </span>
+        <span class="w-2 h-2 rounded-full shrink-0" style="background:${hasCond ? 'var(--qb-signal)' : 'var(--qb-branch)'}"></span>
+      </button>`;
+      })
+      .join('');
+    const ungroupedRow = ungroupedCount
+      ? `
+      <button type="button" class="section-index-item w-full text-left flex items-center gap-2.5 px-2 py-2 rounded hover:bg-white border border-transparent hover:border-[var(--qb-line)] transition" data-section="">
+        <span class="qb-mono w-6 h-6 rounded-full border border-dashed border-[var(--qb-line)] bg-white text-slate-400 text-[10px] font-bold flex items-center justify-center shrink-0">&ndash;</span>
+        <span class="flex-1 min-w-0">
+          <span class="block text-sm font-medium text-slate-500 truncate">No section</span>
+          <span class="block text-[11px] text-slate-400 qb-mono">${ungroupedCount} Q</span>
+        </span>
+      </button>`
+      : '';
+    list.innerHTML = rows + ungroupedRow || '<div class="text-xs text-slate-500 px-2 py-2">No sections yet — everything is ungrouped. Add one below.</div>';
   }
 
-  document.getElementById('sectionsList').addEventListener('click', (e) => {
-    const item = e.target.closest('.section-item');
-    if (!item) return;
-    const name = item.dataset.section;
-    if (e.target.classList.contains('section-condition-btn')) {
-      const formWrap = item.querySelector('.section-condition-form');
-      const wasHidden = formWrap.classList.contains('hidden');
-      closeAllConditionForms();
-      if (wasHidden) {
-        formWrap.innerHTML = conditionFormHtml('this section', (q) => q.section === name);
-        formWrap.classList.remove('hidden');
-      }
-    } else if (e.target.closest('.section-delete-btn')) {
-      onDeleteSection(name);
-    } else if (e.target.classList.contains('cf-submit')) {
-      submitConditionForm(e.target, { kind: 'section', targetSection: name });
-    } else if (e.target.classList.contains('cf-cancel')) {
-      const formWrap = item.querySelector('.section-condition-form');
-      formWrap.classList.add('hidden');
-      formWrap.innerHTML = '';
-    }
+  document.getElementById('sectionIndexList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.section-index-item');
+    if (!btn) return;
+    const name = btn.dataset.section;
+    openSections.add(name);
+    renderQuestions();
+    const group = document.querySelector(`.section-group[data-section-group="${CSS.escape(name)}"]`);
+    if (group) group.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-
-  document.getElementById('sectionsList').addEventListener(
-    'blur',
-    (e) => {
-      if (e.target.classList && e.target.classList.contains('section-name-display')) onSectionNameBlur(e.target);
-    },
-    true
-  );
-
-  async function onSectionNameBlur(el) {
-    const wrapper = el.closest('[data-section]');
-    const oldName = wrapper.dataset.section;
-    const newName = el.textContent.trim();
-    if (!newName || newName === oldName) {
-      el.textContent = oldName;
-      return;
-    }
-    try {
-      await api('PATCH', `/admin/studies/${STUDY_ID}/sections`, { oldName, newName });
-      questions.forEach((q) => { if (q.section === oldName) q.section = newName; });
-      rules.forEach((r) => { if (r.target_section === oldName) r.target_section = newName; });
-      renderAll();
-    } catch (e) {
-      alert(e.message);
-      el.textContent = oldName;
-    }
-  }
-
-  async function onDeleteSection(name) {
-    if (!confirm(`Remove the "${name}" section? Its questions become ungrouped, and any section-level condition on it is removed.`)) return;
-    try {
-      await api('POST', `/admin/studies/${STUDY_ID}/sections/delete`, { name });
-      questions.forEach((q) => { if (q.section === name) q.section = null; });
-      rules = rules.filter((r) => r.target_section !== name);
-      renderAll();
-    } catch (e) {
-      alert(e.message);
-    }
-  }
 
   document.getElementById('addSectionBtn').addEventListener('click', async () => {
     const input = document.getElementById('newSectionInput');
@@ -523,37 +534,84 @@
       const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, { section: name });
       questions.push(created);
       input.value = '';
+      openSections.add(name);
+      openQuestions.add(created.id);
       renderAll();
-      const card = document.getElementById('qcard-' + created.id);
-      if (card) card.querySelector('.q-text').focus();
+      const row = document.getElementById('qcard-' + created.id);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.querySelector('.q-text').focus();
+      }
     } catch (e) {
       alert(e.message);
     }
   });
 
-  // ---------------- Question cards ----------------
+  // ---------------- Main column: section accordions + question rows ----------------
   function renderQuestions() {
-    const container = document.getElementById('questionCards');
-    let html = '';
-    let lastSection;
-    questions.forEach((q, idx) => {
-      if (q.section !== lastSection) {
-        lastSection = q.section;
-        html += `<div class="qb-flag qb-mono inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-white bg-[var(--qb-branch)] pl-3 pr-4 py-1.5 -ml-10 mt-4 first:mt-0 mb-1">${escapeHtml(q.section || 'No section')}</div>`;
-      }
-      html += questionCardHtml(q, idx + 1);
-    });
-    container.innerHTML = html || '<div class="text-sm text-slate-500 bg-[var(--qb-card)] border border-dashed border-[var(--qb-line)] p-8 text-center">No questions yet — click "Add question" below.</div>';
+    const container = document.getElementById('sectionAccordions');
+    const secs = orderedSections();
+    const groups = secs.map((name) => ({ name, qs: questions.filter((q) => q.section === name) }));
+    const ungrouped = questions.filter((q) => !q.section);
+    if (ungrouped.length) groups.push({ name: '', qs: ungrouped });
+    container.innerHTML = groups.length
+      ? groups.map((g) => sectionGroupHtml(g, secs)).join('')
+      : '<div class="text-sm text-slate-500 bg-[var(--qb-card)] border border-dashed border-[var(--qb-line)] p-8 text-center rounded-lg">No questions yet — click "Add question" below.</div>';
   }
 
-  function questionCardHtml(q, n) {
+  function sectionGroupHtml(g, secs) {
+    const name = g.name;
+    const isUngrouped = name === '';
+    const number = isUngrouped ? null : secs.indexOf(name) + 1;
+    const hasCond = !isUngrouped && rules.some((r) => r.target_section === name);
+    const isOpen = openSections.has(name);
+    return `
+    <div class="section-group border border-[var(--qb-line)] bg-[var(--qb-card)] rounded-lg overflow-hidden" data-section-group="${escapeHtml(name)}">
+      <div class="section-header flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/60 transition">
+        <span class="section-toggle-btn shrink-0 text-slate-400 ${isOpen ? 'is-open' : ''}">${ICON_CHEVRON}</span>
+        ${isUngrouped
+          ? `<span class="qb-mono w-7 h-7 rounded-full border border-dashed border-[var(--qb-line)] text-slate-400 text-[11px] font-bold flex items-center justify-center shrink-0">&ndash;</span>`
+          : `<span class="qb-mono w-7 h-7 rounded-full bg-[var(--qb-ink)] text-white text-[11px] font-bold flex items-center justify-center shrink-0">${number}</span>`}
+        <div class="flex-1 min-w-0">
+          ${isUngrouped
+            ? `<div class="qb-display font-semibold text-slate-500">No section</div>`
+            : `<div class="section-name-display qb-display font-semibold text-[var(--qb-ink)] truncate cursor-text rounded px-1 -mx-1 hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-[var(--qb-signal)]" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>`}
+          <div class="text-xs text-slate-500 mt-0.5 qb-mono">
+            <span class="inline-flex items-center justify-center text-[10px] font-semibold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mr-1">${g.qs.length} Q</span>
+            ${isUngrouped ? '' : `<span class="${hasCond ? 'text-[var(--qb-branch)] font-semibold' : ''}">${hasCond ? 'HAS VISIBILITY CONDITION' : 'ALWAYS SHOWN'}</span>`}
+          </div>
+        </div>
+        ${isUngrouped ? '' : `
+        <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition shrink-0">Condition</button>
+        <button type="button" class="section-delete-btn w-8 h-8 rounded text-slate-400 hover:text-[var(--qb-danger)] hover:bg-red-50 transition shrink-0 flex items-center justify-center" title="Remove section">${ICON_TRASH_SM}</button>`}
+      </div>
+      ${isUngrouped ? '' : `<div class="section-condition-form hidden px-4 pb-3"></div>`}
+      <div class="section-body ${isOpen ? '' : 'hidden'} border-t border-[var(--qb-line)] p-3 space-y-2">
+        ${g.qs.map((q) => questionRowHtml(q)).join('')}
+        <button type="button" class="add-question-to-section-btn w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-2 text-xs font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition" data-section="${escapeHtml(name)}">+ Add question to ${isUngrouped ? 'no section' : 'this section'}</button>
+      </div>
+    </div>`;
+  }
+
+  function questionRowHtml(q) {
     const options = q.options_json ? JSON.parse(q.options_json) : [];
     const qRules = rules.filter((r) => r.target_question_id === q.id);
+    const isOpen = openQuestions.has(q.id);
+    const color = TYPE_COLOR[q.type] || '#94A3B8';
+    const preview = q.text && q.text.trim() ? escapeHtml(q.text) : '<span class="italic text-slate-400">(untitled question)</span>';
     return `
-    <div class="question-card group relative bg-[var(--qb-card)] border border-[var(--qb-line)] rounded-lg hover:border-[var(--qb-ink)] transition flex" id="qcard-${q.id}" data-id="${q.id}">
-      <div class="absolute -left-9 top-4 w-8 h-8 rounded-full bg-[var(--qb-ink)] text-white qb-mono text-[11px] font-bold flex items-center justify-center z-10 ring-4 ring-[var(--qb-paper)] shrink-0">${n}</div>
-      <div class="drag-handle shrink-0 w-7 flex items-start justify-center pt-4 cursor-grab active:cursor-grabbing text-slate-300 group-hover:text-slate-400 hover:!text-[var(--qb-signal)] transition" draggable="true" title="Drag to reorder">${ICON_GRIP}</div>
-      <div class="flex-1 min-w-0 py-4 pr-4">
+    <div class="question-row bg-white border border-[var(--qb-line)] rounded-lg" id="qcard-${q.id}" data-id="${q.id}">
+      <div class="q-row-header flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-slate-50/70 transition rounded-lg">
+        <span class="drag-handle shrink-0 cursor-grab active:cursor-grabbing text-slate-300 hover:!text-[var(--qb-signal)] transition" draggable="true" title="Drag to reorder within this section">${ICON_GRIP}</span>
+        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${color}" title="${TYPE_LABELS[q.type] || q.type}"></span>
+        <span class="flex-1 min-w-0 text-sm text-[var(--qb-ink)] truncate q-row-preview">${preview}</span>
+        ${q.required ? `<span class="w-1.5 h-1.5 rounded-full bg-[var(--qb-danger)] shrink-0 q-required-dot" title="Required"></span>` : ''}
+        ${qRules.length ? `<span class="qb-mono text-[9px] font-bold uppercase tracking-wide text-[var(--qb-branch)] bg-[var(--qb-branch-tint)] rounded px-1.5 py-0.5 shrink-0">Conditional</span>` : ''}
+        <span class="qb-mono text-[10px] uppercase tracking-wide bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 shrink-0 hidden sm:inline-block">${TYPE_LABELS[q.type] || q.type}</span>
+        <button type="button" class="q-delete w-7 h-7 rounded text-slate-300 hover:text-[var(--qb-danger)] hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove question">${ICON_TRASH}</button>
+        <span class="q-row-chevron shrink-0 text-slate-400 ${isOpen ? 'is-open' : ''}">${ICON_CHEVRON}</span>
+      </div>
+      <div class="q-row-body ${isOpen ? '' : 'hidden'} border-t border-[var(--qb-line)] p-3 pl-9">
         <div class="flex items-center gap-2 mb-3 flex-wrap">
           <select class="q-type qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             ${Object.entries(TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${q.type === v ? 'selected' : ''}>${l}</option>`).join('')}
@@ -561,13 +619,15 @@
           <input class="q-code qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 text-xs w-24 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
           <label class="flex items-center gap-1.5 text-xs font-medium text-[var(--qb-ink)] border border-[var(--qb-line)] rounded pl-2 pr-2.5 py-1.5 bg-white cursor-pointer hover:border-[var(--qb-ink)] transition"><input type="checkbox" class="q-required h-3.5 w-3.5 accent-[var(--qb-ink)]" ${q.required ? 'checked' : ''} /> Required</label>
           <span class="save-indicator qb-mono text-[10px] font-semibold text-[var(--qb-branch)] ml-0.5 opacity-0 transition-opacity flex items-center gap-1">&#10003; SAVED</span>
-          <button type="button" class="q-delete ml-auto w-7 h-7 rounded text-slate-300 hover:text-[var(--qb-danger)] hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove question">${ICON_TRASH}</button>
         </div>
         <textarea class="q-text w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
         <div class="q-typebody mb-3">${typeBodyHtml(q, options)}</div>
         <div class="flex items-center gap-2 mb-3">
           <label class="text-xs text-slate-500 shrink-0 qb-mono">SECTION</label>
-          <input class="q-section border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" list="sectionOptionsDatalist" value="${escapeHtml(q.section || '')}" placeholder="e.g. Purchase Occasion" />
+          <select class="q-section-select border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <option value="">&mdash; No section &mdash;</option>
+            ${orderedSections().map((s) => `<option value="${escapeHtml(s)}" ${q.section === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
+          </select>
         </div>
         <div class="border-t border-[var(--qb-line)] pt-2.5">
           ${qRules.map(conditionChipHtml).join('')}
@@ -602,27 +662,34 @@
     </div>`;
   }
 
-  function collectCardPatch(card) {
-    const type = card.querySelector('.q-type').value;
+  function collectCardPatch(row) {
+    const type = row.querySelector('.q-type').value;
     const patch = {
-      text: card.querySelector('.q-text').value,
+      text: row.querySelector('.q-text').value,
       type,
-      code: card.querySelector('.q-code').value,
-      required: card.querySelector('.q-required').checked,
-      section: card.querySelector('.q-section').value,
+      code: row.querySelector('.q-code').value,
+      required: row.querySelector('.q-required').checked,
+      section: row.querySelector('.q-section-select').value,
     };
     if (type === 'single' || type === 'multi') {
-      patch.options = Array.from(card.querySelectorAll('.q-option-input')).map((i) => i.value);
+      patch.options = Array.from(row.querySelectorAll('.q-option-input')).map((i) => i.value);
     } else if (type === 'numeric') {
-      patch.min_value = card.querySelector('.q-min').value;
-      patch.max_value = card.querySelector('.q-max').value;
+      patch.min_value = row.querySelector('.q-min').value;
+      patch.max_value = row.querySelector('.q-max').value;
     }
     return patch;
   }
 
-  async function saveCard(card) {
-    const id = Number(card.dataset.id);
-    const patch = collectCardPatch(card);
+  // Blur-triggered autosave for text/code/min/max/option fields. Deliberately
+  // does NOT trigger a full re-render -- that would yank focus away from
+  // wherever the respondent has since tabbed to, since the PATCH response
+  // (and this handler) resolve asynchronously after the blur already
+  // happened. Instead it patches just the row's own collapsed-preview text
+  // and required-dot directly, leaving the rest of the DOM (including
+  // whatever's currently focused) untouched.
+  async function saveCard(row) {
+    const id = Number(row.dataset.id);
+    const patch = collectCardPatch(row);
     // A freshly-created question starts blank -- don't autosave (or alert)
     // until it actually has text; nothing meaningful to persist yet.
     if (!patch.text || !patch.text.trim()) return;
@@ -630,16 +697,55 @@
       const updated = await api('PATCH', `/admin/studies/${STUDY_ID}/questions/${id}`, patch);
       const idx = questions.findIndex((q) => q.id === updated.id);
       if (idx >= 0) questions[idx] = updated;
-      flash(card.querySelector('.save-indicator'));
-      renderSections();
+      flash(row.querySelector('.save-indicator'));
+      refreshRowPreview(row, updated);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  function refreshRowPreview(row, q) {
+    const previewEl = row.querySelector('.q-row-preview');
+    if (previewEl) previewEl.innerHTML = q.text && q.text.trim() ? escapeHtml(q.text) : '<span class="italic text-slate-400">(untitled question)</span>';
+    const header = row.querySelector('.q-row-header');
+    if (!header) return;
+    let dot = header.querySelector('.q-required-dot');
+    if (q.required && !dot && previewEl) {
+      dot = document.createElement('span');
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-[var(--qb-danger)] shrink-0 q-required-dot';
+      dot.title = 'Required';
+      previewEl.insertAdjacentElement('afterend', dot);
+    } else if (!q.required && dot) {
+      dot.remove();
+    }
+  }
+
+  // Reassigning a question's section is a discrete, deliberate action (not
+  // continuous typing like the fields above), so unlike saveCard() this DOES
+  // fully re-render -- the row has to physically move to a different
+  // accordion, and the section headers'/sidebar's counts need to catch up.
+  async function onSectionReassign(row) {
+    const id = Number(row.dataset.id);
+    const patch = collectCardPatch(row);
+    if (!patch.text || !patch.text.trim()) {
+      alert("Add the question's text before assigning a section.");
+      return;
+    }
+    try {
+      const updated = await api('PATCH', `/admin/studies/${STUDY_ID}/questions/${id}`, patch);
+      const idx = questions.findIndex((q) => q.id === updated.id);
+      if (idx >= 0) questions[idx] = updated;
+      openSections.add(updated.section || '');
+      openQuestions.add(id);
+      renderAll();
     } catch (e) {
       alert(e.message);
     }
   }
 
   async function onTypeChange(select) {
-    const card = select.closest('.question-card');
-    const id = Number(card.dataset.id);
+    const row = select.closest('.question-row');
+    const id = Number(row.dataset.id);
     const q = questions.find((x) => x.id === id);
     q.type = select.value;
     if (q.type === 'single' || q.type === 'multi') {
@@ -647,27 +753,27 @@
       if (!existing.length) q.options_json = JSON.stringify(['']);
     }
     renderQuestions();
-    const newCard = document.getElementById('qcard-' + id);
-    await saveCard(newCard);
+    const newRow = document.getElementById('qcard-' + id);
+    await saveCard(newRow);
   }
 
-  function onAddOption(card) {
-    const id = Number(card.dataset.id);
+  function onAddOption(row) {
+    const id = Number(row.dataset.id);
     const q = questions.find((x) => x.id === id);
     const opts = q.options_json ? JSON.parse(q.options_json) : [];
     opts.push('');
     q.options_json = JSON.stringify(opts);
     renderQuestions();
-    const newCard = document.getElementById('qcard-' + id);
-    const inputs = newCard.querySelectorAll('.q-option-input');
+    const newRow = document.getElementById('qcard-' + id);
+    const inputs = newRow.querySelectorAll('.q-option-input');
     if (inputs.length) inputs[inputs.length - 1].focus();
   }
 
   function onRemoveOption(btn) {
-    const card = btn.closest('.question-card');
-    const id = Number(card.dataset.id);
-    const row = btn.closest('.q-option-row');
-    const idx = Number(row.dataset.idx);
+    const row = btn.closest('.question-row');
+    const id = Number(row.dataset.id);
+    const optRow = btn.closest('.q-option-row');
+    const idx = Number(optRow.dataset.idx);
     const q = questions.find((x) => x.id === id);
     const opts = q.options_json ? JSON.parse(q.options_json) : [];
     opts.splice(idx, 1);
@@ -676,113 +782,201 @@
     saveCard(document.getElementById('qcard-' + id));
   }
 
-  async function onDeleteQuestion(card) {
-    const id = card.dataset.id;
+  async function onDeleteQuestion(row) {
+    const id = row.dataset.id;
     if (!confirm('Remove this question?')) return;
     try {
       await api('POST', `/admin/studies/${STUDY_ID}/questionnaire/${id}/delete`);
       questions = questions.filter((q) => String(q.id) !== String(id));
       rules = rules.filter((r) => String(r.target_question_id) !== String(id));
+      openQuestions.delete(Number(id));
       renderAll();
     } catch (e) {
       alert(e.message);
     }
   }
 
-  document.getElementById('addQuestionBtn').addEventListener('click', async () => {
+  async function onAddQuestionToSection(name) {
     try {
-      const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, {});
+      const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, name ? { section: name } : {});
       questions.push(created);
+      openSections.add(name || '');
+      openQuestions.add(created.id);
       renderAll();
-      const card = document.getElementById('qcard-' + created.id);
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        card.querySelector('.q-text').focus();
+      const row = document.getElementById('qcard-' + created.id);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.querySelector('.q-text').focus();
       }
     } catch (e) {
       alert(e.message);
     }
-  });
+  }
 
-  const cardsEl = document.getElementById('questionCards');
+  document.getElementById('addQuestionBtn').addEventListener('click', () => onAddQuestionToSection(''));
 
-  cardsEl.addEventListener('click', (e) => {
-    const card = e.target.closest('.question-card');
-    if (!card) return;
-    const id = Number(card.dataset.id);
-    if (e.target.closest('.q-delete')) return onDeleteQuestion(card);
-    if (e.target.classList.contains('q-add-option')) return onAddOption(card);
-    if (e.target.closest('.q-remove-option')) return onRemoveOption(e.target.closest('.q-remove-option'));
-    if (e.target.classList.contains('chip-delete')) return onDeleteRule(e.target.dataset.ruleId);
-    if (e.target.classList.contains('q-add-condition-btn')) {
-      const formWrap = card.querySelector('.q-condition-form');
+  async function onSectionNameBlur(el) {
+    const wrapper = el.closest('[data-section-group]');
+    const oldName = wrapper.dataset.sectionGroup;
+    const newName = el.textContent.trim();
+    if (!newName || newName === oldName) {
+      el.textContent = oldName;
+      return;
+    }
+    try {
+      await api('PATCH', `/admin/studies/${STUDY_ID}/sections`, { oldName, newName });
+      questions.forEach((q) => { if (q.section === oldName) q.section = newName; });
+      rules.forEach((r) => { if (r.target_section === oldName) r.target_section = newName; });
+      if (openSections.has(oldName)) { openSections.delete(oldName); openSections.add(newName); }
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+      el.textContent = oldName;
+    }
+  }
+
+  async function onDeleteSection(name) {
+    if (!confirm(`Remove the "${name}" section? Its questions become ungrouped, and any section-level condition on it is removed.`)) return;
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/sections/delete`, { name });
+      questions.forEach((q) => { if (q.section === name) q.section = null; });
+      rules = rules.filter((r) => r.target_section !== name);
+      openSections.delete(name);
+      openSections.add('');
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  const accordionsEl = document.getElementById('sectionAccordions');
+
+  accordionsEl.addEventListener('click', (e) => {
+    const group = e.target.closest('.section-group');
+    if (!group) return;
+    const name = group.dataset.sectionGroup;
+
+    // Row-level clicks (inside a question's collapsed header or open editor) take priority.
+    const row = e.target.closest('.question-row');
+    if (row) {
+      const qid = Number(row.dataset.id);
+      if (e.target.closest('.q-delete')) { onDeleteQuestion(row); return; }
+      if (e.target.classList.contains('q-add-option')) { onAddOption(row); return; }
+      if (e.target.closest('.q-remove-option')) { onRemoveOption(e.target.closest('.q-remove-option')); return; }
+      if (e.target.classList.contains('chip-delete')) { onDeleteRule(e.target.dataset.ruleId); return; }
+      if (e.target.classList.contains('q-add-condition-btn')) {
+        const formWrap = row.querySelector('.q-condition-form');
+        const wasHidden = formWrap.classList.contains('hidden');
+        closeAllConditionForms();
+        if (wasHidden) {
+          formWrap.innerHTML = conditionFormHtml('this question', (q) => q.id === qid);
+          formWrap.classList.remove('hidden');
+        }
+        return;
+      }
+      if (e.target.classList.contains('cf-submit')) { submitConditionForm(e.target, { kind: 'question', targetQuestionId: qid }); return; }
+      if (e.target.classList.contains('cf-cancel')) {
+        const formWrap = row.querySelector('.q-condition-form');
+        formWrap.classList.add('hidden');
+        formWrap.innerHTML = '';
+        return;
+      }
+      if (e.target.closest('.q-row-header')) {
+        if (openQuestions.has(qid)) openQuestions.delete(qid); else openQuestions.add(qid);
+        renderQuestions();
+        return;
+      }
+      return; // click landed somewhere inert inside the open editor body
+    }
+
+    // Section header / controls (only reached when the click wasn't inside a question row).
+    if (e.target.closest('.section-condition-btn')) {
+      const formWrap = group.querySelector('.section-condition-form');
       const wasHidden = formWrap.classList.contains('hidden');
       closeAllConditionForms();
       if (wasHidden) {
-        formWrap.innerHTML = conditionFormHtml('this question', (q) => q.id === id);
+        formWrap.innerHTML = conditionFormHtml('this section', (q) => q.section === name);
         formWrap.classList.remove('hidden');
       }
       return;
     }
-    if (e.target.classList.contains('cf-submit')) return submitConditionForm(e.target, { kind: 'question', targetQuestionId: id });
+    if (e.target.closest('.section-delete-btn')) { onDeleteSection(name); return; }
+    if (e.target.classList.contains('cf-submit')) { submitConditionForm(e.target, { kind: 'section', targetSection: name }); return; }
     if (e.target.classList.contains('cf-cancel')) {
-      const formWrap = card.querySelector('.q-condition-form');
+      const formWrap = group.querySelector('.section-condition-form');
       formWrap.classList.add('hidden');
       formWrap.innerHTML = '';
+      return;
+    }
+    if (e.target.classList.contains('section-name-display')) return; // contenteditable handles its own focus/typing
+    const addBtn = e.target.closest('.add-question-to-section-btn');
+    if (addBtn) { onAddQuestionToSection(addBtn.dataset.section); return; }
+    if (e.target.closest('.section-header')) {
+      if (openSections.has(name)) openSections.delete(name); else openSections.add(name);
+      renderQuestions();
     }
   });
 
-  cardsEl.addEventListener('change', (e) => {
-    const card = e.target.closest('.question-card');
-    if (!card) return;
+  accordionsEl.addEventListener('change', (e) => {
+    const row = e.target.closest('.question-row');
+    if (!row) return;
     if (e.target.classList.contains('q-type')) return onTypeChange(e.target);
-    if (e.target.classList.contains('q-required')) return saveCard(card);
+    if (e.target.classList.contains('q-required')) return saveCard(row);
+    if (e.target.classList.contains('q-section-select')) return onSectionReassign(row);
   });
 
-  cardsEl.addEventListener(
+  accordionsEl.addEventListener(
     'blur',
     (e) => {
-      const card = e.target.closest && e.target.closest('.question-card');
-      if (!card) return;
-      if (e.target.matches('.q-text, .q-code, .q-min, .q-max, .q-section, .q-option-input')) saveCard(card);
+      if (e.target.classList && e.target.classList.contains('section-name-display')) { onSectionNameBlur(e.target); return; }
+      const row = e.target.closest && e.target.closest('.question-row');
+      if (!row) return;
+      if (e.target.matches('.q-text, .q-code, .q-min, .q-max, .q-option-input')) saveCard(row);
     },
     true
   );
 
   // Drag-and-drop reorder (grip handle only, so text selection inside the
-  // card's inputs/textarea isn't hijacked by the browser's native drag).
+  // row's inputs/textarea isn't hijacked by the browser's native drag).
+  // Confined to within one section: moving a question to a different section
+  // is done via its Section dropdown, since a drag can only change sequence
+  // (order_index) and has no way to also tell the server which section a
+  // cross-section drop should assign -- allowing it would let the row's
+  // visual position drift out of sync with its actual data until the next
+  // re-render silently snapped it back.
   let dragId = null;
-  cardsEl.addEventListener('dragstart', (e) => {
+  accordionsEl.addEventListener('dragstart', (e) => {
     if (!e.target.classList || !e.target.classList.contains('drag-handle')) return;
-    const card = e.target.closest('.question-card');
-    dragId = card.dataset.id;
+    const row = e.target.closest('.question-row');
+    dragId = row.dataset.id;
     e.dataTransfer.effectAllowed = 'move';
-    card.classList.add('opacity-40');
+    row.classList.add('opacity-40');
   });
-  cardsEl.addEventListener('dragend', (e) => {
-    const card = e.target.closest && e.target.closest('.question-card');
-    if (card) card.classList.remove('opacity-40');
+  accordionsEl.addEventListener('dragend', (e) => {
+    const row = e.target.closest && e.target.closest('.question-row');
+    if (row) row.classList.remove('opacity-40');
     dragId = null;
   });
-  cardsEl.addEventListener('dragover', (e) => {
+  accordionsEl.addEventListener('dragover', (e) => {
     if (!dragId) return;
-    e.preventDefault();
-    const overCard = e.target.closest('.question-card');
-    if (!overCard || overCard.dataset.id === dragId) return;
+    const overRow = e.target.closest('.question-row');
+    if (!overRow || overRow.dataset.id === dragId) return;
     const dragging = document.getElementById('qcard-' + dragId);
     if (!dragging) return;
-    const rect = overCard.getBoundingClientRect();
+    if (dragging.closest('.section-body') !== overRow.closest('.section-body')) return;
+    e.preventDefault();
+    const rect = overRow.getBoundingClientRect();
     const before = e.clientY - rect.top < rect.height / 2;
-    overCard.parentElement.insertBefore(dragging, before ? overCard : overCard.nextSibling);
+    overRow.parentElement.insertBefore(dragging, before ? overRow : overRow.nextSibling);
   });
-  cardsEl.addEventListener('drop', async (e) => {
+  accordionsEl.addEventListener('drop', async (e) => {
     if (!dragId) return;
     e.preventDefault();
     await persistOrder();
   });
 
   async function persistOrder() {
-    const ids = Array.from(cardsEl.querySelectorAll('.question-card')).map((el) => Number(el.dataset.id));
+    const ids = Array.from(accordionsEl.querySelectorAll('.question-row')).map((el) => Number(el.dataset.id));
     questions.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
     try {
       await api('POST', `/admin/studies/${STUDY_ID}/questions/reorder`, { ids });
@@ -793,7 +987,7 @@
   }
 
   function renderAll() {
-    renderSections();
+    renderSectionIndex();
     renderQuestions();
   }
   renderAll();
