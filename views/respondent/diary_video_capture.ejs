@@ -23,11 +23,12 @@
 
     <form method="POST" action="/r/<%= respondent.unique_token %>/diary/analyze-video" enctype="multipart/form-data">
       <input type="hidden" name="practice" value="<%= practice ? '1' : '0' %>" />
-      <label class="flex flex-col items-center gap-2 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-10 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition mb-5">
+      <button type="button" class="camera-capture-trigger w-full flex flex-col items-center gap-2 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-10 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 transition mb-5" data-kind="video" data-target="videoFileInput" data-label="videoFileLabel">
         <%- icon('video', 'w-8 h-8 text-slate-400') %>
-        <span id="videoFileLabel">Tap to record / choose a video</span>
-        <input type="file" name="video" accept="video/*" capture="environment" required class="hidden" onchange="document.getElementById('videoFileLabel').textContent = this.files[0]?.name || 'Tap to record / choose a video'" />
-      </label>
+        <span id="videoFileLabel">Tap to open camera</span>
+      </button>
+      <input type="file" id="videoFileInput" name="video" accept="video/*" required class="hidden" />
+      <p class="text-xs text-slate-400 -mt-3 mb-5">Opens your camera to record live — you can't attach an existing video from your gallery.</p>
       <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-3 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
         <%- icon('arrow-right', 'w-4 h-4') %> Analyze Video &amp; Continue
       </button>
@@ -35,4 +36,5 @@
   </div>
 </div>
 
+<script src="/public/js/camera-capture.js"></script>
 <%- include('../partials/footer') %>

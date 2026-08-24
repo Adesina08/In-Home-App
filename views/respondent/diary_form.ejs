@@ -84,16 +84,17 @@
         <% } else if (q.type === 'date') { %>
           <input type="datetime-local" name="q_<%= q.id %>" <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" />
         <% } else if (q.type === 'photo') { %>
-          <label class="flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition">
-            📷 <span>Tap to take / choose a photo</span>
-            <input type="file" name="photo_q_<%= q.id %>" accept="image/*" capture="environment" class="hidden" onchange="this.previousElementSibling.textContent = this.files[0]?.name || 'Tap to take / choose a photo'" />
-          </label>
+          <button type="button" class="camera-capture-trigger w-full flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 transition" data-kind="photo" data-target="photo_q_<%= q.id %>" data-label="photo_q_<%= q.id %>_label">
+            📷 <span id="photo_q_<%= q.id %>_label">Tap to open camera</span>
+          </button>
+          <input type="file" id="photo_q_<%= q.id %>" name="photo_q_<%= q.id %>" accept="image/*" class="hidden" />
+          <p class="text-xs text-slate-400 mt-1">Opens your camera — you can't attach an existing photo from your gallery.</p>
         <% } else if (q.type === 'video') { %>
-          <label class="flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 cursor-pointer transition">
-            🎥 <span>Tap to record / choose a short video</span>
-            <input type="file" name="video_q_<%= q.id %>" accept="video/*" capture="environment" class="hidden" onchange="this.previousElementSibling.textContent = this.files[0]?.name || 'Tap to record / choose a short video'" />
-          </label>
-          <p class="text-xs text-slate-400 mt-1">Used for brand detection on the packaging/product shown — see Admin → Media Review.</p>
+          <button type="button" class="camera-capture-trigger w-full flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 transition" data-kind="video" data-target="video_q_<%= q.id %>" data-label="video_q_<%= q.id %>_label">
+            🎥 <span id="video_q_<%= q.id %>_label">Tap to open camera</span>
+          </button>
+          <input type="file" id="video_q_<%= q.id %>" name="video_q_<%= q.id %>" accept="video/*" class="hidden" />
+          <p class="text-xs text-slate-400 mt-1">Opens your camera to record live — used for brand detection on the packaging/product shown, see Admin → Media Review.</p>
         <% } %>
       </div>
     <% }) %>
@@ -122,6 +123,7 @@
   <button type="submit" form="diaryForm" name="_action" value="submit" class="flex-1 bg-brand text-white rounded-lg py-3 text-sm font-semibold">Submit</button>
 </div>
 
+<script src="/public/js/camera-capture.js"></script>
 <script>
   const RULES = <%- JSON.stringify(rules) %>;
 

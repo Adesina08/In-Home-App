@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./views/**/*.ejs"],
+  content: ["./views/**/*.ejs", "./public/js/**/*.js"],
   safelist: [
     { pattern: /^(bg|text|border|from|to|ring)-(brand|slate|emerald|amber|red|violet|sky)(-\d+)?(\/\d+)?$/ },
   ],
