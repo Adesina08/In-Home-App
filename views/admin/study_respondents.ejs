@@ -15,7 +15,9 @@
         <td class="py-2.5 uppercase text-xs text-slate-500"><%= r.recruitment_mode %></td>
         <td class="py-2.5 text-xs text-slate-500"><%= r.preferred_channel %></td>
         <td class="py-2.5 text-xs text-slate-600"><%= r.consent_status %></td>
-        <td class="py-2.5 text-xs capitalize text-slate-600"><%= r.activation_status %></td>
+        <td class="py-2.5">
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium capitalize <%= r.activation_status === 'disqualified' ? 'badge-red' : ['active','activated','completed'].includes(r.activation_status) ? 'badge-green' : 'bg-slate-100 text-slate-600' %>" <%= r.activation_status === 'disqualified' && r.disqualify_reason ? `title="${r.disqualify_reason.replace(/"/g,'&quot;')}"` : '' %>><%= r.activation_status %></span>
+        </td>
         <td class="py-2.5"><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= r.risk==='red'?'badge-red':r.risk==='amber'?'badge-amber':'badge-green' %>"><%= r.risk %></span></td>
         <td class="py-2.5">
           <% if (r.hasLock) { %>

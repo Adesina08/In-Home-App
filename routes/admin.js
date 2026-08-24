@@ -42,6 +42,7 @@ router.get("/", (req, res) => {
   const expected = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND is_practice = 0").get(study.id).c;
   const completed = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND status='submitted' AND is_practice = 0").get(study.id).c;
   const missed = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND status='draft' AND is_practice = 0").get(study.id).c;
+  const screenedOut = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND status='screened_out' AND is_practice = 0").get(study.id).c;
 
   const openFlags = db
     .prepare(
@@ -73,6 +74,7 @@ router.get("/", (req, res) => {
     expected,
     completed,
     missed,
+    screenedOut,
     openFlags,
     interviewers,
     riskCounts,
@@ -424,8 +426,9 @@ router.get("/studies/:id/skip-logic", (req, res) => {
 });
 
 router.post("/studies/:id/skip-logic", (req, res) => {
-  const { target_type, target_question_id, target_section, condition_question_id, operator, value, action } = req.body;
-  const isSection = target_type === "section";
+  const { target_type, target_question_id, target_section, condition_question_id, operator, value, action, terminate_scope } = req.body;
+  const isTerminate = action === "terminate";
+  const isSection = !isTerminate && target_type === "section";
   // "is one of" / "is none of" / "includes" accept a comma-separated value list
   // in the form -- normalize to the same "|" join the auto-created (template
   // import) rules and the respondent form's matching logic both use.
@@ -434,17 +437,21 @@ router.post("/studies/:id/skip-logic", (req, res) => {
     : value;
   const info = db
     .prepare(
-      `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action, terminate_scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       req.params.id,
-      isSection ? null : target_question_id || null,
-      isSection ? target_section || null : null,
+      // A terminate rule has no target question/section -- it ends the entry
+      // (or the respondent's whole participation) rather than showing/hiding
+      // something else, so both stay null regardless of what target_type was posted.
+      isTerminate ? null : (isSection ? null : target_question_id || null),
+      isTerminate ? null : (isSection ? target_section || null : null),
       condition_question_id,
       operator,
       storedValue,
-      action
+      action,
+      isTerminate && terminate_scope === "study" ? "study" : (isTerminate ? "entry" : null)
     );
   logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
   if (req.xhr) {
@@ -690,7 +697,7 @@ router.get("/export/diary.csv", (req, res) => {
   const rows = db
     .prepare(
       `SELECT dr.id, dr.respondent_id, r.respondent_code, dr.period_label, dr.occurrence_time, dr.entry_time,
-              dr.submit_time, dr.channel, dr.status, dr.is_practice
+              dr.submit_time, dr.channel, dr.status, dr.terminate_note, dr.is_practice
        FROM diary_records dr JOIN respondents r ON r.id = dr.respondent_id WHERE dr.study_id = ?`
     )
     .all(study.id);

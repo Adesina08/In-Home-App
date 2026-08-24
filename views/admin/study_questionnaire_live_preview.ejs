@@ -26,6 +26,10 @@
         <% if (!questions.length) { %>
           <div class="text-sm text-slate-400 text-center py-10">No active questions yet — build the questionnaire first.</div>
         <% } %>
+        <div id="terminatedNotice" class="hidden flex items-start gap-2 bg-white border border-slate-200 rounded-xl p-3 mb-4">
+          <%- icon('stop', 'w-4 h-4 mt-0.5 text-slate-500 shrink-0') %>
+          <div class="text-xs text-slate-600">A "Terminate survey" rule matched — a real respondent would see an end-of-entry message here instead of the questions below.</div>
+        </div>
         <form id="previewForm" class="space-y-5" onsubmit="return false;">
           <% let lastSection = undefined; %>
           <% questions.forEach(q => { %>
@@ -126,9 +130,14 @@
     document.querySelectorAll('.section-heading').forEach(h => {
       h.style.display = defaultHiddenSections.has(h.dataset.section) ? 'none' : '';
     });
+    let terminated = false;
     RULES.forEach(rule => {
       const val = getConditionValue(rule.condition_question_id);
       const matches = matchesCondition(val, rule);
+      if (rule.action === 'terminate') {
+        if (matches) terminated = true;
+        return;
+      }
       if (rule.target_section) {
         setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);
         return;
@@ -138,6 +147,8 @@
       if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';
       if (rule.action === 'hide') wrap.style.display = matches ? 'none' : '';
     });
+    document.getElementById('terminatedNotice').classList.toggle('hidden', !terminated);
+    document.getElementById('previewForm').style.display = terminated ? 'none' : '';
   }
 
   document.addEventListener('input', evaluateSkipLogic);

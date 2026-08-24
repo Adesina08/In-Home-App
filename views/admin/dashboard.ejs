@@ -28,7 +28,7 @@
   </div>
 </div>
 
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
   <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card hover:shadow-card-hover transition">
     <div class="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide font-semibold">
       <span class="w-7 h-7 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><%- icon('users', 'w-4 h-4') %></span>
@@ -57,12 +57,19 @@
     </div>
     <div class="text-3xl font-bold text-amber-600 mt-3"><%= missed %></div>
   </div>
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card hover:shadow-card-hover transition">
+    <div class="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide font-semibold">
+      <span class="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center"><%- icon('stop', 'w-4 h-4') %></span>
+      Screened Out
+    </div>
+    <div class="text-3xl font-bold text-rose-600 mt-3"><%= screenedOut %></div>
+  </div>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
   <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
     <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-brand-500') %> Recruitment Funnel</div>
-    <% const stages = ['invited','screened','registered','activated','active','completed']; %>
+    <% const stages = ['invited','screened','registered','activated','active','completed','disqualified']; %>
     <% stages.forEach(s => { %>
       <div class="flex items-center justify-between text-sm py-1.5 border-b border-slate-100 last:border-0">
         <span class="capitalize text-slate-600"><%= s %></span>

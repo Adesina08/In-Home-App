@@ -10,6 +10,7 @@ const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTran
 const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
 const { persistUpload } = require("../lib/mediaStorage");
 const { loadQuestionnaire } = require("../lib/questionnaire");
+const { findTerminateMatch } = require("../lib/skipLogic");
 const webauthn = require("../lib/webauthn");
 const push = require("../lib/push");
 
@@ -167,6 +168,14 @@ router.use("/:token", (req, res, next) => {
   if (req.path === "/manifest.json" || req.path === "/help") return next(); // not sensitive
   const respondent = getRespondentByToken(req.params.token);
   if (!respondent) return next(); // let the real route handler 404 normally
+  // A study-scoped "Terminate survey" skip rule (see lib/skipLogic.js) sets this
+  // when it fires -- the respondent's participation is over, so every route
+  // below (home, new diary entry, consent, push subscribe...) shows the same
+  // end screen instead of whatever was requested. Checked ahead of the
+  // biometric lock gate below since there's nothing left to unlock into.
+  if (respondent.activation_status === "disqualified") {
+    return res.render("respondent/disqualified", { respondent });
+  }
   if (respondent.biometric_exempt) return next();
   if (req.session.bioVerified && req.session.bioVerified[req.params.token]) return next();
   const next_ = encodeURIComponent(req.originalUrl);
@@ -181,6 +190,12 @@ router.get("/:token", (req, res) => {
   const records = db.prepare("SELECT * FROM diary_records WHERE respondent_id = ? ORDER BY datetime(entry_time) DESC").all(respondent.id);
   res.render("respondent/home", {
     respondent, study, consent, records,
+    // Pre-existing gap: the post-submit redirect (see POST /:token/diary below)
+    // has always appended ?saved=submitted|draft|screened_out, but this render
+    // never forwarded it to the view, so home.ejs's confirmation banner never
+    // actually appeared for anyone. Fixed here since the new "screened out"
+    // banner depends on it too.
+    saved: req.query.saved,
     pushEnabled: push.isEnabled(),
     vapidPublicKey: push.getPublicKey(),
   });
@@ -308,19 +323,49 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   const occurrenceTime = req.body.occurrence_time ? req.body.occurrence_time.replace("T", " ") : new Date().toISOString().slice(0, 19).replace("T", " ");
   const periodLabel = req.body.period_label || occurrenceTime.slice(0, 10);
 
+  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1").all(study.id);
+
+  // "Terminate survey" skip rules (see lib/skipLogic.js) are re-evaluated here
+  // server-side, against the answers actually submitted, rather than trusted
+  // from the diary form's client-side JS -- that JS only exists to hide the
+  // rest of the form and swap in a "you're done" message the moment a
+  // respondent picks a disqualifying answer; it can't be relied on for
+  // anything that changes stored data, since a respondent's browser could
+  // otherwise be made to skip or fake that check. Only checked on a real
+  // Submit (not a draft save) -- a rule shouldn't screen someone out just
+  // because they typed a disqualifying answer and then saved a draft.
+  let terminateMatch = null;
+  if (isSubmit) {
+    const rules = db.prepare("SELECT sr.*, cq.text as condition_text FROM skip_rules sr JOIN questions cq ON cq.id = sr.condition_question_id WHERE sr.study_id = ?").all(study.id);
+    const answers = {};
+    questions.forEach((q) => {
+      const field = `q_${q.id}`;
+      if (q.type === "multi") {
+        const vals = req.body[field];
+        if (vals) answers[q.id] = (Array.isArray(vals) ? vals : [vals]).join("|");
+      } else if (req.body[field] !== undefined && req.body[field] !== "") {
+        answers[q.id] = req.body[field];
+      }
+    });
+    terminateMatch = findTerminateMatch(rules, answers);
+  }
+  const isTerminated = !!terminateMatch;
+  const terminateNote = isTerminated
+    ? `Terminated: "${terminateMatch.condition_text}" ${{ equals: "=", not_equals: "≠", in: "is one of", not_in: "is none of", includes: "includes" }[terminateMatch.operator] || terminateMatch.operator} "${terminateMatch.value}"`
+    : null;
+
   const info = db
     .prepare(
-      `INSERT INTO diary_records (respondent_id, study_id, period_label, occurrence_time, submit_time, channel, status, is_practice, entry_mode)
-       VALUES (?, ?, ?, ?, ?, 'app', ?, ?, ?)`
+      `INSERT INTO diary_records (respondent_id, study_id, period_label, occurrence_time, submit_time, channel, status, is_practice, entry_mode, terminate_note)
+       VALUES (?, ?, ?, ?, ?, 'app', ?, ?, ?, ?)`
     )
     .run(
       respondent.id, study.id, periodLabel, occurrenceTime,
       isSubmit ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
-      isSubmit ? "submitted" : "draft", isPractice, entryMode
+      isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"), isPractice, entryMode, terminateNote
     );
   const recordId = info.lastInsertRowid;
 
-  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1").all(study.id);
   const insertResponse = db.prepare("INSERT INTO responses (record_id, question_id, value, study_version) VALUES (?, ?, ?, ?)");
   for (const q of questions) {
     const field = `q_${q.id}`;
@@ -387,12 +432,28 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
 
   if (isSubmit && !isPractice) {
     db.prepare("UPDATE respondents SET activation_status='active' WHERE id = ? AND activation_status != 'active'").run(respondent.id);
-    runQcForRecord(recordId);
-    checkCrossChannelDuplicate(respondent.id, periodLabel);
+    // A screened-out entry is a deliberately incomplete/disqualified response,
+    // not a real diary submission -- it shouldn't trip QC flags for missing
+    // fields/evidence, or count toward the cross-channel-duplicate check.
+    if (!isTerminated) {
+      runQcForRecord(recordId);
+      checkCrossChannelDuplicate(respondent.id, periodLabel);
+    }
   }
-  logAudit(respondent.respondent_code, isSubmit ? "diary_submit" : "diary_draft", "diary_records", recordId, { practice: !!isPractice });
 
-  res.redirect(`/r/${req.params.token}?saved=${isSubmit ? "submitted" : "draft"}`);
+  // A study-scoped terminate rule ends the respondent's participation
+  // entirely (see the "Scope" choice on the Skip Logic rule) — every route
+  // under /r/:token now shows the end screen instead (see the router.use
+  // gate above) until/unless a staff member changes their status by hand.
+  if (isTerminated && terminateMatch.terminate_scope === "study" && !isPractice) {
+    db.prepare(
+      "UPDATE respondents SET activation_status='disqualified', disqualified_at=datetime('now'), disqualify_reason=? WHERE id = ?"
+    ).run(terminateNote, respondent.id);
+  }
+
+  logAudit(respondent.respondent_code, isTerminated ? "diary_terminated" : (isSubmit ? "diary_submit" : "diary_draft"), "diary_records", recordId, { practice: !!isPractice, terminateScope: isTerminated ? terminateMatch.terminate_scope : undefined });
+
+  res.redirect(`/r/${req.params.token}?saved=${isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft")}`);
 });
 
 module.exports = router;

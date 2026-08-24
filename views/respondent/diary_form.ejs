@@ -35,6 +35,15 @@
       <input type="hidden" name="_pending_media_mimetype" value="<%= pendingMedia.mimetype %>" />
     <% } %>
 
+    <div id="terminatedNotice" class="hidden flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
+      <span class="w-9 h-9 rounded-xl bg-slate-200 text-slate-500 flex items-center justify-center shrink-0"><%- icon('stop', 'w-4 h-4') %></span>
+      <div>
+        <div class="text-sm font-semibold text-slate-700">That's everything we need for this entry</div>
+        <div class="text-xs text-slate-500 mt-0.5">Based on your answer above, the rest of this diary entry doesn't apply. Tap "Save &amp; Finish" below — no need to answer anything else.</div>
+      </div>
+    </div>
+
+    <div id="diaryQuestionsArea" class="space-y-6">
     <div>
       <label class="block text-sm font-medium text-slate-600 mb-1.5">When did this occasion happen?</label>
       <input type="datetime-local" name="occurrence_time" required class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
@@ -108,18 +117,25 @@
       </div>
       <script src="/public/js/voice-note-recorder.js"></script>
     <% } %>
+    </div><!-- /#diaryQuestionsArea -->
 
-    <div class="hidden sm:flex gap-3 pt-2">
+    <div id="diaryFooterButtons" class="hidden sm:flex gap-3 pt-2">
       <button type="submit" name="_action" value="draft" class="border border-slate-300 rounded-lg px-5 py-2.5 text-sm hover:bg-slate-100">Save Draft</button>
       <button type="submit" name="_action" value="submit" class="bg-brand text-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-brand-light">Submit Diary Entry</button>
+    </div>
+    <div id="diaryTerminatedFooter" class="hidden sm:flex gap-3 pt-2" style="display:none">
+      <button type="submit" name="_action" value="submit" class="bg-brand text-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-brand-light">Save &amp; Finish</button>
     </div>
   </form>
 </div>
 
 <!-- Mobile sticky action bar -->
-<div class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 flex gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+<div id="mobileFooterButtons" class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 flex gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
   <button type="submit" form="diaryForm" name="_action" value="draft" class="flex-1 border border-slate-300 rounded-lg py-3 text-sm font-medium">Save Draft</button>
   <button type="submit" form="diaryForm" name="_action" value="submit" class="flex-1 bg-brand text-white rounded-lg py-3 text-sm font-semibold">Submit</button>
+</div>
+<div id="mobileTerminatedFooter" class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" style="display:none">
+  <button type="submit" form="diaryForm" name="_action" value="submit" class="w-full bg-brand text-white rounded-lg py-3 text-sm font-semibold">Save &amp; Finish</button>
 </div>
 
 <script src="/public/js/camera-capture.js"></script>
@@ -165,6 +181,44 @@
     }
   }
 
+  // "Terminate survey" rules are given a UI treatment here for instant
+  // feedback as the respondent answers -- hide the rest of the form and swap
+  // in a single "Save & Finish" button. The real decision (what actually
+  // gets stored) is re-checked server-side in routes/respondent.js against
+  // the submitted answers, since this client-side script can't be trusted on
+  // its own to decide something that changes stored data.
+  function applyTermination(matched) {
+    const notice = document.getElementById('terminatedNotice');
+    const area = document.getElementById('diaryQuestionsArea');
+    const footer = document.getElementById('diaryFooterButtons');
+    const termFooter = document.getElementById('diaryTerminatedFooter');
+    const mobileFooter = document.getElementById('mobileFooterButtons');
+    const mobileTermFooter = document.getElementById('mobileTerminatedFooter');
+    notice.classList.toggle('hidden', !matched);
+    area.style.display = matched ? 'none' : '';
+    // These four all pair a base "hidden at this breakpoint" utility class
+    // with a "flex/shown at that breakpoint" one (e.g. "hidden sm:flex") --
+    // toggling the plain "hidden" class can't reliably win against that
+    // responsive class at the breakpoint where both apply, since Tailwind's
+    // generated stylesheet may order them either way. An inline style always
+    // wins regardless of that ordering: set to 'none' to force-hide at every
+    // breakpoint, or cleared (‘’) to fall back to the element's own
+    // responsive show/hide classes.
+    footer.style.display = matched ? 'none' : '';
+    termFooter.style.display = matched ? '' : 'none';
+    mobileFooter.style.display = matched ? 'none' : '';
+    mobileTermFooter.style.display = matched ? '' : 'none';
+    // A hidden-but-required field silently blocks native form submission (the
+    // browser can't focus an invisible control to show its "please fill this
+    // in" prompt) -- clear `required` while hidden and restore it if the
+    // respondent changes their answer back before submitting.
+    if (matched) {
+      area.querySelectorAll('[required]').forEach(el => { el.dataset.wasRequired = '1'; el.required = false; });
+    } else {
+      area.querySelectorAll('[data-was-required]').forEach(el => { el.required = true; delete el.dataset.wasRequired; });
+    }
+  }
+
   function evaluateSkipLogic() {
     // default: visible, unless a 'show' rule targets it (then hidden until matched)
     const defaultHiddenQ = new Set(RULES.filter(r => r.action === 'show' && r.target_question_id).map(r => r.target_question_id));
@@ -177,9 +231,14 @@
     document.querySelectorAll('.section-heading').forEach(h => {
       h.style.display = defaultHiddenSections.has(h.dataset.section) ? 'none' : '';
     });
+    let terminated = false;
     RULES.forEach(rule => {
       const val = getConditionValue(rule.condition_question_id);
       const matches = matchesCondition(val, rule);
+      if (rule.action === 'terminate') {
+        if (matches) terminated = true;
+        return;
+      }
       if (rule.target_section) {
         // A section rule wins over any earlier per-question display for questions in that section.
         setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);
@@ -190,6 +249,7 @@
       if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';
       if (rule.action === 'hide') wrap.style.display = matches ? 'none' : '';
     });
+    applyTermination(terminated);
   }
 
   document.addEventListener('input', evaluateSkipLogic);

@@ -131,11 +131,20 @@
         <% rules.forEach(r => { %>
           <tr class="border-t border-[var(--qb-line)] hover:bg-white/60">
             <td class="px-5 py-3.5 text-[var(--qb-ink)]">
-              <span class="font-semibold <%= r.action === 'show' ? 'text-[var(--qb-branch)]' : 'text-[var(--qb-danger)]' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
-              <% if (r.target_section) { %>
-                the whole <strong>"<%= r.target_section %>"</strong> section
+              <% if (r.action === 'terminate') { %>
+                <span class="font-semibold text-[var(--qb-danger)] inline-flex items-center gap-1"><%- icon('stop', 'w-3.5 h-3.5') %> Terminate</span>
+                <% if (r.terminate_scope === 'study') { %>
+                  — ends the respondent's <strong>whole study participation</strong>
+                <% } else { %>
+                  — ends <strong>this diary entry</strong> only
+                <% } %>
               <% } else { %>
-                "<strong><%= r.target_text %></strong>"
+                <span class="font-semibold <%= r.action === 'show' ? 'text-[var(--qb-branch)]' : 'text-[var(--qb-danger)]' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
+                <% if (r.target_section) { %>
+                  the whole <strong>"<%= r.target_section %>"</strong> section
+                <% } else { %>
+                  "<strong><%= r.target_text %></strong>"
+                <% } %>
               <% } %>
               <%
                 const opText = { equals: '=', not_equals: '≠', in: 'is one of', not_in: 'is none of', includes: 'includes' }[r.operator] || r.operator;
@@ -161,12 +170,13 @@
       <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic" class="space-y-3.5 text-sm">
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Action</label>
-          <select name="action" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+          <select name="action" id="ruleActionSelect" onchange="toggleAction()" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
             <option value="show">Show target question</option>
             <option value="hide">Hide target question</option>
+            <option value="terminate">Terminate survey</option>
           </select>
         </div>
-        <div>
+        <div id="targetBlock">
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Target</label>
           <div class="flex gap-4 mb-2 text-xs text-slate-600">
             <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="question" checked onchange="toggleTargetType()" /> One question</label>
@@ -179,6 +189,14 @@
             <% sections.forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
           </select>
           <% if (!sections.length) { %><p class="text-xs text-slate-500 mt-1">No sections defined yet — add a "Section" to questions above to skip a whole section at once.</p><% } %>
+        </div>
+        <div id="terminateScopeBlock" class="hidden">
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Scope</label>
+          <select name="terminate_scope" id="terminateScopeSelect" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <option value="entry">This diary entry only</option>
+            <option value="study">End the respondent's whole study participation</option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1">"This diary entry only" ends just the occasion being logged right now — the respondent can still submit future entries normally. "Whole study participation" disqualifies them entirely, like an interviewer marking someone ineligible at registration.</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">When condition question</label>
@@ -258,6 +276,22 @@
     document.getElementById('targetQuestionSelect').required = !isSection;
     document.getElementById('targetSectionSelect').classList.toggle('hidden', !isSection);
     document.getElementById('targetSectionSelect').required = isSection;
+  }
+
+  // A "Terminate survey" rule has no target question/section to show or hide —
+  // it ends the entry (or the respondent's participation) outright — so swap
+  // the Target picker for the Scope picker instead, and un-require whichever
+  // target select is hidden so it doesn't block submitting the form.
+  function toggleAction() {
+    const isTerminate = document.getElementById('ruleActionSelect').value === 'terminate';
+    document.getElementById('targetBlock').classList.toggle('hidden', isTerminate);
+    document.getElementById('terminateScopeBlock').classList.toggle('hidden', !isTerminate);
+    if (isTerminate) {
+      document.getElementById('targetQuestionSelect').required = false;
+      document.getElementById('targetSectionSelect').required = false;
+    } else {
+      toggleTargetType();
+    }
   }
 </script>
 
