@@ -48,6 +48,28 @@
     <% } %>
   </div>
 
+  <div data-install-card data-install-variant="prompt" class="hidden bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-6 flex items-start gap-3">
+    <span class="w-9 h-9 rounded-xl bg-white text-brand-600 flex items-center justify-center shrink-0 shadow-sm"><%- icon('download', 'w-4 h-4') %></span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-semibold text-slate-800">Add this to your home screen</div>
+      <div class="text-xs text-slate-500 mt-0.5 mb-3">One tap and your diary opens straight from your home screen next time, like any other app.</div>
+      <div class="flex gap-2">
+        <button type="button" data-install-trigger class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition disabled:opacity-50"><%- icon('download', 'w-3.5 h-3.5') %> Install App</button>
+        <button type="button" data-install-dismiss class="inline-flex items-center gap-1.5 text-slate-500 rounded-lg px-3.5 py-2 text-xs font-medium hover:bg-white/60 transition">Not now</button>
+      </div>
+    </div>
+  </div>
+
+  <div data-install-card data-install-variant="ios" class="hidden bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-6 flex items-start gap-3">
+    <span class="w-9 h-9 rounded-xl bg-white text-brand-600 flex items-center justify-center shrink-0 shadow-sm"><%- icon('download', 'w-4 h-4') %></span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-semibold text-slate-800">Add this to your home screen</div>
+      <div class="text-xs text-slate-500 mt-0.5 mb-3">iPhone doesn't allow a one-tap install, but it only takes a few seconds: tap the <strong>Share</strong> icon below, then <strong>Add to Home Screen</strong>.</div>
+      <button type="button" data-install-dismiss class="inline-flex items-center gap-1.5 text-slate-500 rounded-lg px-3.5 py-2 text-xs font-medium hover:bg-white/60 transition -ml-3.5">Got it</button>
+    </div>
+  </div>
+  <script src="/public/js/install-prompt.js"></script>
+
   <% if (pushEnabled && respondent.consent_status === 'given') { %>
   <div id="pushOptIn" data-token="<%= respondent.unique_token %>" data-vapid-key="<%= vapidPublicKey %>"
        class="hidden bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-6 flex items-start gap-3">

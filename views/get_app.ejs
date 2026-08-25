@@ -9,6 +9,16 @@
     <p class="text-sm text-slate-500 mt-1.5">INICIO runs as a web app you install straight from your browser — no app store needed.</p>
   </div>
 
+  <div data-install-card data-install-variant="prompt" class="hidden bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-5 flex items-start gap-3">
+    <span class="w-9 h-9 rounded-xl bg-white text-brand-600 flex items-center justify-center shrink-0 shadow-sm"><%- icon('download', 'w-4 h-4') %></span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-semibold text-slate-800">Your browser can install this in one tap</div>
+      <div class="text-xs text-slate-500 mt-0.5 mb-3">No menus to dig through — this puts the app icon straight on your home screen.</div>
+      <button type="button" data-install-trigger class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition disabled:opacity-50"><%- icon('download', 'w-3.5 h-3.5') %> Install App</button>
+    </div>
+  </div>
+  <script src="/public/js/install-prompt.js"></script>
+
   <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 mb-5 text-center">
     <% if (qr) { %>
       <img src="<%= qr %>" alt="QR code to open the INICIO app" class="mx-auto rounded-xl border border-slate-100" width="220" height="220" />
