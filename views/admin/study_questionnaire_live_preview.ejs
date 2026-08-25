@@ -42,7 +42,7 @@
             <% } %>
             <div class="q-wrap border-t border-slate-200 pt-4 first:border-t-0 first:pt-0" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>" data-section="<%= q.section || '' %>">
               <label class="block text-sm font-medium text-slate-700 mb-2">
-                <%= q.text || '(untitled question)' %> <% if (q.required) { %><span class="text-red-500">*</span><% } %>
+                <%- q.text ? renderPipeHtml(q.text, { respondent: previewRespondent, study }) : '(untitled question)' %> <% if (q.required) { %><span class="text-red-500">*</span><% } %>
               </label>
 
               <% if (q.type === 'single') { %>
@@ -84,6 +84,11 @@
   </div>
 </div>
 
+<!-- code -> id map for {q:CODE} pipe tokens (see public/js/piping.js) -->
+<script type="application/json" id="pipe-code-map"><%- JSON.stringify(
+  questions.reduce((acc, q) => { if (q.code) acc[q.code] = q.id; return acc; }, {})
+).replace(/</g, "\\u003c") %></script>
+<script src="/public/js/piping.js"></script>
 <script>
   const RULES = <%- JSON.stringify(rules) %>;
 

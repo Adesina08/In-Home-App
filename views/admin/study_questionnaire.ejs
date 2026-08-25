@@ -57,6 +57,12 @@
 
 <div class="qb-canvas">
 
+<% if (typeof published !== 'undefined' && published && published !== 'none') { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %>
+    Published version <%= published %> — diary entries saved from now on are stamped v<%= published %>. Earlier entries keep the version they were answered against.
+  </div>
+<% } %>
 <% if (typeof imported !== 'undefined' && imported) { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
     <%- icon('check-circle', 'w-4 h-4') %>
@@ -89,7 +95,23 @@
       <div class="qb-mono text-[10px] uppercase tracking-[0.2em] text-[var(--qb-branch)] font-semibold mb-1">Study Instrument &middot; Form <%= study.id %></div>
       <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Questionnaire</h2>
     </div>
-    <div class="flex gap-2">
+    <div class="flex gap-2 items-center">
+      <!-- Published version state. Every saved response is stamped with the
+           study's current version, so "unpublished changes" is a real data
+           condition (entries being collected against wording that hasn't been
+           versioned yet), not just a UI nicety. -->
+      <span class="qb-mono text-[10px] uppercase tracking-wide px-2 py-1 rounded border <%= study.questionnaire_dirty ? 'border-[var(--qb-signal)] text-[var(--qb-ink)] bg-[#FDF4E5]' : 'border-[var(--qb-line)] text-slate-500 bg-white' %>"
+            title="<%= study.version_published_at ? 'Last published ' + study.version_published_at : 'Never published — still on the original version' %>">
+        v<%= study.version || 1 %><%= study.questionnaire_dirty ? ' · unpublished changes' : '' %>
+      </span>
+      <% if (study.questionnaire_dirty) { %>
+        <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish">
+          <button class="inline-flex items-center gap-1.5 bg-[var(--qb-branch)] text-white rounded px-3.5 py-2 text-xs font-semibold hover:opacity-90 transition"
+                  title="Stamp responses collected from now on as v<%= (study.version || 1) + 1 %>">
+            <%- icon('check', 'w-3.5 h-3.5') %> Publish v<%= (study.version || 1) + 1 %>
+          </button>
+        </form>
+      <% } %>
       <a href="/admin/studies/<%= study.id %>/questionnaire/live-preview" target="_blank" class="inline-flex items-center gap-1.5 bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] rounded px-3.5 py-2 text-xs font-semibold hover:border-[var(--qb-ink)] transition">
         <%- icon('eye', 'w-3.5 h-3.5') %> Preview
       </a>

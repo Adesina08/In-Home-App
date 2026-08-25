@@ -17,6 +17,7 @@ const fs = require("fs");
 const db = require("./lib/db");
 const { requireLogin } = require("./lib/auth");
 const { icon } = require("./lib/icons");
+const { renderPipeHtml } = require("./lib/piping");
 const { getMediaUrl } = require("./lib/mediaStorage");
 
 const app = express();
@@ -73,6 +74,9 @@ if (!fs.existsSync(uploadsRoot)) fs.mkdirSync(uploadsRoot, { recursive: true });
 const upload = multer({ dest: uploadsRoot, limits: { fileSize: 8 * 1024 * 1024 } });
 app.locals.upload = upload;
 app.locals.icon = icon;
+// Question-text piping (see lib/piping.js) -- exposed as a view helper so the
+// respondent diary form and the admin live preview render tokens identically.
+app.locals.renderPipeHtml = renderPipeHtml;
 // Resolves a stored media file_path ("/uploads/..." or "azureblob://...") to
 // a URL a browser can actually load right now — a short-lived signed URL in
 // Blob-storage mode. Wrapped so one misconfigured/expired storage credential

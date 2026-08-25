@@ -1,0 +1,23 @@
+<%- include('../partials/header', { title: 'Almost Ready — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 text-center">
+    <div class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4">
+      <%- icon('clipboard', 'w-8 h-8') %>
+    </div>
+    <h1 class="text-lg font-bold text-slate-900 mb-1.5">Your diary isn't open yet</h1>
+    <p class="text-sm text-slate-500 mb-1 leading-relaxed">
+      Thanks, <strong><%= respondent.name %></strong> — you're registered, but the study team needs to confirm a couple of details before your diary opens.
+    </p>
+    <p class="text-sm text-slate-500 mb-6 leading-relaxed">
+      Nothing is needed from you right now. Keep this link — once you're confirmed, opening it again will take you straight into your diary.
+      Your respondent code is <span class="font-mono text-slate-600"><%= respondent.respondent_code %></span>.
+    </p>
+
+    <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-brand-700 transition">
+      <%- icon('help', 'w-3.5 h-3.5') %> Need help?
+    </a>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

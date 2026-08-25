@@ -176,6 +176,13 @@ router.use("/:token", (req, res, next) => {
   if (respondent.activation_status === "disqualified") {
     return res.render("respondent/disqualified", { respondent });
   }
+  // Held by a recruitment QC check (duplicate contact / consent not recorded --
+  // see lib/qc.js applyRecruitmentHolds). They keep their link, but the diary
+  // stays shut until research releases the hold from Admin > Respondents, so a
+  // possible duplicate can't quietly start contributing data to the sample.
+  if (respondent.activation_status === "registered") {
+    return res.render("respondent/pending_activation", { respondent });
+  }
   if (respondent.biometric_exempt) return next();
   if (req.session.bioVerified && req.session.bioVerified[req.params.token]) return next();
   const next_ = encodeURIComponent(req.originalUrl);

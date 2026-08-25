@@ -5,6 +5,7 @@ const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { qrDataUrl } = require("../lib/qrcode");
 const { respondentDiaryUrl } = require("../lib/urls");
+const { applyRecruitmentHolds } = require("../lib/qc");
 
 const router = express.Router();
 router.use(requireRole("interviewer", "admin", "research"));
@@ -60,6 +61,24 @@ router.post("/register", async (req, res) => {
       consent_given ? "given" : "declined", token, req.session.user.id, practice ? 1 : 0
     );
   logAudit(req.session.user.email, "f2f_onboard", "respondents", info.lastInsertRowid, { name, code });
+
+  // Recruitment/identity QC (spec 4.1): a duplicate contact in this study, or
+  // a registration without consent, holds activation for research review
+  // instead of letting the respondent straight into the sample.
+  const holds = applyRecruitmentHolds(info.lastInsertRowid, {
+    studyId: study_id,
+    contact,
+    consentGiven: !!consent_given,
+  });
+  if (holds.length) {
+    return res.render("interviewer/held", {
+      code,
+      name,
+      holds,
+      respondentId: info.lastInsertRowid,
+    });
+  }
+
   const diaryUrl = respondentDiaryUrl(req, token);
   // QR generation is a pure image-render, not a network call -- if it ever
   // did throw, better to still show the activation screen (with a plain

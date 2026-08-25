@@ -29,6 +29,14 @@
           <% } %>
         </td>
         <td class="py-2.5 pr-5 flex items-center gap-3">
+          <% if (r.activation_status === 'registered') { %>
+            <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= r.id %>/activate"
+                  onsubmit="return confirm('Release the hold and activate <%= r.respondent_code %>? Do this only after checking the open recruitment flag on the QC Worklist.')">
+              <button class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline" title="Held by a recruitment QC check — review the flag, then activate">
+                <%- icon('check-circle', 'w-3.5 h-3.5') %> Activate
+              </button>
+            </form>
+          <% } %>
           <a class="text-brand-600 underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank">Open diary link</a>
           <button type="button" class="qr-open-btn inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition"
             data-url="<%= r.diaryUrl %>" data-png="/admin/studies/<%= study.id %>/respondents/<%= r.id %>/qr.png" data-name="<%= r.respondent_code %>">

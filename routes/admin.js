@@ -5,7 +5,7 @@ const path = require("path");
 const db = require("../lib/db");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
-const { classifyRisk } = require("../lib/qc");
+const { classifyRisk, unresolvedBlockingFlags } = require("../lib/qc");
 const { runReminderEngine } = require("../lib/reminders");
 const { parseUpload, parseConditionText } = require("../lib/questionnaireParser");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
@@ -13,9 +13,42 @@ const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTran
 const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl } = require("../lib/urls");
 const { loadQuestionnaire } = require("../lib/questionnaire");
+const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
 const router = express.Router();
 router.use(requireRole("admin", "research"));
+
+// Any successful write to the questionnaire (questions, sections, skip logic)
+// marks the study as having unpublished changes, so the Questionnaire tab can
+// show "vN + unpublished changes" and offer a Publish action. Done as one
+// middleware rather than a call inside each of the ~10 mutating handlers so a
+// route added later can't silently forget to flag it -- the failure mode there
+// is invisible (a stale version number), which is exactly the kind of thing
+// nobody notices until the data is being analysed.
+//
+// Staging an import or discarding a staged preview are excluded: neither
+// changes a single live question. Committing an import is NOT excluded --
+// that one does.
+const QUESTIONNAIRE_WRITE_RE = /^\/studies\/(\d+)\/(questions|questionnaire|sections|skip-logic)(\/|$)/;
+router.use((req, res, next) => {
+  if (req.method === "GET") return next();
+  const match = QUESTIONNAIRE_WRITE_RE.exec(req.path);
+  if (!match) return next();
+  // Publishing lives under the same path prefix but is the one write that
+  // CLEARS the dirty flag -- letting it match here would re-dirty the study
+  // the instant it was published, so the badge never cleared.
+  const isNotAnEdit =
+    /\/questionnaire\/publish$/.test(req.path) ||
+    /\/questionnaire\/upload$/.test(req.path) ||
+    /\/preview\/\d+\/discard$/.test(req.path);
+  if (isNotAnEdit) return next();
+  // Flag only once the response actually succeeded -- a handler that 4xx'd or
+  // threw changed nothing, and shouldn't leave the study looking edited.
+  res.on("finish", () => {
+    if (res.statusCode < 400) markQuestionnaireDirty(match[1]);
+  });
+  next();
+});
 
 const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
@@ -117,6 +150,25 @@ router.get("/studies/:id", (req, res) => {
 
 router.post("/studies/:id/settings", (req, res) => {
   const b = req.body;
+
+  // End validation (spec 4.1): a study can't be closed while critical/high QC
+  // exceptions are still unreviewed -- closing is what freezes the dataset for
+  // delivery, so anything still in dispute has to be dispositioned first.
+  // Every other settings change on this form saves normally; only the
+  // transition *into* 'closed' is gated.
+  const current = db.prepare("SELECT status FROM studies WHERE id = ?").get(req.params.id);
+  if (b.status === "closed" && current && current.status !== "closed") {
+    const blocking = unresolvedBlockingFlags({ studyId: req.params.id });
+    if (blocking.length) {
+      const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+      return res.status(400).render("admin/study_settings", {
+        study,
+        tab: "settings",
+        closeBlocked: blocking,
+      });
+    }
+  }
+
   db.prepare(
     `UPDATE studies SET name=?, market=?, category=?, status=?, diary_mode=?, recruitment_mode=?,
       back_entry_hours=?, recall_window_hours=?, mandatory_photo=?, duplicate_similarity_threshold=?,
@@ -159,7 +211,17 @@ router.get("/studies/:id/questionnaire", (req, res) => {
     imported: req.query.imported,
     rulesCreated: req.query.rulesCreated,
     rulesSkipped: req.query.rulesSkipped,
+    published: req.query.published,
   });
+});
+
+// Publish the next questionnaire version. Every response saved from here on
+// is stamped with the new number (see routes/respondent.js), so entries
+// answered against the old wording stay attributed to the old version.
+router.post("/studies/:id/questionnaire/publish", (req, res) => {
+  const version = publishVersion(req.params.id, req.session.user.email);
+  const suffix = version ? `published=${version}` : "published=none";
+  res.redirect(`/admin/studies/${req.params.id}/questionnaire?${suffix}`);
 });
 
 // Read-only, respondent-view preview of the questionnaire as it stands right
@@ -171,7 +233,13 @@ router.get("/studies/:id/questionnaire/live-preview", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
   const { questions, rules } = loadQuestionnaire(study.id);
-  res.render("admin/study_questionnaire_live_preview", { study, questions, rules, tab: "questionnaire" });
+  // Stand-in respondent so {respondent_name}-style pipe tokens render as a
+  // realistic example here instead of the bare "…" fallback -- an admin
+  // checking their wording needs to see the shape of the finished sentence.
+  const previewRespondent = { name: "Sample Respondent", respondent_code: "R00-0000" };
+  res.render("admin/study_questionnaire_live_preview", {
+    study, questions, rules, previewRespondent, tab: "questionnaire",
+  });
 });
 
 router.post("/studies/:id/questionnaire", (req, res) => {
@@ -595,6 +663,24 @@ router.get("/studies/:id/respondents", (req, res) => {
     hasLock: !!lockCountByRespondent[r.id],
   }));
   res.render("admin/study_respondents", { study, respondents: withRisk, tab: "respondents" });
+});
+
+// Release a recruitment hold (see lib/qc.js applyRecruitmentHolds): a
+// respondent registered with a duplicate contact or without recorded consent
+// stays 'registered' and can't log entries until research has looked at the
+// flag and activated them here. The flag itself is deliberately NOT
+// auto-resolved -- the QC design rule is that flags stay visible and are
+// dispositioned explicitly on the worklist, with the audit trail intact.
+router.post("/studies/:id/respondents/:respondentId/activate", (req, res) => {
+  const respondent = db
+    .prepare("SELECT * FROM respondents WHERE id = ? AND study_id = ?")
+    .get(req.params.respondentId, req.params.id);
+  if (!respondent) return res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
+  db.prepare("UPDATE respondents SET activation_status = 'activated' WHERE id = ?").run(respondent.id);
+  logAudit(req.session.user.email, "release_recruitment_hold", "respondents", respondent.id, {
+    respondent_code: respondent.respondent_code,
+  });
+  res.redirect(`/admin/studies/${req.params.id}/respondents?activated=${encodeURIComponent(respondent.respondent_code)}`);
 });
 
 // On-demand QR PNG for one respondent's diary link -- generated only when a
