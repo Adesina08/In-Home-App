@@ -75,6 +75,8 @@
                 <div class="flex items-center gap-2 justify-center text-sm text-slate-400 border-2 border-dashed border-slate-300 rounded-xl px-4 py-5 bg-white">📷 Photo upload</div>
               <% } else if (q.type === 'video') { %>
                 <div class="flex items-center gap-2 justify-center text-sm text-slate-400 border-2 border-dashed border-slate-300 rounded-xl px-4 py-5 bg-white">🎥 Video upload (brand detection)</div>
+              <% } else if (q.type === 'audio') { %>
+                <div class="flex items-center gap-2 justify-center text-sm text-slate-400 border-2 border-dashed border-slate-300 rounded-xl px-4 py-5 bg-white">🎤 Spoken answer (press &amp; hold to record)</div>
               <% } %>
             </div>
           <% }) %>

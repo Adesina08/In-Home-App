@@ -421,11 +421,16 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     // submission never fails outright over a storage hiccup.
     const storedPath = await persistUpload(f).catch(() => `/uploads/${f.filename}`);
 
-    if (f.fieldname === "audio_note") {
+    // Audio arrives either as the end-of-entry voice note (audio mode) or as the
+    // answer to an "audio" question (fieldname audio_q_<id>). Both are stored as
+    // audio media and transcribed; neither is a photo, so they must be caught
+    // before the mimetype fallback below, which treats anything non-video as a
+    // photo and would otherwise file a voice recording as an image.
+    if (f.fieldname === "audio_note" || f.fieldname.startsWith("audio_q_") || (f.mimetype || "").startsWith("audio/")) {
       const info2 = insertMedia.run(recordId, "audio", storedPath);
       const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: "audio", file_path: storedPath };
-      // Queue transcription for the respondent's optional voice note — runs inline
-      // against the mock/Azure provider, see lib/audioTranscription.js.
+      // Queue transcription — runs inline against the mock/Azure provider,
+      // see lib/audioTranscription.js.
       if (audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
       continue;
     }

@@ -104,6 +104,14 @@
           </button>
           <input type="file" id="video_q_<%= q.id %>" name="video_q_<%= q.id %>" accept="video/*" class="hidden" />
           <p class="text-xs text-slate-400 mt-1">Opens your camera to record live — used for brand detection on the packaging/product shown, see Admin → Media Review.</p>
+        <% } else if (q.type === 'audio') { %>
+          <%# Spoken answer to THIS question (spec 3.2 "Audio / voice"), reusing the
+              same press-and-hold recorder as the end-of-entry voice note. Distinct
+              from the voice-note entry mode, which attaches one summary to the
+              whole record rather than to a particular question. %>
+          <div class="voice-note-recorder" data-target="audio_q_<%= q.id %>"></div>
+          <input type="file" id="audio_q_<%= q.id %>" name="audio_q_<%= q.id %>" accept="audio/*" class="hidden" />
+          <p class="text-xs text-slate-400 mt-1">Press and hold the microphone to answer out loud, like a WhatsApp voice message.</p>
         <% } %>
       </div>
     <% }) %>
@@ -115,9 +123,15 @@
         <input type="file" id="audioNoteInput" name="audio_note" accept="audio/*" class="hidden" />
         <p class="text-xs text-slate-400 mt-1">Hold the mic button to record, like a WhatsApp voice note — slide left to cancel, slide up to lock hands-free. We'll keep it as a QC note alongside your answers above, see Admin → Media Review.</p>
       </div>
-      <script src="/public/js/voice-note-recorder.js"></script>
     <% } %>
     </div><!-- /#diaryQuestionsArea -->
+
+    <%# The recorder powers BOTH the end-of-entry voice note (audio mode) and any
+        per-question audio answers, so it has to load whenever either is present --
+        it used to be inside the audio-mode block only. %>
+    <% if ((typeof mode !== 'undefined' && mode === 'audio') || questions.some(function (q) { return q.type === 'audio'; })) { %>
+      <script src="/public/js/voice-note-recorder.js"></script>
+    <% } %>
 
     <div id="diaryFooterButtons" class="hidden sm:flex gap-3 pt-2">
       <button type="submit" name="_action" value="draft" class="border border-slate-300 rounded-lg px-5 py-2.5 text-sm hover:bg-slate-100">Save Draft</button>

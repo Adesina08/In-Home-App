@@ -115,6 +115,8 @@ function renderPreview() {
       html += '<div class="text-sm text-slate-400 border border-dashed border-slate-300 rounded px-3 py-2">📷 Photo upload</div>';
     } else if (type === 'video') {
       html += '<div class="text-sm text-slate-400 border border-dashed border-slate-300 rounded px-3 py-2">🎥 Video upload (brand detection queued)</div>';
+    } else if (type === 'audio') {
+      html += '<div class="text-sm text-slate-400 border border-dashed border-slate-300 rounded px-3 py-2">🎤 Spoken answer (transcription queued)</div>';
     }
     html += '</div>';
   });
