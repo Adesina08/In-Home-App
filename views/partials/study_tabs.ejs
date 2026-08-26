@@ -1,25 +1,30 @@
 <div class="mb-6">
-  <div class="flex items-center justify-between gap-3 mb-4">
+  <div class="flex items-center justify-between gap-3 mb-1">
     <div>
       <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Study Configuration</div>
       <h1 class="text-2xl font-bold text-slate-900"><%= study.name %></h1>
     </div>
     <span class="text-xs uppercase tracking-wide px-2.5 py-1 rounded-full font-semibold <%= study.status === 'live' ? 'badge-green' : 'bg-slate-200 text-slate-600' %>"><%= study.status %></span>
   </div>
+  <%
+    // The step counter belongs to the six setup screens only. A drill-down
+    // page (one respondent, one diary entry, a staged import) shares the tab
+    // strip but isn't a step in setting the study up, and labelling it "Step 5
+    // of 6" would say something untrue about where you are.
+    const showStepper = typeof stepper !== 'undefined' && stepper;
+    const here = studyTabNeighbours(tab);
+  %>
+  <% if (showStepper && here.index !== -1) { %>
+    <div class="text-xs text-slate-400 mb-4">Step <%= here.index + 1 %> of <%= here.total %> · <%= here.next ? `next: ${here.next.short}` : 'last step' %></div>
+  <% } else { %>
+    <div class="mb-4"></div>
+  <% } %>
   <div class="flex flex-wrap gap-1.5 pb-1">
-    <% const tabs = [
-      ['settings', 'Settings & Thresholds', 'cog'],
-      ['questionnaire', 'Questionnaire, Skip Logic & Brands', 'clipboard'],
-      ['consent', 'Consent Wording', 'shield'],
-      ['kpis', 'Client KPIs', 'trend'],
-      ['respondents', 'Respondents', 'users'],
-      ['media', 'Media Review', 'photo'],
-    ]; %>
-    <% tabs.forEach(([key, label, ic]) => { %>
-      <a href="/admin/studies/<%= study.id %><%= key === 'settings' ? '' : '/' + key %>"
-         class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition shrink-0 <%= tab === key ? 'bg-brand-700 text-white shadow-card' : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-300 hover:text-brand-700' %>">
-        <%- icon(ic, 'w-4 h-4') %>
-        <%= label %>
+    <% STUDY_TABS.forEach(t => { %>
+      <a href="<%= studyTabHref(study.id, t.key) %>"
+         class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition shrink-0 <%= tab === t.key ? 'bg-brand-700 text-white shadow-card' : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-300 hover:text-brand-700' %>">
+        <%- icon(t.icon, 'w-4 h-4') %>
+        <%= t.label %>
       </a>
     <% }) %>
   </div>

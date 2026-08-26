@@ -1,5 +1,5 @@
 <%- include('../partials/header', { title: study.name + ' — Respondents', user }) %>
-<%- include('../partials/study_tabs', { study, tab }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <% if (typeof activated !== 'undefined' && activated) { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
@@ -215,4 +215,7 @@
     }
   })();
 </script>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
 <%- include('../partials/footer') %>

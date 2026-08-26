@@ -1,5 +1,5 @@
 <%- include('../partials/header', { title: study.name + ' — Media Review', user }) %>
-<%- include('../partials/study_tabs', { study, tab }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <% const visionOn = process.env.BRAND_DETECTION_PROVIDER === 'azure_vision'; %>
 <% const speechOn = process.env.AUDIO_TRANSCRIPTION_PROVIDER === 'azure_speech'; %>
@@ -62,4 +62,7 @@
     </tbody>
   </table>
 </div>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
 <%- include('../partials/footer') %>

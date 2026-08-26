@@ -19,6 +19,7 @@ const { requireLogin } = require("./lib/auth");
 const { icon } = require("./lib/icons");
 const { renderPipeHtml } = require("./lib/piping");
 const { CATEGORIES, formatCategories } = require("./lib/categories");
+const { STUDY_TABS, studyTabHref, studyTabNeighbours } = require("./lib/studyTabs");
 const { getMediaUrl } = require("./lib/mediaStorage");
 
 const app = express();
@@ -82,6 +83,11 @@ app.locals.renderPipeHtml = renderPipeHtml;
 // one is displayed needs the readable form rather than the raw value.
 app.locals.CATEGORIES = CATEGORIES;
 app.locals.formatCategories = formatCategories;
+// The study config tabs, shared by the tab strip and the Back/Next buttons so
+// the two can never disagree about the order (see lib/studyTabs.js).
+app.locals.STUDY_TABS = STUDY_TABS;
+app.locals.studyTabHref = studyTabHref;
+app.locals.studyTabNeighbours = studyTabNeighbours;
 // Resolves a stored media file_path ("/uploads/..." or "azureblob://...") to
 // a URL a browser can actually load right now — a short-lived signed URL in
 // Blob-storage mode. Wrapped so one misconfigured/expired storage credential

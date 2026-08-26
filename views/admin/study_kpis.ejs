@@ -1,5 +1,5 @@
 <%- include('../partials/header', { title: study.name + ' — Client KPIs', user }) %>
-<%- include('../partials/study_tabs', { study, tab }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
   <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
@@ -34,4 +34,7 @@
     <p class="text-xs text-slate-400 mt-3 leading-relaxed">Target 5–10 launch KPIs per the Day-1 dependency checklist.</p>
   </div>
 </div>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
 <%- include('../partials/footer') %>

@@ -1,5 +1,5 @@
 <%- include('../partials/header', { title: study.name + ' — Questionnaire', user }) %>
-<%- include('../partials/study_tabs', { study, tab }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <!--
   This page's visual language is deliberately different from a generic
@@ -1015,4 +1015,7 @@
   renderAll();
 })();
 </script>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
 <%- include('../partials/footer') %>

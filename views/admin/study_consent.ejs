@@ -1,5 +1,5 @@
 <%- include('../partials/header', { title: study.name + ' — Consent Wording', user }) %>
-<%- include('../partials/study_tabs', { study, tab }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
   <div class="lg:col-span-2 space-y-4">
@@ -30,4 +30,7 @@
     <p class="text-xs text-slate-400 mt-3 leading-relaxed">Consent must be marked <strong class="text-slate-500">Approved</strong> here before it is shown to respondents. Respondent-facing pages always pull the latest approved version.</p>
   </div>
 </div>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
 <%- include('../partials/footer') %>

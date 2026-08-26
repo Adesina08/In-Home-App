@@ -1,5 +1,5 @@
 <%- include('../partials/header', { title: study.name + ' — Settings', user }) %>
-<%- include('../partials/study_tabs', { study, tab }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 max-w-4xl">
   <div class="flex items-start gap-2 text-sm text-slate-500 mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
@@ -206,4 +206,7 @@
   })();
 </script>
 </div>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
 <%- include('../partials/footer') %>
