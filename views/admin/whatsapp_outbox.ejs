@@ -1,34 +1,79 @@
-<%- include('../partials/header', { title: 'WhatsApp Outbox — INICIO', user }) %>
+<%- include('../partials/header', { title: 'Message Log — INICIO', user }) %>
 
 <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
   <div>
     <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Messaging</div>
-    <h1 class="text-2xl font-bold text-slate-900">WhatsApp Outbox</h1>
-    <p class="text-slate-500 text-sm mt-1">Log of reminder messages sent by the engine.</p>
+    <h1 class="text-2xl font-bold text-slate-900">Message Log</h1>
+    <p class="text-slate-500 text-sm mt-1">Every text message the app has sent or would have sent — diary links, reminders and sign-in codes.</p>
   </div>
 </div>
 
-<div class="flex items-start gap-2.5 bg-amber-50 text-amber-800 text-sm rounded-xl p-3.5 mb-6 border border-amber-200">
-  <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
-  <span>Running in <strong>mock</strong> mode — no real WhatsApp messages are sent. Every reminder the engine would have sent is logged below instead.
-  Configure <code>WHATSAPP_PROVIDER</code>, <code>WHATSAPP_API_TOKEN</code>, <code>WHATSAPP_PHONE_NUMBER_ID</code> in <code>.env</code> to go live — see PRODUCTION_READINESS.md section B1.</span>
-</div>
+<!-- Honest status. A screen that shows a tidy list of "sent" messages while
+     nothing is actually leaving the server is how a pilot discovers on day
+     three that no respondent was ever contacted. -->
+<% if (configError) { %>
+  <div class="flex items-start gap-2.5 bg-red-50 text-red-700 text-sm rounded-xl p-3.5 mb-6 border border-red-200">
+    <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+    <span>
+      Messaging is set to <strong><%= providerName %></strong> but isn't usable: <%= configError %>
+      Nothing is being sent until this is fixed.
+    </span>
+  </div>
+<% } else if (isReal) { %>
+  <div class="flex items-start gap-2.5 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3.5 mb-6 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4 mt-0.5 shrink-0') %>
+    <span>
+      Live — messages are really being delivered through <strong><%= providerName %></strong>.
+      A row marked <strong>failed</strong> below did not reach the person; open it to see why.
+    </span>
+  </div>
+<% } else { %>
+  <div class="flex items-start gap-2.5 bg-amber-50 text-amber-800 text-sm rounded-xl p-3.5 mb-6 border border-amber-200">
+    <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+    <span>
+      Running in <strong>mock</strong> mode — <strong>nothing is actually delivered</strong>. Every message the app would have sent is
+      written here instead, with its exact wording, so you can check the text before going live.
+      Set <code>MESSAGING_PROVIDER=twilio</code> and the <code>TWILIO_*</code> variables to start sending for real —
+      see PRODUCTION_READINESS.md section B1.
+    </span>
+  </div>
+<% } %>
 
 <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card">
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Respondent</th><th class="py-2.5">Template</th><th class="py-2.5">Payload</th><th class="py-2.5">Status</th><th class="py-2.5">Time</th></tr></thead>
+    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+      <th class="px-5 py-2.5">Respondent</th><th class="py-2.5">Message</th><th class="py-2.5">To</th>
+      <th class="py-2.5">Status</th><th class="py-2.5">Time</th>
+    </tr></thead>
     <tbody>
-    <% messages.forEach(m => { %>
-      <tr class="border-t border-slate-100 hover:bg-slate-50/70">
-        <td class="px-5 py-2.5 font-mono text-xs text-slate-600"><%= m.respondent_code || m.respondent_id %></td>
-        <td class="py-2.5 text-slate-700"><%= m.template %></td>
-        <td class="py-2.5 text-xs text-slate-400 max-w-md truncate"><%= m.payload_json %></td>
-        <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full font-medium badge-amber"><%= m.status %></span></td>
-        <td class="py-2.5 text-xs text-slate-400"><%= m.created_at %></td>
+    <% messages.forEach(m => {
+         let p = {};
+         try { p = JSON.parse(m.payload_json || '{}'); } catch (e) { p = {}; }
+         const failed = m.status === 'failed';
+    %>
+      <tr class="border-t border-slate-100 hover:bg-slate-50/70 align-top">
+        <td class="px-5 py-2.5 font-mono text-xs text-slate-600"><%= m.respondent_code || (m.respondent_id ? m.respondent_id : '—') %></td>
+        <td class="py-2.5 text-slate-700 max-w-lg">
+          <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5"><%= (m.template || '').replace(/_/g, ' ') %></div>
+          <% if (p.body) { %>
+            <div class="text-slate-700 leading-snug"><%= p.body %></div>
+          <% } else { %>
+            <div class="text-slate-400 italic">No message text recorded.</div>
+          <% } %>
+          <% if (failed && p.error) { %>
+            <div class="text-xs text-red-600 mt-1"><%= p.error %></div>
+          <% } %>
+        </td>
+        <td class="py-2.5 text-xs font-mono text-slate-500"><%= p.to || '—' %></td>
+        <td class="py-2.5">
+          <span class="text-xs px-2.5 py-1 rounded-full font-medium <%= m.status === 'sent' ? 'badge-green' : failed ? 'badge-red' : 'badge-amber' %>"><%= m.status %></span>
+          <div class="text-[10px] text-slate-400 mt-1"><%= m.provider %></div>
+        </td>
+        <td class="py-2.5 text-xs text-slate-400 whitespace-nowrap"><%= m.created_at %></td>
       </tr>
     <% }) %>
-    <% if (!messages.length) { %><tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">No messages yet — run the reminder engine from the dashboard.</td></tr><% } %>
+    <% if (!messages.length) { %><tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">No messages yet.</td></tr><% } %>
     </tbody>
   </table>
   </div>

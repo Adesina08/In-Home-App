@@ -5,15 +5,19 @@
     <%- icon('check-circle', 'w-7 h-7') %>
   </div>
   <h1 class="text-xl font-bold text-slate-900 mb-1">Respondent Activated</h1>
-  <p class="text-slate-500 text-sm mb-4">Respondent code <strong class="text-slate-700"><%= code %></strong> is now active. Have the respondent scan the code below with their own phone's camera to open their personal diary and add it to their home screen — or hand them this device instead.</p>
+  <p class="text-slate-500 text-sm mb-4">Respondent code <strong class="text-slate-700"><%= code %></strong> is now active. Have the respondent scan the code below with their own phone's camera. It opens their personal diary, where they set their fingerprint or Face ID lock and add it to their home screen.</p>
   <% if (qr) { %>
     <img src="<%= qr %>" alt="QR code that opens this respondent's diary link" class="mx-auto w-52 h-52 rounded-xl border border-slate-200 p-2 bg-white mb-3" />
-    <p class="text-xs text-slate-400 mb-4">Scanning opens the link below in their phone's browser — from there they tap Share (iPhone) or the menu (Android) and choose "Add to Home Screen" to install it like an app.</p>
+    <p class="text-xs text-slate-400 mb-4">It must be their own phone, not yours — the diary's lock is tied to the device that first opens it.</p>
   <% } %>
   <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono break-all mb-5 text-slate-600"><%= diaryUrl || ('/r/' + token) %></div>
+  <!-- No "open their diary" button here on purpose. The diary's first screen
+       registers a device lock against the respondent, so opening it on the
+       interviewer's phone would bind the wrong fingerprint and leave the
+       respondent unable to unlock their own diary. -->
   <div class="flex flex-wrap gap-3 justify-center">
-    <a href="/r/<%= token %>" target="_blank" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
-      <%- icon('eye', 'w-4 h-4') %> Open Respondent Diary
+    <a href="/interviewer/respondents/<%= respondentId %>" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('chat', 'w-4 h-4') %> Send them the link
     </a>
     <a href="/interviewer/register" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
       <%- icon('plus', 'w-4 h-4') %> Register Another

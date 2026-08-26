@@ -27,7 +27,7 @@
   <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Respondent Roster</div>
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="pb-2">Code</th><th class="pb-2">Name</th><th class="pb-2">Study</th><th class="pb-2">Status</th><th class="pb-2">Diary Link</th></tr></thead>
+    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="pb-2">Code</th><th class="pb-2">Name</th><th class="pb-2">Study</th><th class="pb-2">Status</th><th class="pb-2">Hand over</th></tr></thead>
     <tbody>
     <% mine.forEach(r => { %>
       <tr class="border-t border-slate-100 hover:bg-slate-50/70">
@@ -37,7 +37,7 @@
         <td class="py-2.5">
           <span class="text-xs px-2.5 py-1 rounded-full font-medium capitalize <%= ['active','activated','completed'].includes(r.activation_status) ? 'badge-green' : ['invited','screened','registered'].includes(r.activation_status) ? 'badge-amber' : 'bg-slate-100 text-slate-600' %>"><%= r.activation_status %></span>
         </td>
-        <td class="py-2.5"><a class="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank"><%- icon('eye', 'w-3.5 h-3.5') %> Open</a></td>
+        <td class="py-2.5"><a class="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs font-medium" href="/interviewer/respondents/<%= r.id %>"><%- icon('qrcode', 'w-3.5 h-3.5') %> Show link</a></td>
       </tr>
     <% }) %>
     <% if (!mine.length) { %><tr><td colspan="5" class="py-8 text-center text-slate-400">You haven't registered any respondents yet.</td></tr><% } %>

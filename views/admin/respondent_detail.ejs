@@ -28,10 +28,17 @@
          class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
         <%- icon('download', 'w-3.5 h-3.5') %> Export media log
       </a>
-      <a href="<%= diaryUrl %>" target="_blank"
+      <% if (respondent.contact) { %>
+        <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/send-link">
+          <button class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+            <%- icon('chat', 'w-3.5 h-3.5') %> Text them their link
+          </button>
+        </form>
+      <% } %>
+      <button type="button" id="showQr"
          class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
-        <%- icon('eye', 'w-3.5 h-3.5') %> Open their diary
-      </a>
+        <%- icon('qrcode', 'w-3.5 h-3.5') %> Show their QR
+      </button>
     </div>
   </div>
 
@@ -66,6 +73,37 @@
     </div>
   <% } %>
 </div>
+
+<!-- The respondent's own link, shown as a QR rather than as a button that opens
+     it. Opening a diary on a staff device registers that device's lock against
+     the respondent (see routes/interviewer.js), which would leave them unable
+     to unlock their own. Everything staff need to review is on this page and
+     the entry pages already. -->
+<div id="qrModal" style="display:none" class="fixed inset-0 z-50 items-center justify-center bg-slate-900/50 p-4">
+  <div class="bg-white rounded-2xl shadow-xl p-5 max-w-xs w-full text-center relative">
+    <button type="button" id="qrModalClose" class="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
+      <%- icon('x', 'w-4 h-4') %>
+    </button>
+    <h2 class="text-sm font-semibold text-slate-700 mb-3"><%= respondent.respondent_code %> — diary link</h2>
+    <img id="qrModalImg" src="" alt="QR code that opens this respondent's diary"
+         class="mx-auto w-56 h-56 rounded-xl border border-slate-200 p-2 bg-white mb-3" />
+    <p class="text-[11px] text-slate-500 mb-2">The respondent scans this with their <strong>own</strong> phone — the diary's lock is tied to the device that opens it.</p>
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-[11px] font-mono break-all text-slate-600"><%= respondentLink %></div>
+  </div>
+</div>
+<script>
+  (function () {
+    var modal = document.getElementById('qrModal');
+    var img = document.getElementById('qrModalImg');
+    var src = '/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/qr.png';
+    document.getElementById('showQr').addEventListener('click', function () {
+      if (!img.getAttribute('src')) img.setAttribute('src', src); // fetched only on demand
+      modal.style.display = 'flex';
+    });
+    document.getElementById('qrModalClose').addEventListener('click', function () { modal.style.display = 'none'; });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
+  })();
+</script>
 
 <!-- Sign-in account. A respondent row is one person's participation in ONE
      study; the account is the person, and is what lets them sign in once and

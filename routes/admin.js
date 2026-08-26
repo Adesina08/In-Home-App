@@ -17,6 +17,7 @@ const aiSummary = require("../lib/aiSummary");
 const { CATEGORIES, parseCategories, toStoredCategories } = require("../lib/categories");
 const accounts = require("../lib/respondentAccounts");
 const { nextRespondentCode } = require("../lib/respondentCode");
+const messaging = require("../lib/whatsapp");
 const { v4: uuidv4 } = require("uuid");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
@@ -889,9 +890,46 @@ router.get("/studies/:id/respondents/:respondentId", (req, res) => {
     linked: req.query.linked,
     linkError: req.query.linkError,
     risk: classifyRisk(respondent.id),
-    diaryUrl: respondentDiaryUrl(req, respondent.unique_token),
+    respondentLink: respondentDiaryUrl(req, respondent.unique_token),
+    messagingLive: messaging.isRealMessagingConfigured(),
     tab: "respondents",
   });
+});
+
+// Text a respondent their diary link. Same action the interviewer has in the
+// field, for the case where someone loses their link after fieldwork has moved
+// on and there's nobody standing in front of them with a QR code.
+router.post("/studies/:id/respondents/:respondentId/send-link", async (req, res) => {
+  const respondent = loadRespondentOr404(req, res);
+  if (!respondent) return;
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  const back = (key, msg) =>
+    res.redirect(`/admin/studies/${req.params.id}/respondents/${respondent.id}?${key}=${encodeURIComponent(msg)}`);
+
+  if (!respondent.contact) return back("linkError", "This respondent has no phone number on file.");
+
+  const result = await messaging.getProvider().send({
+    respondentId: respondent.id,
+    to: respondent.contact,
+    template: "diary_link_invite",
+    variables: {
+      name: respondent.name,
+      study: study.name,
+      link: respondentDiaryUrl(req, respondent.unique_token),
+    },
+  });
+  logAudit(req.session.user.email, "send_diary_link", "respondents", respondent.id, {
+    to: respondent.contact, ok: !!result.ok,
+  });
+
+  if (!result.ok) return back("linkError", result.error || "The message could not be sent.");
+  if (result.simulated) {
+    return back(
+      "linkError",
+      `Messaging isn't connected yet, so nothing was delivered to ${respondent.contact} — the message was logged to the Message Log only.`
+    );
+  }
+  back("linked", `Diary link sent to ${respondent.contact}.`);
 });
 
 // Attach an existing respondent row to a sign-in account, or detach it.
@@ -1098,7 +1136,12 @@ router.get("/whatsapp-outbox", (req, res) => {
        ORDER BY datetime(whatsapp_outbox.created_at) DESC LIMIT 100`
     )
     .all();
-  res.render("admin/whatsapp_outbox", { messages });
+  res.render("admin/whatsapp_outbox", {
+    messages,
+    isReal: messaging.isRealMessagingConfigured(),
+    configError: messaging.messagingConfigError(),
+    providerName: messaging.providerName(),
+  });
 });
 
 // ---------- Media review / brand detection ----------

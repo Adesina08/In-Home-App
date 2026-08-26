@@ -1,0 +1,116 @@
+<%- include('../partials/header', { title: respondent.respondent_code + ' — Diary Link', user }) %>
+
+<div class="mb-5">
+  <a href="/interviewer" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+    &larr; Back to My Respondents
+  </a>
+</div>
+
+<div class="max-w-lg mx-auto">
+  <% if (sent) { %>
+    <div class="flex items-start gap-2 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 mb-4 border border-emerald-200">
+      <%- icon('check-circle', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= sent %></span>
+    </div>
+  <% } %>
+  <% if (sendError) { %>
+    <div class="flex items-start gap-2 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 mb-4 border border-amber-200">
+      <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= sendError %></span>
+    </div>
+  <% } %>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6">
+    <div class="text-center mb-5">
+      <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-1">Fieldwork</div>
+      <h1 class="text-xl font-bold text-slate-900"><%= respondent.name || respondent.respondent_code %></h1>
+      <div class="text-sm text-slate-500 mt-1">
+        <span class="font-mono text-xs"><%= respondent.respondent_code %></span> · <%= respondent.study_name %>
+      </div>
+    </div>
+
+    <!-- The QR is the primary hand-over: it moves the link to the respondent's
+         own phone without the interviewer's device ever opening the diary. -->
+    <div class="text-center">
+      <img src="/interviewer/respondents/<%= respondent.id %>/qr.png"
+           alt="QR code that opens this respondent's diary"
+           class="mx-auto w-56 h-56 rounded-xl border border-slate-200 p-2 bg-white" />
+      <p class="text-sm text-slate-600 mt-3 font-medium">Ask them to scan this with their own phone's camera.</p>
+      <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+        It opens their personal diary, where they set up their fingerprint or Face ID lock and add it to their home screen.
+      </p>
+    </div>
+
+    <div class="mt-5 pt-5 border-t border-slate-100">
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-1.5">Their link</div>
+      <div id="diaryLink" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] font-mono break-all text-slate-600"><%= diaryUrl %></div>
+      <button type="button" id="copyLink"
+              class="mt-2 inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        <%- icon('clipboard', 'w-3.5 h-3.5') %> <span id="copyLabel">Copy link</span>
+      </button>
+    </div>
+
+    <div class="mt-5 pt-5 border-t border-slate-100">
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-1.5">Send it to their phone</div>
+      <% if (respondent.contact) { %>
+        <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+          Texts the link to <strong class="text-slate-700"><%= respondent.contact %></strong> — the number captured when they registered.
+          Useful if they'd rather open it later, or their camera won't scan.
+        </p>
+        <form method="POST" action="/interviewer/respondents/<%= respondent.id %>/send-link">
+          <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+            <%- icon('chat', 'w-4 h-4') %> Send the link
+          </button>
+        </form>
+        <% if (!messagingLive) { %>
+          <p class="text-[11px] text-amber-700 mt-2.5 leading-relaxed">
+            Text messaging isn't connected on this deployment yet, so this will only log the message rather than deliver it.
+            Use the QR code above until it's live.
+          </p>
+        <% } %>
+      <% } else { %>
+        <p class="text-xs text-slate-500">No phone number was captured for this respondent, so there's nothing to text. Use the QR code above.</p>
+      <% } %>
+    </div>
+
+    <!-- Deliberately no "open their diary" button. Opening it here would
+         register THIS phone's fingerprint as the respondent's device lock and
+         leave them unable to unlock their own diary. -->
+    <p class="text-[11px] text-slate-400 mt-5 pt-4 border-t border-slate-100 leading-relaxed text-center">
+      The diary is only ever opened on the respondent's own phone — that's what their fingerprint or Face ID lock is tied to.
+    </p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('copyLink');
+    var label = document.getElementById('copyLabel');
+    var link = document.getElementById('diaryLink');
+    if (!btn || !link) return;
+    btn.addEventListener('click', function () {
+      var text = link.textContent.trim();
+      var done = function () {
+        label.textContent = 'Copied';
+        setTimeout(function () { label.textContent = 'Copy link'; }, 2000);
+      };
+      // navigator.clipboard needs a secure context; on an http:// test
+      // deployment it's simply absent, so fall back to selecting the text so
+      // the interviewer can still long-press and copy.
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { selectLink(); });
+      } else {
+        selectLink();
+      }
+      function selectLink() {
+        var range = document.createRange();
+        range.selectNodeContents(link);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        label.textContent = 'Selected — hold to copy';
+        setTimeout(function () { label.textContent = 'Copy link'; }, 3000);
+      }
+    });
+  })();
+</script>
+
+<%- include('../partials/footer') %>

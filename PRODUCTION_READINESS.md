@@ -2,7 +2,7 @@
 
 This app is a **working functional prototype**: every P0 flow in the MVP spec runs end to end (onboarding, diary engine, QC, reminders, dashboards, export), the Developer/Config console means none of the business inputs are hardcoded, a questionnaire can be uploaded from a spreadsheet or document and previewed before it's committed, the respondent diary offers three entry methods (Standard Form, AI-assisted Video, and Voice Note), and the whole app — including the respondent diary — is an installable mobile PWA with one consistent visual design system.
 
-**As of this revision, three of the AI providers (Azure AI Vision for brand detection + video field pre-fill, Azure AI Speech for voice-note transcription) and pluggable media storage (local disk or Azure Blob Storage) have real, working implementations** — not stubs. They stay off (`*_PROVIDER=mock`, `STORAGE_PROVIDER=local`) until you supply real Azure credentials; flip the env vars documented in B9/B10 below and they call the real Azure APIs. What's still genuinely pending is everything that needs an account, a domain, or an organizational decision this sandbox cannot make on your behalf: real WhatsApp credentials (B1), a real domain + TLS (B2), staff SSO (B3), a managed production database (B4), a real secrets vault (B5), backups (B6), a written retention policy (B7), and monitoring (B8).
+**As of this revision, three of the AI providers (Azure AI Vision for brand detection + video field pre-fill, Azure AI Speech for voice-note transcription) and pluggable media storage (local disk or Azure Blob Storage) have real, working implementations** — not stubs. They stay off (`*_PROVIDER=mock`, `STORAGE_PROVIDER=local`) until you supply real Azure credentials; flip the env vars documented in B9/B10 below and they call the real Azure APIs. What's still genuinely pending is everything that needs an account, a domain, or an organizational decision this sandbox cannot make on your behalf: real messaging credentials — a Twilio account (B1), a real domain + TLS (B2), staff SSO (B3), a managed production database (B4), a real secrets vault (B5), backups (B6), a written retention policy (B7), and monitoring (B8).
 
 A companion document, the **Azure Deployment Runbook**, walks through provisioning every Azure resource this app can use (App Service hosting, AI Vision, AI Speech, Blob Storage, Key Vault) end to end with exact Portal steps and CLI commands, sized to fit an Azure free-account $200/30-day credit. This document (PRODUCTION_READINESS.md) stays focused on *what* needs doing and *where in the code* it plugs in; the runbook is the *how* for the Azure-specific pieces.
 
@@ -10,15 +10,59 @@ Nothing below can be completed by an AI session in a sandbox without your creden
 
 ---
 
-## B1 — Real WhatsApp Business credentials & approved templates
+## B1 — Real outbound messaging (SMS / WhatsApp) — **implemented, needs your account**
 
-**Where it plugs in:** `lib/whatsapp.js` defines a provider interface with a `MockWhatsAppProvider` (current default — logs every "send" to the `whatsapp_outbox` table, visible at Admin → WhatsApp Outbox, nothing actually sent) and a `MetaCloudApiProvider` stub that is *not yet implemented* — it throws until you fill it in.
+**Where it plugs in:** `lib/whatsapp.js` defines the provider interface. `lib/messageTemplates.js` holds the actual wording of every message the app sends.
 
-**What you need to do:**
-1. Register/confirm your WhatsApp Business Platform account (Meta Cloud API, or a BSP like Twilio/360dialog) and get the message templates approved by Meta — this alone can take days, start it in Week 1 per the original Day-1 dependency list.
-2. Set in `.env`: `WHATSAPP_PROVIDER=meta_cloud_api`, `WHATSAPP_API_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAMESPACE`.
-3. Implement the actual API call inside `MetaCloudApiProvider.send()` in `lib/whatsapp.js` (currently a labeled stub) using your provider's send-template-message endpoint.
-4. Until this is done, keep `WHATSAPP_PROVIDER=mock` — reminders and QC still run correctly, they just log instead of sending.
+Three messages go out to respondents' phones:
+
+| Template | When it's sent |
+|---|---|
+| `diary_link_invite` | An interviewer or admin texts a respondent their personal diary link |
+| `diary_due_reminder` / `diary_missed_reminder` | The reminder engine, for respondents whose channel is WhatsApp/SMS |
+| `otp_contact_verification` | Remote self-sign-up, and respondent sign-in at `/me` |
+
+That last one matters more than it looks: **respondents cannot sign in to their account until this is connected**, because the one-time code has nowhere to go.
+
+### Twilio (recommended — implemented and ready)
+
+`TwilioProvider` in `lib/whatsapp.js` is a real, working implementation. It calls the Twilio Messages API directly, so there is nothing left to write.
+
+Set these in `.env` locally and in **Azure App Service → Configuration → Application settings** for the deployed app:
+
+```
+MESSAGING_PROVIDER=twilio
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_API_KEY_SID=SK...            # preferred over the account auth token
+TWILIO_API_KEY_SECRET=...
+TWILIO_MESSAGING_SERVICE_SID=MG...  # preferred over a bare from-number
+TWILIO_CHANNEL=sms                  # or: whatsapp
+APP_BASE_URL=https://your-app-host  # so background reminders can include a working link
+```
+
+`TWILIO_AUTH_TOKEN` works in place of the API key pair, and `TWILIO_FROM_NUMBER` in place of the Messaging Service, if you'd rather start simple.
+
+**Using a Twilio account that another project already uses.** This is fine — a Twilio account is designed to serve many applications. Three things keep them from tangling:
+
+1. **Create a subaccount for INICIO** (Console → Account → Subaccounts). It has its own SID, its own message logs and its own line on the bill, so respondent messages never mix with the other project's traffic, and INICIO's access can be revoked without touching the other app.
+2. **Use an API key (`SK…`), not the account auth token.** The key can be rotated or deleted on its own; the auth token is shared with everything else on the account.
+3. **Use a Messaging Service.** The sender number can then be changed in the Twilio console without redeploying this app.
+
+**SMS vs WhatsApp.** SMS is the default and needs nothing beyond a Twilio number that can send to your market. WhatsApp needs an approved WhatsApp Business sender and message templates pre-approved by Meta, which takes days — and if your other project already has an approved sender, both applications would send from the same business identity. Start on SMS; switch `TWILIO_CHANNEL=whatsapp` later if you want to.
+
+**Numbers must be in international format** (`+2348012345678`). A local-format number is rejected before the API call with a message naming the number, rather than coming back as an opaque Twilio error code. Worth checking the respondent contacts already captured in the pilot data.
+
+### Checking it works
+
+Admin → **Message Log** shows every message the app has sent or would have sent, with its exact text, the number it went to, and the failure reason for anything that didn't land. The banner at the top says plainly whether messages are really being delivered or only simulated — a screen full of tidy-looking rows while nothing leaves the server is exactly how a pilot discovers on day three that no respondent was ever contacted.
+
+### Until it's connected
+
+Leave `MESSAGING_PROVIDER` unset. Everything still works: reminders and QC run normally, and the "send the link" buttons say plainly that nothing was delivered rather than claiming success. The QR code hand-over is the working path in the field, and it needs no provider at all.
+
+### Meta Cloud API
+
+`MetaCloudApiProvider` was never implemented and now fails with a message saying so, rather than silently doing nothing. Use Twilio, or implement the send call in that class.
 
 ## B2 — Domain + HTTPS/TLS
 
@@ -129,6 +173,8 @@ These cannot be done in this sandbox — they need the real deployment from tier
 | Brand detection provider | `lib/brandDetection.js`, `lib/azureVisionClient.js`, `.env` (B9) |
 | Video-mode field-extraction provider | `lib/videoFieldExtraction.js`, `.env` (B9) |
 | Voice-note transcription provider | `lib/audioTranscription.js`, `.env` (B10) |
+| Outbound SMS/WhatsApp provider | `lib/whatsapp.js`, `.env` (B1) |
+| Wording of respondent messages | `lib/messageTemplates.js` |
 | Video-frame sampling (for the two providers above) | `lib/ffmpegFrames.js` (bundled `ffmpeg-static` binary, no system install needed) |
 | Media storage (local disk or Azure Blob) | `lib/mediaStorage.js`, `.env` (`STORAGE_PROVIDER`, B4) |
 | Diary entry-mode picker (Standard / Video / Voice Note) | `routes/respondent.js` (`/diary/new`, `/diary/analyze-video`), `views/respondent/diary_mode_picker.ejs` |
