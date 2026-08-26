@@ -15,6 +15,12 @@
         <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= error %></span>
       </div>
     <% } %>
+    <% if (typeof simulated !== 'undefined' && simulated) { %>
+      <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-4">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+        <span>Text messaging isn't switched on yet, so no code was actually sent. Please use the personal diary link the study team gave you.</span>
+      </div>
+    <% } %>
     <% if (notice) { %>
       <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl p-3 mb-4">
         <%- icon('check-circle', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= notice %></span>

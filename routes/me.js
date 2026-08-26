@@ -15,6 +15,7 @@ const db = require("../lib/db");
 const { logAudit } = require("../lib/audit");
 const otp = require("../lib/otp");
 const accounts = require("../lib/respondentAccounts");
+const messaging = require("../lib/whatsapp");
 
 const router = express.Router();
 
@@ -50,7 +51,10 @@ router.post("/login", async (req, res) => {
       await otp.sendCode({ contact, respondentId: null, purpose: "account_login" });
     } catch (e) {
       if (e.code !== "COOLDOWN") {
-        return fail("We couldn't send a code just now. Please try again in a moment.");
+        // The provider's own reason (bad number format, region not enabled)
+        // is shown: it's about the contact typed into this box, which the
+        // person already knows, so it reveals nothing about who has an account.
+        return fail(e.message || "We couldn't send a code just now. Please try again in a moment.");
       }
     }
   }
@@ -66,6 +70,10 @@ router.get("/verify", (req, res) => {
     contact: req.session.pendingLoginContact,
     error: null,
     notice: req.query.resent ? "A new code is on its way." : null,
+    // A property of the deployment, not of any account -- shown the same way
+    // whether or not this contact has one, so it leaks nothing while still
+    // saving someone from watching a phone that will never ring.
+    simulated: !messaging.isRealMessagingConfigured(),
     ttlMinutes: otp.TTL_MINUTES,
     user: null,
   });
@@ -75,7 +83,11 @@ router.post("/verify", (req, res) => {
   const contact = req.session.pendingLoginContact;
   if (!contact) return res.redirect("/me/login");
   const render = (error) =>
-    res.status(400).render("me/verify", { contact, error, notice: null, ttlMinutes: otp.TTL_MINUTES, user: null });
+    res.status(400).render("me/verify", {
+      contact, error, notice: null,
+      simulated: !messaging.isRealMessagingConfigured(),
+      ttlMinutes: otp.TTL_MINUTES, user: null,
+    });
 
   const result = otp.verifyCode({ contact, code: req.body.code, purpose: "account_login" });
   if (!result.ok) return render(result.reason);
@@ -100,13 +112,12 @@ router.post("/verify/resend", async (req, res) => {
     try {
       await otp.sendCode({ contact, respondentId: null, purpose: "account_login" });
     } catch (e) {
-      if (e.code !== "COOLDOWN") {
-        return res.status(429).render("me/verify", {
-          contact, error: e.message, notice: null, ttlMinutes: otp.TTL_MINUTES, user: null,
-        });
-      }
-      return res.status(429).render("me/verify", {
-        contact, error: e.message, notice: null, ttlMinutes: otp.TTL_MINUTES, user: null,
+      // 429 fits the cooldown; a provider refusal is a 502. Both show the
+      // reason rather than a cheerful "on its way" for a code that isn't.
+      return res.status(e.code === "COOLDOWN" ? 429 : 502).render("me/verify", {
+        contact, error: e.message, notice: null,
+        simulated: !messaging.isRealMessagingConfigured(),
+        ttlMinutes: otp.TTL_MINUTES, user: null,
       });
     }
   }

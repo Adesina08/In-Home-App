@@ -170,12 +170,17 @@ router.post("/:code/profile", async (req, res) => {
   s.accountId = account ? account.id : null;
 
   s.contact = contact;
+  s.simulated = false;
   try {
-    await otp.sendCode({
+    const sent = await otp.sendCode({
       contact,
       respondentId,
       studyName: req.study.name,
     });
+    // Mock mode delivers nothing. Carried through to the verify screen so it
+    // can say so, rather than asking someone to watch a phone that will never
+    // ring.
+    s.simulated = !!sent.simulated;
   } catch (e) {
     if (e.code !== "COOLDOWN") return fail(e.message || "We couldn't send a verification code just now. Please try again.");
     // Within the cooldown a live code already exists -- go verify that one.
@@ -193,6 +198,7 @@ router.get("/:code/verify", (req, res) => {
     contact: s.contact,
     error: null,
     notice: req.query.resent ? "A new code is on its way." : null,
+    simulated: !!s.simulated,
     ttlMinutes: otp.TTL_MINUTES,
     user: null,
   });
@@ -210,6 +216,7 @@ router.post("/:code/verify", (req, res) => {
       contact: s.contact,
       error: result.reason,
       notice: null,
+      simulated: !!s.simulated,
       ttlMinutes: otp.TTL_MINUTES,
       user: null,
     });
@@ -227,14 +234,19 @@ router.post("/:code/verify/resend", async (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.respondentId || !s.contact) return res.redirect(`/join/${req.params.code}/profile`);
   try {
-    await otp.sendCode({ contact: s.contact, respondentId: s.respondentId, studyName: req.study.name });
+    const sent = await otp.sendCode({ contact: s.contact, respondentId: s.respondentId, studyName: req.study.name });
+    s.simulated = !!sent.simulated;
   } catch (e) {
-    return res.status(429).render("join/verify", {
+    // 429 only fits the cooldown. A delivery failure is the provider refusing
+    // the message, which is a 502 on our side -- and reporting it as "too many
+    // requests" would send someone off waiting instead of fixing the number.
+    return res.status(e.code === "COOLDOWN" ? 429 : 502).render("join/verify", {
       study: req.study,
       code: req.params.code,
       contact: s.contact,
       error: e.message,
       notice: null,
+      simulated: !!s.simulated,
       ttlMinutes: otp.TTL_MINUTES,
       user: null,
     });
