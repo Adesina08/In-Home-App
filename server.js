@@ -125,6 +125,7 @@ app.get("/help", requireLogin, (req, res) => {
 });
 
 app.use("/join", require("./routes/join")); // public remote self-onboarding, no login
+app.use("/invite", require("./routes/invite")); // cold invite landing: brief, cadence, how to take part
 app.use("/me", require("./routes/me")); // respondent accounts: passwordless login + study list
 app.use("/r", require("./routes/respondent")); // token-based, no session login
 

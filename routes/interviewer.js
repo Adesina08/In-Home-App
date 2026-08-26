@@ -185,4 +185,12 @@ router.post("/respondents/:id/send-link", async (req, res) => {
   back("sent", `Diary link sent to ${respondent.contact}.`);
 });
 
+// Interviewers recruit, so they get the same bulk invite as an admin --
+// mounted under their own path so the Back links land where they came from.
+router.use("/studies/:id/bulk-invite", require("./bulkInvite"));
+
+// An interviewer has no study-config screens, so the bulk-invite Back link
+// needs somewhere sensible of its own to return to.
+router.get("/studies/:id/respondents", (req, res) => res.redirect("/interviewer"));
+
 module.exports = router;

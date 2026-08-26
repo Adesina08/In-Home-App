@@ -1,0 +1,18 @@
+<%- include('../partials/header', { title: 'Thanks for letting us know — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 text-center">
+    <div class="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto mb-4">
+      <%- icon('check', 'w-7 h-7') %>
+    </div>
+    <h1 class="text-lg font-bold text-slate-900 mb-1.5">Thanks for letting us know</h1>
+    <p class="text-sm text-slate-500 leading-relaxed mb-5">
+      We won't contact you again about <strong class="text-slate-700"><%= study.name %></strong>. Nothing else is needed from you.
+    </p>
+    <p class="text-xs text-slate-400 leading-relaxed">
+      Changed your mind? Open the link from your message again and pick how you'd like to take part.
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

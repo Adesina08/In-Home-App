@@ -1,0 +1,120 @@
+<%- include('../partials/header', { title: "You're invited — " + study.name, user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+
+    <div class="text-center mb-6">
+      <img src="/public/icons/logo-header.png" alt="INICIO" class="h-9 w-auto mx-auto mb-4" />
+      <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-1">You're invited to take part</div>
+      <h1 class="text-xl font-bold text-slate-900"><%= study.name %></h1>
+      <% if (study.market || study.category) { %>
+        <p class="text-xs text-slate-400 mt-1"><%= [study.market, formatCategories(study.category)].filter(Boolean).join(' · ') %></p>
+      <% } %>
+    </div>
+
+    <% if (declined) { %>
+      <!-- Someone who said no and then re-opened the link. Say so plainly and
+           let them change their mind, rather than pretending nothing happened. -->
+      <div class="bg-slate-50 border border-slate-200 text-slate-600 text-sm rounded-xl p-4 mb-5 leading-relaxed">
+        You told us you'd rather not take part, so we've stopped contacting you about this study.
+        If that was a mistake, you can still choose an option below.
+      </div>
+    <% } %>
+
+    <!-- The brief. A study with nothing written falls back to a truthful
+         generic line rather than an empty box: a blank space where the
+         explanation should be is exactly what makes an unsolicited text look
+         like a scam. -->
+    <div class="bg-brand-50 border border-brand-100 rounded-xl p-4 mb-4">
+      <div class="text-sm font-semibold text-slate-800 mb-1">What this study is about</div>
+      <p class="text-sm text-slate-600 leading-relaxed whitespace-pre-line"><%= study.invite_brief && study.invite_brief.trim()
+        ? study.invite_brief.trim()
+        : 'We\'re researching how people use products like these at home. You\'d keep a short diary on your phone — a few questions each time, and usually a photo.' %></p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <div class="flex items-center gap-2 text-slate-800 text-sm font-semibold mb-0.5">
+          <%- icon('calendar', 'w-4 h-4 text-brand-600') %> How often
+        </div>
+        <div class="text-xs text-slate-500 leading-relaxed">You'd fill in your diary <%= cadence %>.</div>
+      </div>
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <div class="flex items-center gap-2 text-slate-800 text-sm font-semibold mb-0.5">
+          <%- icon('shield', 'w-4 h-4 text-brand-600') %> Your choice
+        </div>
+        <div class="text-xs text-slate-500 leading-relaxed">Taking part is voluntary, and you can stop whenever you like.</div>
+      </div>
+    </div>
+
+    <div class="text-sm font-semibold text-slate-800 mb-1">How would you like to take part?</div>
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Pick whichever suits you. We'll show you exactly what's involved and ask you to agree before anything starts.</p>
+
+    <div class="space-y-3">
+
+      <!-- The installable web app is always available: it is this app, and it
+           needs nothing downloaded. -->
+      <form method="POST" action="/invite/<%= respondent.unique_token %>/choose">
+        <input type="hidden" name="mode" value="app" />
+        <button class="w-full text-left bg-white border-2 border-brand-600 rounded-xl p-4 hover:bg-brand-50 transition flex items-start gap-3">
+          <span class="w-9 h-9 rounded-xl bg-brand-700 text-white flex items-center justify-center shrink-0"><%- icon('smartphone', 'w-4 h-4') %></span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-semibold text-slate-900">On my phone's browser</span>
+            <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Opens straight away — nothing to download. You can add it to your home screen so it behaves like any other app.</span>
+          </span>
+          <%- icon('arrow-right', 'w-4 h-4 text-brand-600 mt-1 shrink-0') %>
+        </button>
+      </form>
+
+      <% if (apkUrl) { %>
+        <form method="POST" action="/invite/<%= respondent.unique_token %>/choose">
+          <input type="hidden" name="mode" value="apk" />
+          <button class="w-full text-left bg-white border border-slate-300 rounded-xl p-4 hover:border-slate-400 hover:bg-slate-50 transition flex items-start gap-3">
+            <span class="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0"><%- icon('download', 'w-4 h-4') %></span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold text-slate-900">Download the Android app</span>
+              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">An installable Android app. Best if your connection comes and goes — it keeps your entries until you're back online.</span>
+            </span>
+            <%- icon('arrow-right', 'w-4 h-4 text-slate-400 mt-1 shrink-0') %>
+          </button>
+        </form>
+      <% } %>
+
+      <!-- Shown even when it isn't built, because a choice you can't see isn't
+           a choice -- but clearly marked, because offering a route that
+           silently drops people into a different one is worse than saying
+           "not yet". -->
+      <% if (whatsappNumber) { %>
+        <form method="POST" action="/invite/<%= respondent.unique_token %>/choose">
+          <input type="hidden" name="mode" value="whatsapp" />
+          <button class="w-full text-left bg-white border border-slate-300 rounded-xl p-4 hover:border-slate-400 hover:bg-slate-50 transition flex items-start gap-3">
+            <span class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><%- icon('chat', 'w-4 h-4') %></span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold text-slate-900">On WhatsApp</span>
+              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Answer in a WhatsApp chat, like messaging a friend.</span>
+            </span>
+            <%- icon('arrow-right', 'w-4 h-4 text-slate-400 mt-1 shrink-0') %>
+          </button>
+        </form>
+      <% } else { %>
+        <div class="w-full text-left bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 flex items-start gap-3">
+          <span class="w-9 h-9 rounded-xl bg-white text-slate-400 flex items-center justify-center shrink-0"><%- icon('chat', 'w-4 h-4') %></span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-semibold text-slate-500">On WhatsApp <span class="ml-1 text-[10px] uppercase tracking-wide bg-slate-200 text-slate-500 rounded px-1.5 py-0.5 align-middle">Coming soon</span></span>
+            <span class="block text-xs text-slate-400 leading-relaxed mt-0.5">Answering in a WhatsApp chat isn't switched on for this study yet. Choose one of the options above for now.</span>
+          </span>
+        </div>
+      <% } %>
+    </div>
+
+    <% if (!declined) { %>
+      <form method="POST" action="/invite/<%= respondent.unique_token %>/decline" class="mt-6 pt-5 border-t border-slate-100 text-center">
+        <button class="text-xs font-medium text-slate-500 hover:text-slate-800 transition">No thanks — I'd rather not take part</button>
+        <p class="text-[11px] text-slate-400 mt-1.5">One tap, and we won't contact you about this study again.</p>
+      </form>
+    <% } %>
+
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

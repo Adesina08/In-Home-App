@@ -1,0 +1,45 @@
+<%- include('../partials/header', { title: 'Download the app — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+
+    <div class="text-center mb-6">
+      <div class="w-14 h-14 rounded-2xl bg-brand-700 text-white flex items-center justify-center mx-auto mb-3 shadow-card">
+        <%- icon('download', 'w-7 h-7') %>
+      </div>
+      <h1 class="text-lg font-bold text-slate-900">Download the INICIO app</h1>
+      <p class="text-sm text-slate-500 mt-1.5 leading-relaxed">Tap the button below on your Android phone. The file downloads, and your phone will ask you to confirm the install.</p>
+    </div>
+
+    <a href="<%= apkUrl %>" rel="noopener"
+       class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card mb-5">
+      <%- icon('download', 'w-4 h-4') %> Download for Android
+    </a>
+
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-5">
+      <div class="text-sm font-semibold text-slate-800 mb-2">If your phone warns you</div>
+      <p class="text-xs text-slate-600 leading-relaxed mb-2">
+        Because this app comes from the research team rather than the Play Store, Android asks you to allow the install once.
+        Tap <strong>Settings</strong> on the warning, switch on <strong>Allow from this source</strong>, then tap <strong>Install</strong>.
+      </p>
+      <p class="text-xs text-slate-500 leading-relaxed">This is normal for research apps, and you can switch that setting back off afterwards.</p>
+    </div>
+
+    <!-- The app is a way in, not the only one. Someone whose download fails,
+         or who is reading this on a laptop, must not be stuck on a dead end. -->
+    <div class="pt-5 border-t border-slate-100 text-center">
+      <p class="text-xs text-slate-500 mb-3 leading-relaxed">Not on Android, or the download won't work? You can do everything in your phone's browser instead.</p>
+      <a href="/r/<%= respondent.unique_token %>"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        Continue in my browser <%- icon('arrow-right', 'w-4 h-4') %>
+      </a>
+    </div>
+
+    <p class="text-[11px] text-slate-400 text-center mt-5 leading-relaxed">
+      Once the app is installed, open it and sign in with the phone number this invitation was sent to.
+    </p>
+
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

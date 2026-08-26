@@ -192,7 +192,8 @@ router.post("/studies/:id/settings", (req, res) => {
     `UPDATE studies SET name=?, market=?, category=?, status=?, diary_mode=?, recruitment_mode=?,
       back_entry_hours=?, mandatory_photo=?, duplicate_similarity_threshold=?,
       burst_entry_count_threshold=?, burst_entry_window_hours=?, reminder_due_hours=?, reminder_missed_hours=?,
-      default_reminder_channel=?, qc_back_entry_enabled=?, qc_duplicate_enabled=?, qc_burst_enabled=?
+      default_reminder_channel=?, qc_back_entry_enabled=?, qc_duplicate_enabled=?, qc_burst_enabled=?,
+      invite_brief=?
      WHERE id=?`
   ).run(
     b.name, b.market, toStoredCategories(b.category), b.status, b.diary_mode, b.recruitment_mode,
@@ -201,6 +202,7 @@ router.post("/studies/:id/settings", (req, res) => {
     parseInt(b.burst_entry_window_hours) || 2, b.reminder_due_hours ? parseInt(b.reminder_due_hours) : null,
     b.reminder_missed_hours ? parseInt(b.reminder_missed_hours) : null, b.default_reminder_channel,
     b.qc_back_entry_enabled ? 1 : 0, b.qc_duplicate_enabled ? 1 : 0, b.qc_burst_enabled ? 1 : 0,
+    (b.invite_brief || "").trim() || null,
     req.params.id
   );
   logAudit(req.session.user.email, "update_settings", "studies", req.params.id, b);
@@ -699,6 +701,10 @@ router.post("/studies/:id/kpis", (req, res) => {
   logAudit(req.session.user.email, "create_kpi", "kpi_config", info.lastInsertRowid, { label, metric });
   back(null);
 });
+
+// Bulk invitations share one implementation with the interviewer side -- see
+// routes/bulkInvite.js. Mounted per-role so each keeps its own path prefix.
+router.use("/studies/:id/bulk-invite", require("./bulkInvite"));
 
 // ---------- Users ----------
 router.get("/users", (req, res) => {

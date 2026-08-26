@@ -1,0 +1,47 @@
+<%- include('../partials/header', { title: 'Invitations sent — ' + study.name, user }) %>
+
+<div class="max-w-xl mx-auto">
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-8">
+    <div class="text-center mb-6">
+      <div class="w-14 h-14 rounded-full <%= outcome.invited ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600' %> flex items-center justify-center mx-auto mb-4">
+        <%- icon(outcome.invited ? 'check-circle' : 'warning', 'w-7 h-7') %>
+      </div>
+      <h1 class="text-xl font-bold text-slate-900 mb-1">
+        <%= outcome.invited ? 'Invitations sent' : 'Nothing was sent' %>
+      </h1>
+      <p class="text-slate-500 text-sm"><%= summary %></p>
+    </div>
+
+    <% if (outcome.errors.length) { %>
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+        <div class="text-sm font-semibold text-amber-800 mb-2">
+          <%= outcome.errors.length %> <%= outcome.errors.length === 1 ? 'problem' : 'problems' %>
+        </div>
+        <ul class="text-xs text-amber-800 space-y-1 list-disc list-inside">
+          <% outcome.errors.slice(0, 12).forEach(e => { %><li><%= e %></li><% }) %>
+        </ul>
+        <% if (outcome.errors.length > 12) { %>
+          <div class="text-[11px] text-amber-700 mt-2">…and <%= outcome.errors.length - 12 %> more. The full detail is in Admin → WhatsApp.</div>
+        <% } %>
+      </div>
+    <% } %>
+
+    <p class="text-xs text-slate-400 leading-relaxed mb-5">
+      Everyone invited now appears on the respondents list. They stay as “invited” with consent pending until they open
+      their link, read what the study involves, and choose to take part.
+    </p>
+
+    <div class="flex flex-wrap gap-3">
+      <a href="<%= basePath %>/respondents"
+         class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('users', 'w-4 h-4') %> See the respondents
+      </a>
+      <a href="<%= basePath %>/bulk-invite"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition">
+        <%- icon('plus', 'w-4 h-4') %> Invite more
+      </a>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

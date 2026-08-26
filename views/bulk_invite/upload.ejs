@@ -1,0 +1,77 @@
+<%- include('../partials/header', { title: 'Bulk invite — ' + study.name, user }) %>
+
+<div class="mb-5">
+  <a href="<%= basePath %>/respondents" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+    &larr; Back to respondents
+  </a>
+</div>
+
+<div class="max-w-2xl">
+  <div class="mb-6">
+    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Recruitment</div>
+    <h1 class="text-2xl font-bold text-slate-900">Invite a group of people</h1>
+    <p class="text-slate-500 text-sm mt-1">
+      Upload a list and text everyone an invitation to <strong><%= study.name %></strong>. Nothing is sent until you've seen what the app made of each row.
+    </p>
+  </div>
+
+  <% if (error) { %>
+    <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">
+      <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= error %></span>
+    </div>
+  <% } %>
+
+  <% if (!messagingLive) { %>
+    <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">
+      <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span>Text messaging isn't connected yet, so invitations can't actually be delivered. You can still upload and check a list — the send step will tell you plainly that nothing went out.</span>
+    </div>
+  <% } %>
+
+  <!-- Step 1 -->
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-4">
+    <div class="flex items-start gap-3">
+      <span class="w-7 h-7 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center text-sm font-bold shrink-0">1</span>
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800 mb-1">Get the template</div>
+        <p class="text-sm text-slate-500 mb-3 leading-relaxed">
+          Two columns: <strong>name</strong> and <strong>phone</strong>. Fill in one row per person and save it.
+        </p>
+        <a href="<%= basePath %>/bulk-invite/template.csv"
+           class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+          <%- icon('download', 'w-4 h-4') %> Download template
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <form method="POST" action="<%= basePath %>/bulk-invite/review" enctype="multipart/form-data"
+        class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5">
+    <div class="flex items-start gap-3">
+      <span class="w-7 h-7 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center text-sm font-bold shrink-0">2</span>
+      <div class="min-w-0 flex-1">
+        <div class="font-semibold text-slate-800 mb-1">Upload your list</div>
+        <p class="text-sm text-slate-500 mb-4 leading-relaxed">CSV or Excel. The app checks every row before anything is sent.</p>
+
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">If a number has no country code, assume</label>
+        <input name="country_code" value="<%= defaultCountryCode %>" placeholder="e.g. +234"
+               class="w-full sm:w-48 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition mb-1.5" />
+        <p class="text-[11px] text-slate-400 mb-4 leading-relaxed">
+          Numbers must reach the network as <code>+234801…</code>. A list written the usual way — <code>08012345678</code> —
+          is converted for you, and the next screen shows you exactly what changed.
+        </p>
+
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Your filled-in list</label>
+        <input type="file" name="roster" accept=".csv,.xlsx,.xls" required
+               class="w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border file:border-slate-300 file:text-sm file:font-medium file:bg-white hover:file:bg-slate-50 mb-4" />
+
+        <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+          <%- icon('arrow-right', 'w-4 h-4') %> Check the list
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,115 @@
+<%- include('../partials/header', { title: 'Check the list — ' + study.name, user }) %>
+
+<div class="mb-5">
+  <a href="<%= basePath %>/bulk-invite" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+    &larr; Upload a different list
+  </a>
+</div>
+
+<div class="mb-6">
+  <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Recruitment · Step 3</div>
+  <h1 class="text-2xl font-bold text-slate-900">Check before sending</h1>
+  <p class="text-slate-500 text-sm mt-1">
+    <%= filename %> — <%= summary.total %> <%= summary.total === 1 ? 'row' : 'rows' %>. Nothing has been sent or saved yet.
+  </p>
+</div>
+
+<!-- Summary. The number that matters is how many will actually be texted. -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+  <div class="bg-white rounded-2xl border border-emerald-200 p-4 shadow-card">
+    <div class="text-xs uppercase tracking-wide text-emerald-700 font-semibold">Will be invited</div>
+    <div class="text-2xl font-bold text-slate-900 mt-2 tabular-nums"><%= summary.ok %></div>
+  </div>
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-4 shadow-card">
+    <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Already on study</div>
+    <div class="text-2xl font-bold text-slate-400 mt-2 tabular-nums"><%= summary.already %></div>
+  </div>
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-4 shadow-card">
+    <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Duplicates in file</div>
+    <div class="text-2xl font-bold text-slate-400 mt-2 tabular-nums"><%= summary.duplicate %></div>
+  </div>
+  <div class="bg-white rounded-2xl border <%= summary.invalid ? 'border-amber-200' : 'border-slate-200/70' %> p-4 shadow-card">
+    <div class="text-xs uppercase tracking-wide <%= summary.invalid ? 'text-amber-700' : 'text-slate-400' %> font-semibold">Need fixing</div>
+    <div class="text-2xl font-bold <%= summary.invalid ? 'text-slate-900' : 'text-slate-400' %> mt-2 tabular-nums"><%= summary.invalid %></div>
+  </div>
+</div>
+
+<% if (summary.reformatted) { %>
+  <div class="flex items-start gap-2 bg-sky-50 border border-sky-200 text-sky-800 text-sm rounded-xl p-3 mb-5">
+    <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+    <span>
+      <strong><%= summary.reformatted %></strong> <%= summary.reformatted === 1 ? 'number was' : 'numbers were' %>
+      rewritten into international format so they can be delivered. They're marked below — check a couple before sending.
+    </span>
+  </div>
+<% } %>
+
+<% if (!messagingLive) { %>
+  <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">
+    <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+    <span>
+      Text messaging isn't connected<%= messagingError ? ` — ${messagingError}` : '' %>.
+      Sending will still create these respondents, but no text will reach anyone.
+    </span>
+  </div>
+<% } %>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden mb-5">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+          <th class="px-5 py-2.5">Row</th><th class="py-2.5">Name</th><th class="py-2.5">Number to text</th><th class="py-2.5">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(r => {
+             const tone = r.status === 'ok' ? '' : r.status === 'invalid' ? 'bg-amber-50/50' : 'bg-slate-50/60 text-slate-400';
+        %>
+          <tr class="border-b border-slate-100 last:border-0 <%= tone %>">
+            <td class="px-5 py-2.5 text-xs text-slate-400 tabular-nums"><%= r.rowNumber %></td>
+            <td class="py-2.5 font-medium <%= r.status === 'ok' ? 'text-slate-700' : '' %>"><%= r.name || '—' %></td>
+            <td class="py-2.5 font-mono text-xs">
+              <%= r.contact || r.phone || '—' %>
+              <% if (r.changed && r.status === 'ok') { %>
+                <span class="block text-[10px] text-sky-600 font-sans">was <%= r.phone %></span>
+              <% } %>
+            </td>
+            <td class="py-2.5">
+              <% if (r.status === 'ok') { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full badge-green">Will invite</span>
+              <% } else { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full <%= r.status === 'invalid' ? 'badge-amber' : 'bg-slate-200 text-slate-600' %>">
+                  <%= r.status === 'already' ? 'Already on study' : r.status === 'duplicate' ? 'Duplicate' : r.status === 'skipped' ? 'Empty' : 'Needs fixing' %>
+                </span>
+                <% if (r.note) { %><span class="block text-[11px] text-slate-500 mt-0.5"><%= r.note %></span><% } %>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<form method="POST" action="<%= basePath %>/bulk-invite/send" class="flex flex-wrap items-center gap-3">
+  <input type="hidden" name="country_code" value="<%= countryCode %>" />
+  <%# Every row is posted back and re-reviewed server-side, so a row the check
+      rejected can't be smuggled through by editing the page. %>
+  <% rows.forEach(r => { %>
+    <input type="hidden" name="name" value="<%= r.name %>" />
+    <input type="hidden" name="contact" value="<%= r.contact || r.phone %>" />
+  <% }) %>
+
+  <button <%= summary.ok ? '' : 'disabled' %>
+          class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card disabled:opacity-40 disabled:pointer-events-none">
+    <%- icon('chat', 'w-4 h-4') %>
+    Invite <%= summary.ok %> <%= summary.ok === 1 ? 'person' : 'people' %>
+  </button>
+  <a href="<%= basePath %>/bulk-invite" class="text-sm text-slate-500 hover:text-brand-700 transition">Cancel</a>
+  <% if (summary.invalid) { %>
+    <span class="text-xs text-slate-400 w-full sm:w-auto">Rows needing fixing are skipped — correct them in your file and upload again.</span>
+  <% } %>
+</form>
+
+<%- include('../partials/footer') %>

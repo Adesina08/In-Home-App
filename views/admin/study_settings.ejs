@@ -90,6 +90,21 @@
           </select>
         </div>
       </div>
+
+      <!-- Shown on the invitation page, to people who have had no contact with
+           the study before the text arrives. It is the only thing standing
+           between an unsolicited link and looking like a scam, so it is worth
+           writing properly. -->
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">What to tell people you invite</label>
+        <textarea name="invite_brief" rows="4" maxlength="1000"
+                  placeholder="e.g. We're looking at how families in Lagos use household cleaning products. You'd log each time you use one — a few quick questions and a photo — for two weeks."
+                  class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition"><%= study.invite_brief || '' %></textarea>
+        <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+          This is the first thing someone reads when they open an invitation link, before they're asked for anything.
+          Say what the study is about and what taking part involves, in plain words. Leave it blank and a generic description is used instead.
+        </p>
+      </div>
     </div>
 
     <div>

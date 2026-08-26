@@ -13,6 +13,30 @@
   </div>
 </div>
 
+<!-- Registering in person and texting a list are different jobs, so the bulk
+     route gets its own card rather than a second button that looks like the
+     first. It needs a study, and an interviewer may work on several, so each
+     is a link rather than a picker. -->
+<% if (studies.length) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-6">
+    <div class="flex items-center gap-2 mb-1">
+      <%- icon('upload', 'w-4 h-4 text-brand-500') %>
+      <span class="font-semibold text-slate-800 text-sm">Invite a group of people</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+      Have a list of names and numbers? Upload it and text everyone an invitation. You'll see what the app made of each row before anything is sent.
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <% studies.forEach(s => { %>
+        <a href="/interviewer/studies/<%= s.id %>/bulk-invite"
+           class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+          <%- icon('arrow-right', 'w-3.5 h-3.5 text-brand-600') %> <%= s.name %>
+        </a>
+      <% }) %>
+    </div>
+  </div>
+<% } %>
+
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
   <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card hover:shadow-card-hover transition">
     <div class="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide font-semibold">
