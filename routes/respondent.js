@@ -11,6 +11,7 @@ const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFi
 const { persistUpload } = require("../lib/mediaStorage");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { findTerminateMatch } = require("../lib/skipLogic");
+const { validateSubmission } = require("../lib/answerValidation");
 const webauthn = require("../lib/webauthn");
 const push = require("../lib/push");
 
@@ -366,6 +367,53 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   const terminateNote = isTerminated
     ? `Terminated: "${terminateMatch.condition_text}" ${{ equals: "=", not_equals: "≠", in: "is one of", not_in: "is none of", includes: "includes" }[terminateMatch.operator] || terminateMatch.operator} "${terminateMatch.value}"`
     : null;
+
+  // Enforce required answers and numeric ranges before anything is stored.
+  // The form's own `required` attributes are a convenience for the respondent,
+  // not a guarantee: a hidden control the browser can't validate, or a request
+  // that never came from the form, would otherwise write an incomplete entry
+  // that only shows up as a gap during analysis.
+  //
+  // Drafts are exempt on purpose -- see lib/answerValidation.js.
+  if (isSubmit && !isTerminated) {
+    const { rules: liveRules } = loadQuestionnaire(study.id);
+    const problems = validateSubmission({
+      questions,
+      rules: liveRules,
+      body: req.body,
+      files: req.files,
+      pendingMediaPath: req.body._pending_media_path || null,
+    });
+    if (problems.length) {
+      // Re-render with what they typed rather than sending them back to a
+      // blank form. prefill is keyed by question code, matching the view.
+      const prefill = {};
+      questions.forEach((q) => {
+        if (!q.code) return;
+        const field = `q_${q.id}`;
+        if (q.type === "multi") {
+          const vals = req.body[field];
+          if (vals) prefill[q.code] = (Array.isArray(vals) ? vals : [vals]).join("|");
+        } else if (req.body[field] !== undefined && req.body[field] !== "") {
+          prefill[q.code] = req.body[field];
+        }
+      });
+      return res.status(400).render("respondent/diary_form", {
+        respondent,
+        study,
+        questions,
+        rules: liveRules,
+        practice: !!isPractice,
+        mode: entryMode === "audio" ? "audio" : "standard",
+        prefill,
+        pendingMedia: req.body._pending_media_path
+          ? { path: req.body._pending_media_path, mimetype: req.body._pending_media_mimetype }
+          : null,
+        aiNote: null,
+        problems,
+      });
+    }
+  }
 
   const info = db
     .prepare(

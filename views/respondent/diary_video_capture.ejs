@@ -27,8 +27,17 @@
         <%- icon('video', 'w-8 h-8 text-slate-400') %>
         <span id="videoFileLabel">Tap to open camera</span>
       </button>
-      <input type="file" id="videoFileInput" name="video" accept="video/*" required class="hidden" />
-      <p class="text-xs text-slate-400 -mt-3 mb-5">Opens your camera to record live — you can't attach an existing video from your gallery.</p>
+      <%# NOT `required`. This input is hidden (the camera is opened by the
+          button above), and a hidden required control makes the browser refuse
+          to submit while being unable to show its prompt -- so the button did
+          nothing at all, with no message. The check moved into JS below, which
+          can actually tell the respondent what's wrong. %>
+      <input type="file" id="videoFileInput" name="video" accept="video/*" class="hidden" />
+      <p class="text-xs text-slate-400 -mt-3 mb-3">Opens your camera to record live — you can't attach an existing video from your gallery.</p>
+      <div id="videoRequiredNotice" class="hidden flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-4">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+        <span>Record a video first — tap the camera area above.</span>
+      </div>
       <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-3 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
         <%- icon('arrow-right', 'w-4 h-4') %> Analyze Video &amp; Continue
       </button>
@@ -37,4 +46,24 @@
 </div>
 
 <script src="/public/js/camera-capture.js"></script>
+<script>
+  (function () {
+    var form = document.querySelector('form[action$="/analyze-video"]');
+    var input = document.getElementById('videoFileInput');
+    var notice = document.getElementById('videoRequiredNotice');
+    if (!form || !input || !notice) return;
+    form.addEventListener('submit', function (e) {
+      if (input.files && input.files.length) {
+        notice.classList.add('hidden');
+        return;
+      }
+      e.preventDefault();
+      notice.classList.remove('hidden');
+      notice.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    input.addEventListener('change', function () {
+      if (input.files && input.files.length) notice.classList.add('hidden');
+    });
+  })();
+</script>
 <%- include('../partials/footer') %>
