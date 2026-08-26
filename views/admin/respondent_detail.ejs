@@ -1,0 +1,152 @@
+<%- include('../partials/header', { title: respondent.respondent_code + ' — Respondent', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="mb-5">
+  <a href="/admin/studies/<%= study.id %>/respondents" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+    &larr; Back to all respondents
+  </a>
+</div>
+
+<!-- Profile -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 mb-5">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2.5 flex-wrap mb-1">
+        <h1 class="text-xl font-bold text-slate-900"><%= respondent.name || '(no name)' %></h1>
+        <span class="font-mono text-xs text-slate-500"><%= respondent.respondent_code %></span>
+        <% if (respondent.is_practice) { %><span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Practice</span><% } %>
+        <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full <%= risk==='red'?'badge-red':risk==='amber'?'badge-amber':'badge-green' %>"><%= risk %></span>
+      </div>
+      <div class="text-sm text-slate-500">Registered <%= respondent.created_at %><% if (interviewer) { %> by <%= interviewer.name %><% } %></div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/export.csv"
+         class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('download', 'w-3.5 h-3.5') %> Export answers
+      </a>
+      <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/media.csv"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        <%- icon('download', 'w-3.5 h-3.5') %> Export media log
+      </a>
+      <a href="<%= diaryUrl %>" target="_blank"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        <%- icon('eye', 'w-3.5 h-3.5') %> Open their diary
+      </a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 pt-5 border-t border-slate-100">
+    <% [
+         ['Contact', respondent.contact || '—'],
+         ['Recruitment', (respondent.recruitment_mode || '—').toUpperCase()],
+         ['Channel', respondent.preferred_channel || '—'],
+         ['Consent', respondent.consent_status || '—'],
+         ['Status', respondent.activation_status || '—'],
+         ['Device lock', hasLock ? 'Locked' : (respondent.biometric_exempt ? 'Exempt' : 'Pending')],
+       ].forEach(([label, value]) => { %>
+      <div>
+        <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5"><%= label %></div>
+        <div class="text-sm text-slate-700 break-words"><%= value %></div>
+      </div>
+    <% }) %>
+  </div>
+
+  <% if (respondent.contact_verified_at || respondent.tutorial_completed_at) { %>
+    <div class="mt-3 text-xs text-slate-400">
+      <% if (respondent.contact_verified_at) { %>Contact verified <%= respondent.contact_verified_at %><% } %>
+      <% if (respondent.contact_verified_at && respondent.tutorial_completed_at) { %> · <% } %>
+      <% if (respondent.tutorial_completed_at) { %>Tutorial completed <%= respondent.tutorial_completed_at %><% } %>
+    </div>
+  <% } %>
+
+  <% if (respondent.activation_status === 'disqualified' && respondent.disqualify_reason) { %>
+    <div class="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3">
+      <%- icon('stop', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span>Participation ended: <%= respondent.disqualify_reason %></span>
+    </div>
+  <% } %>
+</div>
+
+<!-- QC flags for this respondent (including ones not tied to a single entry) -->
+<% const openFlags = flags.filter(f => f.status === 'open'); %>
+<% if (flags.length) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+      <%- icon('shield', 'w-4 h-4 text-brand-500') %> QC Flags
+      <span class="text-xs font-normal text-slate-400"><%= openFlags.length %> open of <%= flags.length %></span>
+    </div>
+    <div class="space-y-2">
+      <% flags.forEach(f => { %>
+        <div class="flex items-start gap-2.5 text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 <%= f.status === 'open' ? '' : 'opacity-60' %>">
+          <span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5 <%= f.severity==='critical'?'bg-red-100 text-red-700':f.severity==='high'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600' %>"><%= f.severity %></span>
+          <div class="flex-1 min-w-0">
+            <div class="text-slate-700"><%= f.reason %></div>
+            <div class="text-[11px] text-slate-400 mt-0.5">
+              <%= f.flag_type %> · <%= f.created_time %> · <%= f.status %><% if (f.reviewer) { %> by <%= f.reviewer %><% } %>
+              <% if (f.record_id) { %>
+                · <a href="/admin/studies/<%= study.id %>/records/<%= f.record_id %>" class="text-brand-600 hover:underline font-medium">view the entry</a>
+              <% } else { %>
+                · <span class="italic">not tied to one entry</span>
+              <% } %>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+<% } %>
+
+<!-- Diary entries -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card">
+  <div class="px-5 pt-5 pb-3 font-semibold text-slate-800 flex items-center gap-2">
+    <%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Diary Entries
+    <span class="text-xs font-normal text-slate-400"><%= records.length %> total</span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+        <th class="px-5 py-2.5">Period</th><th class="py-2.5">Occurred</th><th class="py-2.5">Entered</th>
+        <th class="py-2.5">How</th><th class="py-2.5">Status</th><th class="py-2.5">Answers</th>
+        <th class="py-2.5">Evidence</th><th class="py-2.5">Flags</th><th class="py-2.5"></th>
+      </tr></thead>
+      <tbody>
+      <% records.forEach(r => { %>
+        <tr class="border-t border-slate-100 hover:bg-slate-50/70">
+          <td class="px-5 py-2.5 font-medium text-slate-700"><%= r.period_label %><% if (r.is_practice) { %> <span class="text-xs text-slate-400">(practice)</span><% } %></td>
+          <td class="py-2.5 text-xs text-slate-500"><%= r.occurrence_time || '—' %></td>
+          <td class="py-2.5 text-xs text-slate-500"><%= r.entry_time %></td>
+          <td class="py-2.5 text-xs uppercase text-slate-500"><%= r.entry_mode %></td>
+          <td class="py-2.5">
+            <span class="text-xs px-2.5 py-1 rounded-full font-medium <%= r.status==='submitted' ? 'badge-green' : (r.status==='screened_out' ? 'bg-slate-200 text-slate-600' : 'badge-amber') %>"><%= r.status === 'screened_out' ? 'screened out' : r.status %></span>
+          </td>
+          <td class="py-2.5 text-xs text-slate-600"><%= r.answer_count %></td>
+          <td class="py-2.5 text-xs text-slate-500">
+            <% if (r.media_count) { %>
+              <span class="inline-flex items-center gap-1.5">
+                <% if (r.photo_count) { %><span title="<%= r.photo_count %> photo(s)">📷 <%= r.photo_count %></span><% } %>
+                <% if (r.video_count) { %><span title="<%= r.video_count %> video(s)">🎥 <%= r.video_count %></span><% } %>
+                <% if (r.audio_count) { %><span title="<%= r.audio_count %> audio">🎤 <%= r.audio_count %></span><% } %>
+              </span>
+            <% } else { %><span class="text-slate-300">none</span><% } %>
+          </td>
+          <td class="py-2.5">
+            <% if (r.open_flags) { %>
+              <span class="text-xs px-2 py-0.5 rounded-full font-medium badge-red"><%= r.open_flags %></span>
+            <% } else { %><span class="text-slate-300 text-xs">—</span><% } %>
+          </td>
+          <td class="py-2.5 pr-5 text-right">
+            <a href="/admin/studies/<%= study.id %>/records/<%= r.id %>" class="text-brand-600 text-xs font-semibold hover:underline">Open &rarr;</a>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (!records.length) { %>
+        <tr><td colspan="9" class="px-5 py-10 text-center text-slate-400">
+          <div class="flex flex-col items-center gap-2"><%- icon('calendar', 'w-6 h-6 text-slate-300') %> <span class="text-sm">This respondent hasn't logged any diary entries yet.</span></div>
+        </td></tr>
+      <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

@@ -29,13 +29,12 @@
 <% if (typeof user !== 'undefined' && user) {
   const navFor = {
     admin: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ],
-    research: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ],
     interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'], ['/help','Help','help'] ],
     client: [ ['/client','Client Dashboard','chart-bar'], ['/help','Help','help'] ],
   };
   const links = navFor[user.role] || [];
   const path = typeof currentPath !== 'undefined' ? currentPath : '';
-  const roleColor = { admin: 'bg-violet-400/90', research: 'bg-violet-400/90', interviewer: 'bg-sky-400/90', client: 'bg-emerald-400/90' }[user.role] || 'bg-slate-400/90';
+  const roleColor = { admin: 'bg-violet-400/90', interviewer: 'bg-sky-400/90', client: 'bg-emerald-400/90' }[user.role] || 'bg-slate-400/90';
   const initials = (user.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
 %>
 <header class="bg-brand-700 text-white sticky top-0 z-30 shadow-md">

@@ -93,7 +93,7 @@ app.locals.mediaUrl = (filePath) => {
 app.get("/", (req, res) => {
   if (!req.session.user) return res.redirect("/login");
   const role = req.session.user.role;
-  if (role === "admin" || role === "research") return res.redirect("/admin");
+  if (role === "admin") return res.redirect("/admin");
   if (role === "interviewer") return res.redirect("/interviewer");
   if (role === "client") return res.redirect("/client");
   return res.redirect("/login");

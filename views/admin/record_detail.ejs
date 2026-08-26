@@ -1,0 +1,239 @@
+<%- include('../partials/header', { title: 'Entry ' + record.id + ' — ' + respondent.respondent_code, user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="mb-5">
+  <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+    &larr; Back to <%= respondent.name || respondent.respondent_code %>
+  </a>
+</div>
+
+<!-- Entry header -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 mb-5">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-2.5 flex-wrap mb-1">
+        <h1 class="text-xl font-bold text-slate-900">Diary entry &middot; <%= record.period_label %></h1>
+        <span class="text-xs px-2.5 py-1 rounded-full font-medium <%= record.status==='submitted' ? 'badge-green' : (record.status==='screened_out' ? 'bg-slate-200 text-slate-600' : 'badge-amber') %>"><%= record.status === 'screened_out' ? 'screened out' : record.status %></span>
+        <% if (record.is_practice) { %><span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Practice — excluded from analysis</span><% } %>
+      </div>
+      <div class="text-sm text-slate-500">
+        <%= respondent.name || '(no name)' %> &middot; <span class="font-mono text-xs"><%= respondent.respondent_code %></span>
+        &middot; logged via <%= record.entry_mode %>
+      </div>
+    </div>
+    <a href="/admin/studies/<%= study.id %>/records/<%= record.id %>/export.csv"
+       class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('download', 'w-3.5 h-3.5') %> Export this entry
+    </a>
+  </div>
+
+  <%
+    // Back-entry gap: how long after the occasion the entry was actually made.
+    // This is what the recall/back-entry QC rule acts on, so it's shown here
+    // rather than leaving a reviewer to subtract two timestamps by hand.
+    let gapHours = null;
+    if (record.occurrence_time && record.entry_time) {
+      gapHours = Math.round((new Date(record.entry_time.replace(' ', 'T')) - new Date(record.occurrence_time.replace(' ', 'T'))) / 36e5 * 10) / 10;
+    }
+  %>
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5 pt-5 border-t border-slate-100">
+    <% [
+         ['Occurred', record.occurrence_time || '—'],
+         ['Entered', record.entry_time || '—'],
+         ['Submitted', record.submit_time || '—'],
+         ['Back-entry gap', gapHours === null ? '—' : gapHours + 'h'],
+         ['Questionnaire', answeredVersion ? ('v' + answeredVersion) : '—'],
+       ].forEach(([label, value]) => { %>
+      <div>
+        <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5"><%= label %></div>
+        <div class="text-sm text-slate-700"><%= value %></div>
+      </div>
+    <% }) %>
+  </div>
+
+  <% if (answeredVersion && answeredVersion !== (study.version || 1)) { %>
+    <div class="mt-4 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
+      <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span>Answered against questionnaire <strong>v<%= answeredVersion %></strong>; the study is now on <strong>v<%= study.version || 1 %></strong>. Wording or options may have changed since.</span>
+    </div>
+  <% } %>
+
+  <% if (record.terminate_note) { %>
+    <div class="mt-4 flex items-start gap-2 bg-slate-100 border border-slate-200 text-slate-600 text-sm rounded-xl p-3">
+      <%- icon('stop', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span>Ended early by a terminate rule: <%= record.terminate_note %></span>
+    </div>
+  <% } %>
+</div>
+
+<!-- QC flags on this entry -->
+<% if (flags.length) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> QC Flags on this entry</div>
+    <div class="space-y-2">
+      <% flags.forEach(f => { %>
+        <div class="flex items-start gap-2.5 text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 <%= f.status === 'open' ? '' : 'opacity-60' %>">
+          <span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5 <%= f.severity==='critical'?'bg-red-100 text-red-700':f.severity==='high'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600' %>"><%= f.severity %></span>
+          <div class="flex-1 min-w-0">
+            <div class="text-slate-700"><%= f.reason %></div>
+            <div class="text-[11px] text-slate-400 mt-0.5"><%= f.flag_type %> · <%= f.created_time %> · <%= f.status %></div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+    <div class="mt-3 text-[11px] text-slate-400">Flags are reviewed and resolved on the <a href="/admin/qc?study=<%= study.id %>" class="text-brand-600 hover:underline font-medium">QC Worklist</a> — this page is read-only so the original record is always preserved.</div>
+  </div>
+<% } %>
+
+<!-- Evidence -->
+<% if (media.length) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+    <div class="font-semibold text-slate-800 mb-4 flex items-center gap-2"><%- icon('photo', 'w-4 h-4 text-brand-500') %> Evidence <span class="text-xs font-normal text-slate-400"><%= media.length %> file<%= media.length === 1 ? '' : 's' %></span></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <% media.forEach(m => { const url = mediaUrl(m.file_path); %>
+        <div class="border border-slate-200 rounded-xl p-3.5">
+          <div class="flex items-center justify-between gap-2 mb-2.5">
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500"><%= m.media_type %></span>
+            <span class="text-[11px] text-slate-400"><%= m.upload_time %></span>
+          </div>
+
+          <% if (!url) { %>
+            <div class="text-xs text-slate-400 bg-slate-50 border border-dashed border-slate-300 rounded-lg px-3 py-4 text-center">File link unavailable — check media storage configuration.</div>
+          <% } else if (m.media_type === 'photo') { %>
+            <a href="<%= url %>" target="_blank"><img src="<%= url %>" alt="Diary photo evidence" class="w-full rounded-lg border border-slate-200 max-h-80 object-contain bg-slate-50" /></a>
+          <% } else if (m.media_type === 'video') { %>
+            <video src="<%= url %>" controls preload="metadata" class="w-full rounded-lg border border-slate-200 max-h-80 bg-black"></video>
+          <% } else if (m.media_type === 'audio') { %>
+            <audio src="<%= url %>" controls preload="metadata" class="w-full"></audio>
+          <% } else { %>
+            <a href="<%= url %>" target="_blank" class="text-xs text-brand-600 hover:underline">Open file</a>
+          <% } %>
+
+          <% if (m.media_type === 'photo' || m.media_type === 'video') { %>
+            <div class="mt-2.5 text-xs">
+              <span class="text-slate-400">Brand detection:</span>
+              <% if (m.detection_status === 'done' && m.detected_brand) { %>
+                <span class="font-semibold text-emerald-700"><%= m.detected_brand %></span>
+              <% } else if (m.detection_status === 'done') { %>
+                <span class="text-slate-500">ran, no brand matched</span>
+              <% } else { %>
+                <span class="text-slate-500"><%= m.detection_status === 'unavailable' ? 'unavailable (no provider configured)' : m.detection_status %></span>
+              <% } %>
+            </div>
+          <% } %>
+
+          <% if (m.media_type === 'audio') { %>
+            <div class="mt-2.5">
+              <div class="text-xs text-slate-400 mb-1">Transcript</div>
+              <% if (m.transcript_status === 'done' && m.transcript_text) { %>
+                <div class="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 leading-relaxed whitespace-pre-line"><%= m.transcript_text %></div>
+              <% } else { %>
+                <div class="text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-300 rounded-lg px-3 py-2.5">
+                  <%= m.transcript_status === 'unavailable' ? 'Not transcribed — no speech provider configured. The recording above is still playable.' : 'Transcription ' + m.transcript_status + '.' %>
+                </div>
+              <% } %>
+            </div>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+<% } %>
+
+<!-- Answers -->
+<%
+  const isAnswered = (a) => !(a.value === null || a.value === '');
+  const isEvidence = (a) => ['photo', 'video', 'audio'].includes(a.type);
+  // "Unanswered" lumps together two very different things: a question the
+  // respondent genuinely left blank, and one skip logic never showed them.
+  // The record alone can't tell them apart after the fact, so rather than
+  // asserting which is which, unanswered rows are collapsed by default when
+  // they'd otherwise swamp the answers -- on a 56-question instrument where
+  // routing hid 49, listing every one as "Not answered (required)" buries the
+  // handful of answers that are the actual point of the page.
+  const answeredCount = answers.filter((a) => isAnswered(a) || isEvidence(a)).length;
+  const unansweredCount = answers.length - answeredCount;
+  const collapseByDefault = unansweredCount > answeredCount;
+%>
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card" id="answersCard">
+  <div class="px-5 pt-5 pb-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="font-semibold text-slate-800 flex items-center gap-2">
+      <%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Answers
+      <span class="text-xs font-normal text-slate-400"><%= answeredCount %> of <%= answers.length %> questions answered</span>
+    </div>
+    <% if (unansweredCount) { %>
+      <label class="flex items-center gap-2 text-xs font-medium text-slate-500 cursor-pointer select-none">
+        <input type="checkbox" id="showUnanswered" <%= collapseByDefault ? '' : 'checked' %>
+               class="h-3.5 w-3.5 rounded border-slate-300 accent-brand-700" />
+        Show the <%= unansweredCount %> unanswered
+      </label>
+    <% } %>
+  </div>
+  <% if (unansweredCount && collapseByDefault) { %>
+    <div class="px-5 pb-3 text-[11px] text-slate-400 leading-relaxed">
+      <%= unansweredCount %> questions have no answer on this entry. Most will be ones the skip logic never showed this respondent, but the record can't distinguish those from genuinely skipped questions — tick the box to review them.
+    </div>
+  <% } %>
+  <div class="divide-y divide-slate-100" id="answersList">
+    <% let lastSection; answers.forEach(a => { %>
+      <% if (a.section !== lastSection) { lastSection = a.section; %>
+        <div class="section-row px-5 py-2 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><%= a.section || 'No section' %></div>
+      <% } %>
+      <div class="answer-row px-5 py-3.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-5<%= (isAnswered(a) || isEvidence(a)) ? '' : ' is-unanswered' %>">
+        <div class="sm:w-2/5 min-w-0">
+          <div class="text-sm text-slate-700"><%= a.text %></div>
+          <div class="text-[11px] text-slate-400 mt-0.5">
+            <%= a.type %><% if (a.code) { %> · <span class="font-mono"><%= a.code %></span><% } %><% if (a.required) { %> · required<% } %><% if (!a.active) { %> · <span class="italic">removed from the questionnaire since</span><% } %>
+          </div>
+        </div>
+        <div class="sm:flex-1 min-w-0">
+          <% if (['photo','video','audio'].includes(a.type)) { %>
+            <span class="text-xs text-slate-400 italic">Captured as evidence — see the files above.</span>
+          <% } else if (a.value === null || a.value === '') { %>
+            <span class="text-xs text-slate-400 italic">Not answered<%= a.required ? ' (required)' : '' %></span>
+          <% } else { %>
+            <div class="text-sm text-slate-900 font-medium break-words whitespace-pre-line"><%= a.value %></div>
+          <% } %>
+        </div>
+      </div>
+    <% }) %>
+    <% if (!answers.length) { %>
+      <div class="px-5 py-10 text-center text-slate-400 text-sm">This study has no questions configured.</div>
+    <% } %>
+  </div>
+</div>
+
+<script>
+  // Toggle the unanswered rows, and hide any section heading left with nothing
+  // visible under it -- otherwise filtering leaves a trail of empty section
+  // bars that look like a rendering fault.
+  (function () {
+    var toggle = document.getElementById('showUnanswered');
+    if (!toggle) return;
+    var list = document.getElementById('answersList');
+
+    function apply() {
+      var show = toggle.checked;
+      list.querySelectorAll('.answer-row.is-unanswered').forEach(function (row) {
+        row.style.display = show ? '' : 'none';
+      });
+      // Walk the children in order: a section heading is visible only if at
+      // least one answer row before the next heading is still on screen.
+      var kids = Array.prototype.slice.call(list.children);
+      kids.forEach(function (el, i) {
+        if (!el.classList.contains('section-row')) return;
+        var anyVisible = false;
+        for (var j = i + 1; j < kids.length; j++) {
+          if (kids[j].classList.contains('section-row')) break;
+          if (kids[j].style.display !== 'none') { anyVisible = true; break; }
+        }
+        el.style.display = anyVisible ? '' : 'none';
+      });
+    }
+
+    toggle.addEventListener('change', apply);
+    apply();
+  })();
+</script>
+
+<%- include('../partials/footer') %>

@@ -9,7 +9,7 @@ const { applyRecruitmentHolds } = require("../lib/qc");
 const { nextRespondentCode } = require("../lib/respondentCode");
 
 const router = express.Router();
-router.use(requireRole("interviewer", "admin", "research"));
+router.use(requireRole("interviewer", "admin"));
 
 // Code allocation lives in lib/respondentCode.js -- shared with the remote
 // self-onboarding flow so both paths allocate the same way.

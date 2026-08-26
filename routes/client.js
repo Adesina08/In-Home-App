@@ -5,7 +5,7 @@ const { classifyRisk } = require("../lib/qc");
 const { latestSummary } = require("../lib/aiSummary");
 
 const router = express.Router();
-router.use(requireRole("client", "admin", "research"));
+router.use(requireRole("client", "admin"));
 
 router.get("/", (req, res) => {
   const scopedStudyId = req.session.user.study_id;

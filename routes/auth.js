@@ -38,7 +38,7 @@ router.post("/login", (req, res) => {
   }
   req.session.user = { id: user.id, name: user.name, email: user.email, role: user.role, study_id: user.study_id };
   logAudit(user.email, "login", "users", user.id, {});
-  if (user.role === "admin" || user.role === "research") return res.redirect("/admin");
+  if (user.role === "admin") return res.redirect("/admin");
   if (user.role === "interviewer") return res.redirect("/interviewer");
   if (user.role === "client") return res.redirect("/client");
   res.redirect("/");

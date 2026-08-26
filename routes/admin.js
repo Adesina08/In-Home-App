@@ -18,7 +18,7 @@ const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
 const router = express.Router();
-router.use(requireRole("admin", "research"));
+router.use(requireRole("admin"));
 
 // Any successful write to the questionnaire (questions, sections, skip logic)
 // marks the study as having unpublished changes, so the Questionnaire tab can
@@ -718,6 +718,187 @@ router.get("/studies/:id/respondents", (req, res) => {
     remoteOpen: remoteOnboardingOpen(study),
     activated: req.query.activated,
   });
+});
+
+// ---------- Respondent drill-down ----------
+// Studies -> Respondents -> one respondent -> one diary entry. Before this,
+// the chain stopped at the respondent list: the only way to see what someone
+// actually answered was to export the study CSV and read it in a spreadsheet,
+// or to open Media Review, which lists every file in the study rather than the
+// entry it belongs to. All the data was already linked to the record -- this
+// is the view onto it.
+//
+// Deliberately read-only for answers. The spec's QC design rule is that flags
+// never delete respondent data: the original record is preserved, the reason
+// is shown, and the decision is audited. Letting staff retype an answer would
+// quietly break that guarantee, so review happens here and disposition happens
+// on the QC Worklist.
+function loadRespondentOr404(req, res) {
+  const respondent = db
+    .prepare("SELECT * FROM respondents WHERE id = ? AND study_id = ?")
+    .get(req.params.respondentId, req.params.id);
+  if (!respondent) {
+    res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
+    return null;
+  }
+  return respondent;
+}
+
+router.get("/studies/:id/respondents/:respondentId", (req, res) => {
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  const respondent = loadRespondentOr404(req, res);
+  if (!respondent) return;
+
+  // Counts are joined in rather than queried per row so a respondent with a
+  // few hundred entries doesn't fan out into hundreds of extra statements.
+  const records = db
+    .prepare(
+      `SELECT dr.*,
+              (SELECT COUNT(*) FROM responses  WHERE record_id = dr.id) AS answer_count,
+              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id) AS media_count,
+              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id AND media_type = 'photo') AS photo_count,
+              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id AND media_type = 'video') AS video_count,
+              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id AND media_type = 'audio') AS audio_count,
+              (SELECT COUNT(*) FROM qc_flags   WHERE record_id = dr.id AND status = 'open') AS open_flags
+       FROM diary_records dr
+       WHERE dr.respondent_id = ?
+       ORDER BY datetime(dr.entry_time) DESC`
+    )
+    .all(respondent.id);
+
+  // Respondent-level flags (recruitment holds, burst entry, cross-channel
+  // duplicates) aren't tied to any one entry, so they'd be invisible on the
+  // entry pages -- surface them here.
+  const flags = db
+    .prepare("SELECT * FROM qc_flags WHERE respondent_id = ? ORDER BY datetime(created_time) DESC")
+    .all(respondent.id);
+
+  const hasLock = !!db
+    .prepare("SELECT COUNT(*) c FROM respondent_credentials WHERE respondent_id = ?")
+    .get(respondent.id).c;
+
+  const interviewer = respondent.interviewer_id
+    ? db.prepare("SELECT name, email FROM users WHERE id = ?").get(respondent.interviewer_id)
+    : null;
+
+  res.render("admin/respondent_detail", {
+    study,
+    respondent,
+    records,
+    flags,
+    hasLock,
+    interviewer,
+    risk: classifyRisk(respondent.id),
+    diaryUrl: respondentDiaryUrl(req, respondent.unique_token),
+    tab: "respondents",
+  });
+});
+
+router.get("/studies/:id/records/:recordId", (req, res) => {
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  const record = db
+    .prepare("SELECT * FROM diary_records WHERE id = ? AND study_id = ?")
+    .get(req.params.recordId, req.params.id);
+  if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
+  const respondent = db.prepare("SELECT * FROM respondents WHERE id = ?").get(record.respondent_id);
+
+  // LEFT JOIN from questions, not from responses: a question that was skipped
+  // (or hidden by skip logic) has no response row, and showing the gap is the
+  // point -- an entry that looks complete because the unanswered questions
+  // simply aren't rendered is exactly the thing QC review needs to catch.
+  // Inactive questions are still included when they carry an answer, so an
+  // entry answered against an older questionnaire version still reads in full.
+  const answers = db
+    .prepare(
+      `SELECT q.id, q.code, q.text, q.type, q.section, q.order_index, q.required, q.active,
+              r.value, r.study_version
+       FROM questions q
+       LEFT JOIN responses r ON r.question_id = q.id AND r.record_id = ?
+       WHERE q.study_id = ? AND (q.active = 1 OR r.value IS NOT NULL)
+       ORDER BY q.order_index, q.id`
+    )
+    .all(record.id, study.id);
+
+  const media = db.prepare("SELECT * FROM media WHERE record_id = ? ORDER BY id").all(record.id);
+  const flags = db
+    .prepare("SELECT * FROM qc_flags WHERE record_id = ? ORDER BY datetime(created_time) DESC")
+    .all(record.id);
+
+  // The version stamped on this entry's answers, which may be older than the
+  // study's current version if the questionnaire has been republished since.
+  const answeredVersion = (answers.find((a) => a.study_version) || {}).study_version || null;
+
+  res.render("admin/record_detail", {
+    study, record, respondent, answers, media, flags, answeredVersion, tab: "respondents",
+  });
+});
+
+// Per-respondent and per-entry exports, alongside the existing study-level ones.
+// One row per answer (long format) rather than one wide row per entry, because
+// the questionnaire changes between versions and a wide export silently drops
+// or misaligns columns when it does.
+function answerRowsForRecords(recordIds) {
+  if (!recordIds.length) return [];
+  const placeholders = recordIds.map(() => "?").join(",");
+  return db
+    .prepare(
+      `SELECT r.respondent_code, dr.id AS record_id, dr.period_label, dr.occurrence_time,
+              dr.entry_time, dr.submit_time, dr.status, dr.entry_mode, dr.is_practice,
+              q.code AS question_code, q.text AS question_text, q.type AS question_type,
+              q.section, resp.value AS answer, resp.study_version
+       FROM diary_records dr
+       JOIN respondents r ON r.id = dr.respondent_id
+       LEFT JOIN responses resp ON resp.record_id = dr.id
+       LEFT JOIN questions q ON q.id = resp.question_id
+       WHERE dr.id IN (${placeholders})
+       ORDER BY dr.id, q.order_index`
+    )
+    .all(...recordIds);
+}
+
+function mediaRowsForRecords(recordIds) {
+  if (!recordIds.length) return [];
+  const placeholders = recordIds.map(() => "?").join(",");
+  return db
+    .prepare(
+      `SELECT record_id, media_type, file_path, upload_time,
+              detection_status, detected_brand, transcript_status, transcript_text
+       FROM media WHERE record_id IN (${placeholders}) ORDER BY record_id, id`
+    )
+    .all(...recordIds);
+}
+
+router.get("/studies/:id/respondents/:respondentId/export.csv", (req, res) => {
+  const respondent = loadRespondentOr404(req, res);
+  if (!respondent) return;
+  const ids = db.prepare("SELECT id FROM diary_records WHERE respondent_id = ?").all(respondent.id).map((r) => r.id);
+  const rows = answerRowsForRecords(ids);
+  logAudit(req.session.user.email, "export_respondent", "respondents", respondent.id, { rows: rows.length });
+  res.set("Content-Type", "text/csv");
+  res.set("Content-Disposition", `attachment; filename=${respondent.respondent_code || "respondent"}_answers.csv`);
+  res.send(toCsv(rows));
+});
+
+router.get("/studies/:id/respondents/:respondentId/media.csv", (req, res) => {
+  const respondent = loadRespondentOr404(req, res);
+  if (!respondent) return;
+  const ids = db.prepare("SELECT id FROM diary_records WHERE respondent_id = ?").all(respondent.id).map((r) => r.id);
+  const rows = mediaRowsForRecords(ids);
+  res.set("Content-Type", "text/csv");
+  res.set("Content-Disposition", `attachment; filename=${respondent.respondent_code || "respondent"}_media.csv`);
+  res.send(toCsv(rows));
+});
+
+router.get("/studies/:id/records/:recordId/export.csv", (req, res) => {
+  const record = db
+    .prepare("SELECT * FROM diary_records WHERE id = ? AND study_id = ?")
+    .get(req.params.recordId, req.params.id);
+  if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
+  const rows = answerRowsForRecords([record.id]);
+  logAudit(req.session.user.email, "export_record", "diary_records", record.id, { rows: rows.length });
+  res.set("Content-Type", "text/csv");
+  res.set("Content-Disposition", `attachment; filename=entry_${record.id}_answers.csv`);
+  res.send(toCsv(rows));
 });
 
 // Release a recruitment hold (see lib/qc.js applyRecruitmentHolds): a
