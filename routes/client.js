@@ -2,6 +2,7 @@ const express = require("express");
 const db = require("../lib/db");
 const { requireRole } = require("../lib/auth");
 const { classifyRisk } = require("../lib/qc");
+const { latestSummary } = require("../lib/aiSummary");
 
 const router = express.Router();
 router.use(requireRole("client", "admin", "research"));
@@ -74,10 +75,16 @@ router.get("/", (req, res) => {
     )
     .all(study.id);
 
+  // Spec 5.2 "AI insight": the client sees the most recent summary the
+  // research team generated -- read-only, and never generated on their behalf,
+  // so nothing reaches a client that research hasn't looked at first.
+  const aiInsight = latestSummary(study.id);
+
   res.render("client/dashboard", {
     study,
     studies,
     kpis,
+    aiInsight,
     totalRespondents,
     activeRespondents,
     completionRate,

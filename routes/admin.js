@@ -13,6 +13,7 @@ const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTran
 const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
 const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
+const aiSummary = require("../lib/aiSummary");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
@@ -624,6 +625,45 @@ router.post("/users", (req, res) => {
     return res.render("error", { message: "Could not create user (email may already exist).", user: req.session.user });
   }
   res.redirect("/admin/users");
+});
+
+// ---------- AI summary (spec 4.3, P1) ----------
+router.get("/ai-summary", (req, res) => {
+  const { study, studies } = getStudyOrFirst(req);
+  if (!study) return res.redirect("/admin/studies");
+  res.render("admin/ai_summary", {
+    study,
+    studies,
+    summaries: aiSummary.listSummaries(study.id),
+    aiConfigured: aiSummary.isAiModelConfigured(),
+    openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
+    from: req.query.from || "",
+    to: req.query.to || "",
+    error: req.query.error || null,
+    generated: req.query.generated || null,
+  });
+});
+
+router.post("/ai-summary/generate", async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  const from = (req.body.from || "").trim() || null;
+  const to = (req.body.to || "").trim() || null;
+  const qs = (extra) =>
+    `study=${studyId}&from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}${extra}`;
+
+  if (from && to && from > to) {
+    return res.redirect(`/admin/ai-summary?${qs(`&error=${encodeURIComponent("The start date is after the end date.")}`)}`);
+  }
+  try {
+    const row = await aiSummary.generateSummary(studyId, { from, to, generatedBy: req.session.user.email });
+    logAudit(req.session.user.email, "generate_ai_summary", "ai_summaries", row.id, {
+      study_id: studyId, from, to, provider: row.provider,
+    });
+    res.redirect(`/admin/ai-summary?${qs(`&generated=${row.id}`)}`);
+  } catch (e) {
+    // A failed model call must not lose the admin's period selection.
+    res.redirect(`/admin/ai-summary?${qs(`&error=${encodeURIComponent(e.message || "Could not generate a summary.")}`)}`);
+  }
 });
 
 // ---------- QC worklist ----------

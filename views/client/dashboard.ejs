@@ -83,6 +83,29 @@
   </div>
 </div>
 
+<% if (typeof aiInsight !== 'undefined' && aiInsight) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div class="font-semibold text-slate-800 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-brand-500') %> Summary</div>
+      <div class="flex items-center gap-2">
+        <% if (aiInsight.used_ai_model) { %>
+          <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">AI-generated</span>
+        <% } else { %>
+          <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Rules-based draft — not AI</span>
+        <% } %>
+      </div>
+    </div>
+    <div class="text-sm text-slate-700 leading-relaxed whitespace-pre-line bg-slate-50 border border-slate-200 rounded-xl p-4"><%= aiInsight.narrative %></div>
+    <!-- Spec 4.3: the narrative must be traceable to the period and base it came from. -->
+    <p class="text-[11px] text-slate-400 mt-2.5 leading-relaxed">
+      Covers <%= aiInsight.period_start || aiInsight.period_end ? ((aiInsight.period_start || 'the start of fieldwork') + ' to ' + (aiInsight.period_end || 'today')) : 'all data collected so far' %>,
+      based on <strong><%= aiInsight.base_records %></strong> submitted <%= aiInsight.base_records === 1 ? 'entry' : 'entries' %>
+      from <strong><%= aiInsight.base_respondents %></strong> <%= aiInsight.base_respondents === 1 ? 'respondent' : 'respondents' %>.
+      Prepared by the research team on <%= aiInsight.generated_at %>.
+    </p>
+  </div>
+<% } %>
+
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
   <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
     <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('chart-bar', 'w-4 h-4 text-brand-500') %> Brand Consumption</div>
