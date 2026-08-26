@@ -18,6 +18,7 @@ const { CATEGORIES, parseCategories, toStoredCategories } = require("../lib/cate
 const accounts = require("../lib/respondentAccounts");
 const { nextRespondentCode } = require("../lib/respondentCode");
 const messaging = require("../lib/whatsapp");
+const kpiEngine = require("../lib/kpi");
 const { v4: uuidv4 } = require("uuid");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
@@ -608,7 +609,29 @@ router.post("/studies/:id/consent/:cid/approve", (req, res) => {
 router.get("/studies/:id/kpis", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   const kpis = db.prepare("SELECT * FROM kpi_config WHERE study_id = ?").all(req.params.id);
-  res.render("admin/study_kpis", { study, kpis, tab: "kpis" });
+  const questions = db
+    .prepare("SELECT id, code, text, type, options_json FROM questions WHERE study_id = ? AND active = 1 ORDER BY order_index, id")
+    .all(req.params.id);
+  const questionsById = Object.fromEntries(questions.map((q) => [q.id, q]));
+
+  // Computed here as well as on the client dashboard so an admin can see the
+  // real number while building the KPI, rather than defining it blind and
+  // finding out days later that it reads 0% or an em-dash.
+  const { results, entryCount } = kpiEngine.computeAll(study.id, kpis);
+
+  res.render("admin/study_kpis", {
+    study,
+    kpis,
+    questions,
+    questionsById,
+    metrics: kpiEngine.METRICS,
+    operators: kpiEngine.OPERATORS,
+    describeKpi: (k) => kpiEngine.describeKpi(k, questionsById),
+    computed: results,
+    entryCount,
+    error: req.query.error || null,
+    tab: "kpis",
+  });
 });
 
 router.post("/studies/:id/kpis/:kid/toggle", (req, res) => {
@@ -617,10 +640,64 @@ router.post("/studies/:id/kpis/:kid/toggle", (req, res) => {
   res.redirect(`/admin/studies/${req.params.id}/kpis`);
 });
 
-router.post("/studies/:id/kpis", (req, res) => {
-  const { kpi_key, label } = req.body;
-  db.prepare("INSERT INTO kpi_config (study_id, kpi_key, label, enabled) VALUES (?, ?, ?, 1)").run(req.params.id, kpi_key, label);
+router.post("/studies/:id/kpis/:kid/delete", (req, res) => {
+  const kpi = db.prepare("SELECT * FROM kpi_config WHERE id = ? AND study_id = ?").get(req.params.kid, req.params.id);
+  if (kpi) {
+    db.prepare("DELETE FROM kpi_config WHERE id = ?").run(kpi.id);
+    logAudit(req.session.user.email, "delete_kpi", "kpi_config", kpi.id, { label: kpi.label });
+  }
   res.redirect(`/admin/studies/${req.params.id}/kpis`);
+});
+
+// Build a KPI from the study's own questionnaire. The conditions arrive as
+// parallel arrays (cond_question[], cond_operator[], cond_value[]) because
+// the builder lets an admin add as many filter rows as they need.
+router.post("/studies/:id/kpis", (req, res) => {
+  const studyId = req.params.id;
+  const back = (msg) =>
+    res.redirect(`/admin/studies/${studyId}/kpis${msg ? `?error=${encodeURIComponent(msg)}` : ""}`);
+
+  const label = (req.body.label || "").trim();
+  const metric = req.body.metric || "";
+  if (!label) return back("Give the KPI a name so the client knows what they're looking at.");
+  if (!kpiEngine.METRICS[metric]) return back("Choose what this KPI measures.");
+
+  const spec = kpiEngine.METRICS[metric];
+  const questionId = req.body.question_id ? Number(req.body.question_id) : null;
+  if (spec.needsQuestion && !questionId) return back("Choose which question this KPI is about.");
+
+  // Option values arrive as a checkbox group -- one or several.
+  let optionValue = null;
+  if (spec.needsOption) {
+    const raw = req.body.option_value;
+    const values = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter(Boolean);
+    if (!values.length) return back("Choose at least one option to measure.");
+    optionValue = values.join("|");
+  }
+
+  const cq = [].concat(req.body.cond_question || []);
+  const co = [].concat(req.body.cond_operator || []);
+  const cv = [].concat(req.body.cond_value || []);
+  const conditions = cq
+    .map((q, i) => ({ question_id: Number(q), operator: co[i] || "equals", value: (cv[i] || "").trim() }))
+    .filter((c) => c.question_id && c.value !== "");
+
+  // kpi_key is kept for the six built-ins and for CSV column headers; a
+  // generated one keeps custom KPIs distinguishable without asking an admin
+  // to invent a machine name.
+  const key = `custom_${metric}_${Date.now().toString(36)}`;
+  const info = db
+    .prepare(
+      `INSERT INTO kpi_config (study_id, kpi_key, label, enabled, metric, question_id, option_value, conditions_json, unit)
+       VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      studyId, key, label, metric, questionId, optionValue,
+      conditions.length ? JSON.stringify(conditions) : null,
+      (req.body.unit || "").trim() || null
+    );
+  logAudit(req.session.user.email, "create_kpi", "kpi_config", info.lastInsertRowid, { label, metric });
+  back(null);
 });
 
 // ---------- Users ----------

@@ -21,19 +21,29 @@
   <% const chipColors = ['brand','sky','emerald','amber','violet','rose'];
      const kpiIcons = { completion_rate: 'chart-bar', compliance_rate: 'shield', active_respondents: 'users',
        qc_flag_rate: 'warning', brand_incidence: 'trend', avg_occasions_per_week: 'calendar' };
+     const metricIcons = { percent_choosing: 'trend', average: 'chart-bar', percent_entries: 'chart-bar',
+       count_entries: 'clipboard', percent_respondents: 'users' };
      kpis.forEach((k, idx) => {
-      const values = { completion_rate: completionRate+'%', compliance_rate: completionRate+'%', active_respondents: activeRespondents,
+      // A questionnaire-driven KPI carries its own computed value; the
+      // original six still come from the study-level counts above.
+      const builtIn = { completion_rate: completionRate+'%', compliance_rate: completionRate+'%', active_respondents: activeRespondents,
         qc_flag_rate: qcFlagRate+'%', brand_incidence: brandConsumption.length, avg_occasions_per_week: avgOccasionsPerWeek };
-      const val = values[k.kpi_key] !== undefined ? values[k.kpi_key] : '—';
+      const computed = typeof kpiComputed !== 'undefined' ? kpiComputed.get(k.id) : null;
+      const val = computed ? computed.display : (builtIn[k.kpi_key] !== undefined ? builtIn[k.kpi_key] : '—');
       const color = chipColors[idx % chipColors.length];
-      const kIcon = kpiIcons[k.kpi_key] || 'chart-bar';
+      const kIcon = kpiIcons[k.kpi_key] || metricIcons[k.metric] || 'chart-bar';
   %>
     <div class="bg-white rounded-2xl border border-slate-200/70 p-4 shadow-card hover:shadow-card-hover transition">
       <div class="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide font-semibold">
         <span class="w-7 h-7 rounded-lg bg-<%= color %>-50 text-<%= color %>-600 flex items-center justify-center"><%- icon(kIcon, 'w-4 h-4') %></span>
-        <span class="truncate"><%= k.label %></span>
+        <span class="truncate" title="<%= k.label %>"><%= k.label %></span>
       </div>
-      <div class="text-2xl font-bold text-slate-900 mt-3"><%= val %></div>
+      <div class="text-2xl font-bold text-slate-900 mt-3 tabular-nums"><%= val %></div>
+      <%# The denominator, because "18%" over four entries and over four
+          hundred are very different numbers to act on. %>
+      <% if (computed && computed.basis) { %>
+        <div class="text-[11px] text-slate-400 mt-0.5"><%= computed.basis %></div>
+      <% } %>
     </div>
   <% }) %>
 </div>

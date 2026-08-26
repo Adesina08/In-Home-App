@@ -3,6 +3,7 @@ const db = require("../lib/db");
 const { requireRole } = require("../lib/auth");
 const { classifyRisk } = require("../lib/qc");
 const { latestSummary } = require("../lib/aiSummary");
+const kpiEngine = require("../lib/kpi");
 
 const router = express.Router();
 router.use(requireRole("client", "admin"));
@@ -17,6 +18,11 @@ router.get("/", (req, res) => {
   if (!study) return res.render("error", { message: "No study assigned to your account yet.", user: req.session.user });
 
   const kpis = db.prepare("SELECT * FROM kpi_config WHERE study_id = ? AND enabled = 1").all(study.id);
+  // Questionnaire-driven KPIs are computed here (lib/kpi.js); the original six
+  // are still derived from the study-level counts below. Before this the view
+  // held a hardcoded map of those six, so every KPI an admin added rendered a
+  // permanent em-dash.
+  const kpiComputed = kpiEngine.computeAll(study.id, kpis).results;
 
   const totalRespondents = db.prepare("SELECT COUNT(*) c FROM respondents WHERE study_id = ? AND is_practice = 0").get(study.id).c;
   const activeRespondents = db
@@ -84,6 +90,7 @@ router.get("/", (req, res) => {
     study,
     studies,
     kpis,
+    kpiComputed,
     aiInsight,
     totalRespondents,
     activeRespondents,
