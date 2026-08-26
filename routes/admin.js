@@ -14,6 +14,7 @@ const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
 const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const aiSummary = require("../lib/aiSummary");
+const { CATEGORIES, parseCategories, toStoredCategories } = require("../lib/categories");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
@@ -123,7 +124,8 @@ router.get("/studies", (req, res) => {
 });
 
 router.post("/studies", (req, res) => {
-  const { name, market, category, diary_mode, recruitment_mode } = req.body;
+  const { name, market, diary_mode, recruitment_mode } = req.body;
+  const category = toStoredCategories(req.body.category);
   const info = db
     .prepare(
       `INSERT INTO studies (name, market, category, diary_mode, recruitment_mode) VALUES (?, ?, ?, ?, ?)`
@@ -147,7 +149,10 @@ router.post("/studies", (req, res) => {
 router.get("/studies/:id", (req, res) => {
   const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
   if (!study) return res.status(404).render("error", { message: "Study not found", user: req.session.user });
-  res.render("admin/study_settings", { study, tab: "settings" });
+  res.render("admin/study_settings", {
+    study, tab: "settings",
+    CATEGORIES, selectedCategories: parseCategories(study.category),
+  });
 });
 
 router.post("/studies/:id/settings", (req, res) => {
@@ -167,22 +172,30 @@ router.post("/studies/:id/settings", (req, res) => {
         study,
         tab: "settings",
         closeBlocked: blocking,
+        CATEGORIES,
+        selectedCategories: parseCategories(study.category),
       });
     }
   }
 
+  // The duplicate check is entered as a percentage (nobody thinks in 0.9) but
+  // stored 0-1, which is what the QC engine compares against. Clamped so a
+  // typo'd 900 can't silently disable the rule by making it unreachable.
+  const dupPct = Math.min(100, Math.max(1, parseInt(b.duplicate_similarity_pct, 10) || 90));
+
   db.prepare(
     `UPDATE studies SET name=?, market=?, category=?, status=?, diary_mode=?, recruitment_mode=?,
-      back_entry_hours=?, recall_window_hours=?, mandatory_photo=?, duplicate_similarity_threshold=?,
+      back_entry_hours=?, mandatory_photo=?, duplicate_similarity_threshold=?,
       burst_entry_count_threshold=?, burst_entry_window_hours=?, reminder_due_hours=?, reminder_missed_hours=?,
-      default_reminder_channel=?
+      default_reminder_channel=?, qc_back_entry_enabled=?, qc_duplicate_enabled=?, qc_burst_enabled=?
      WHERE id=?`
   ).run(
-    b.name, b.market, b.category, b.status, b.diary_mode, b.recruitment_mode,
-    parseInt(b.back_entry_hours) || 24, parseInt(b.recall_window_hours) || 48, b.mandatory_photo ? 1 : 0,
-    parseFloat(b.duplicate_similarity_threshold) || 0.9, parseInt(b.burst_entry_count_threshold) || 3,
+    b.name, b.market, toStoredCategories(b.category), b.status, b.diary_mode, b.recruitment_mode,
+    parseInt(b.back_entry_hours) || 24, b.mandatory_photo ? 1 : 0,
+    dupPct / 100, parseInt(b.burst_entry_count_threshold) || 3,
     parseInt(b.burst_entry_window_hours) || 2, b.reminder_due_hours ? parseInt(b.reminder_due_hours) : null,
     b.reminder_missed_hours ? parseInt(b.reminder_missed_hours) : null, b.default_reminder_channel,
+    b.qc_back_entry_enabled ? 1 : 0, b.qc_duplicate_enabled ? 1 : 0, b.qc_burst_enabled ? 1 : 0,
     req.params.id
   );
   logAudit(req.session.user.email, "update_settings", "studies", req.params.id, b);

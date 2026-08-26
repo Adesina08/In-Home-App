@@ -16,7 +16,7 @@
           <span class="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0"><%- icon('building', 'w-4 h-4') %></span>
           <div>
             <div class="font-semibold text-slate-800"><%= s.name %></div>
-            <div class="text-xs text-slate-500"><%= s.market %> · <%= s.category %> · diary: <%= s.diary_mode %> · recruitment: <%= s.recruitment_mode %></div>
+            <div class="text-xs text-slate-500"><%= [s.market, formatCategories(s.category)].filter(Boolean).join(' · ') %> · diary: <%= s.diary_mode %> · recruitment: <%= s.recruitment_mode %></div>
           </div>
         </div>
         <span class="text-xs uppercase tracking-wide px-2.5 py-1 rounded-full font-semibold <%= s.status === 'live' ? 'badge-green' : 'bg-slate-100 text-slate-600' %>"><%= s.status %></span>
@@ -42,8 +42,15 @@
           <input name="market" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Nigeria" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label>
-          <input name="category" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" placeholder="e.g. Beverages" />
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Categories</label>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 border border-slate-200 rounded-xl p-3 bg-slate-50/60 max-h-48 overflow-auto">
+            <% CATEGORIES.forEach(c => { %>
+              <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                <input type="checkbox" name="category" value="<%= c %>" class="h-3.5 w-3.5 rounded border-slate-300 accent-brand-700" />
+                <%= c %>
+              </label>
+            <% }) %>
+          </div>
         </div>
       </div>
       <div>

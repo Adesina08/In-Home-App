@@ -7,7 +7,7 @@
       <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-1">You're invited to take part</div>
       <h1 class="text-xl font-bold text-slate-900"><%= study.name %></h1>
       <% if (study.market || study.category) { %>
-        <p class="text-xs text-slate-400 mt-1"><%= [study.market, study.category].filter(Boolean).join(' · ') %></p>
+        <p class="text-xs text-slate-400 mt-1"><%= [study.market, formatCategories(study.category)].filter(Boolean).join(' · ') %></p>
       <% } %>
     </div>
 

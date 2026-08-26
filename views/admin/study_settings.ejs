@@ -4,7 +4,7 @@
 <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 max-w-4xl">
   <div class="flex items-start gap-2 text-sm text-slate-500 mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
     <%- icon('cog', 'w-4 h-4 mt-0.5 text-brand-500') %>
-    <span>This is the <strong class="text-slate-700">Developer / Config console</strong>: the real day-1 pilot inputs (diary frequency, recall window, QC thresholds, reminder schedule) are entered here — nothing on the respondent/QC side is hardcoded.</span>
+    <span>Everything about how this study behaves is set here — how often people log, what evidence they must provide, which automatic quality checks run, and when reminders go out. Nothing on the respondent or QC side is fixed in the code.</span>
   </div>
 
   <% if (typeof closeBlocked !== 'undefined' && closeBlocked && closeBlocked.length) { %>
@@ -54,18 +54,27 @@
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Market</label>
           <input name="market" value="<%= study.market||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
         </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label>
-          <input name="category" value="<%= study.category||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Categories</label>
+        <p class="text-xs text-slate-400 mb-2.5">Tick every category this study covers — a household diary often spans more than one.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 border border-slate-200 rounded-xl p-3.5 bg-slate-50/60">
+          <% CATEGORIES.forEach(c => { %>
+            <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input type="checkbox" name="category" value="<%= c %>" <%= selectedCategories.includes(c) ? 'checked' : '' %>
+                     class="h-4 w-4 rounded border-slate-300 accent-brand-700" />
+              <%= c %>
+            </label>
+          <% }) %>
         </div>
       </div>
     </div>
 
     <div>
-      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('calendar', 'w-4 h-4 text-brand-500') %> Diary Frequency & Recruitment</h3>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('calendar', 'w-4 h-4 text-brand-500') %> How often people log, and how they're recruited</h3>
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Diary mode</label>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">How often should people log?</label>
           <select name="diary_mode" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
             <% [['realtime','Occasion (real-time)'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].forEach(([v,l]) => { %>
               <option value="<%= v %>" <%= study.diary_mode===v?'selected':'' %>><%= l %></option>
@@ -73,7 +82,7 @@
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Recruitment mode</label>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">How are respondents recruited?</label>
           <select name="recruitment_mode" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
             <% ['f2f','remote','hybrid'].forEach(v => { %>
               <option value="<%= v %>" <%= study.recruitment_mode===v?'selected':'' %>><%= v %></option>
@@ -84,54 +93,84 @@
     </div>
 
     <div>
-      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('photo', 'w-4 h-4 text-brand-500') %> Recall Window & Photo Evidence</h3>
-      <div class="grid grid-cols-3 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Back-entry window (hours)</label>
-          <input type="number" name="back_entry_hours" value="<%= study.back_entry_hours %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('photo', 'w-4 h-4 text-brand-500') %> Evidence</h3>
+      <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" name="mandatory_photo" id="mandatory_photo" <%= study.mandatory_photo? 'checked':'' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+        <span>
+          Every entry must include a photo
+          <span class="block text-xs text-slate-400 mt-0.5">Entries submitted without one are flagged for review — they're still saved, never rejected.</span>
+        </span>
+      </label>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> Automatic quality checks</h3>
+      <p class="text-xs text-slate-500 mb-4">These run on every entry as it's submitted. A check never rejects or deletes anything — it adds the entry to the QC Worklist for someone to look at. Untick one to switch it off entirely for this study.</p>
+
+      <div class="space-y-3">
+        <!-- Late entries -->
+        <div class="border border-slate-200 rounded-xl p-3.5 qc-rule">
+          <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" name="qc_back_entry_enabled" data-qc-toggle <%= study.qc_back_entry_enabled ? 'checked' : '' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+            <span class="flex-1">
+              Flag an entry logged more than
+              <input type="number" min="1" name="back_entry_hours" value="<%= study.back_entry_hours %>"
+                     class="qc-field w-16 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />
+              hours after it happened
+              <span class="block text-xs text-slate-400 mt-1">Entries written from memory days later are less accurate than ones logged in the moment.</span>
+            </span>
+          </label>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Recall window (hours)</label>
-          <input type="number" name="recall_window_hours" value="<%= study.recall_window_hours %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+
+        <!-- Repeated answers -->
+        <div class="border border-slate-200 rounded-xl p-3.5 qc-rule">
+          <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" name="qc_duplicate_enabled" data-qc-toggle <%= study.qc_duplicate_enabled ? 'checked' : '' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+            <span class="flex-1">
+              Flag an entry when
+              <input type="number" min="1" max="100" step="5" name="duplicate_similarity_pct" value="<%= Math.round((study.duplicate_similarity_threshold || 0.9) * 100) %>"
+                     class="qc-field w-16 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />%
+              or more of its answers match that person's previous entry
+              <span class="block text-xs text-slate-400 mt-1">Catches someone repeating themselves rather than logging afresh. Switch off for studies where genuinely identical entries are expected — the same drink, at home, every evening.</span>
+            </span>
+          </label>
         </div>
-        <div class="flex items-center gap-2 pt-6">
-          <input type="checkbox" name="mandatory_photo" id="mandatory_photo" <%= study.mandatory_photo? 'checked':'' %> class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-          <label for="mandatory_photo" class="text-sm text-slate-600">Photo evidence mandatory</label>
+
+        <!-- Backfilling in one sitting -->
+        <div class="border border-slate-200 rounded-xl p-3.5 qc-rule">
+          <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" name="qc_burst_enabled" data-qc-toggle <%= study.qc_burst_enabled ? 'checked' : '' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+            <span class="flex-1">
+              Flag when someone logs more than
+              <input type="number" min="1" name="burst_entry_count_threshold" value="<%= study.burst_entry_count_threshold %>"
+                     class="qc-field w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />
+              entries within
+              <input type="number" min="1" name="burst_entry_window_hours" value="<%= study.burst_entry_window_hours %>"
+                     class="qc-field w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />
+              hours
+              <span class="block text-xs text-slate-400 mt-1">Usually someone catching up on a week they forgot. Allow more for an occasion diary, where several entries an evening is normal.</span>
+            </span>
+          </label>
         </div>
       </div>
     </div>
 
     <div>
-      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> QC Thresholds</h3>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('bell', 'w-4 h-4 text-brand-500') %> Reminders</h3>
       <div class="grid grid-cols-3 gap-4">
         <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Duplicate similarity threshold (0–1)</label>
-          <input type="number" step="0.05" name="duplicate_similarity_threshold" value="<%= study.duplicate_similarity_threshold %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Burst-entry count threshold</label>
-          <input type="number" name="burst_entry_count_threshold" value="<%= study.burst_entry_count_threshold %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Burst-entry window (hours)</label>
-          <input type="number" name="burst_entry_window_hours" value="<%= study.burst_entry_window_hours %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('bell', 'w-4 h-4 text-brand-500') %> Reminder Schedule</h3>
-      <div class="grid grid-cols-3 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Due after (hours, blank = auto from diary mode)</label>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Send a reminder after this many hours without an entry</label>
+          <p class="text-xs text-slate-400 mb-1.5">Leave blank to work it out from how often people log.</p>
           <input type="number" name="reminder_due_hours" value="<%= study.reminder_due_hours||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Missed after (hours, blank = 2x due)</label>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Count the entry as missed after this many hours</label>
+          <p class="text-xs text-slate-400 mb-1.5">Leave blank to use double the reminder time.</p>
           <input type="number" name="reminder_missed_hours" value="<%= study.reminder_missed_hours||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1.5">Default channel</label>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">How reminders are sent</label>
+          <p class="text-xs text-slate-400 mb-1.5">Respondents can override this for themselves.</p>
           <select name="default_reminder_channel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
             <option value="whatsapp" <%= study.default_reminder_channel==='whatsapp'?'selected':'' %>>WhatsApp</option>
             <option value="in-app" <%= study.default_reminder_channel==='in-app'?'selected':'' %>>In-app / Push</option>
@@ -144,5 +183,27 @@
       <%- icon('check', 'w-4 h-4') %> Save Settings
     </button>
   </form>
+
+<script>
+  // Dim a switched-off check and lock its numbers. Deliberately `readonly`
+  // rather than `disabled`: a disabled input is omitted from the POST, so the
+  // save would fall back to defaults and silently discard the thresholds the
+  // admin had set -- switching a rule off and on again would quietly change
+  // its numbers. readonly keeps them in the submission untouched.
+  (function () {
+    document.querySelectorAll('[data-qc-toggle]').forEach(function (toggle) {
+      var rule = toggle.closest('.qc-rule');
+      function apply() {
+        rule.classList.toggle('opacity-50', !toggle.checked);
+        rule.querySelectorAll('.qc-field').forEach(function (f) {
+          f.readOnly = !toggle.checked;
+          f.tabIndex = toggle.checked ? 0 : -1;
+        });
+      }
+      toggle.addEventListener('change', apply);
+      apply();
+    });
+  })();
+</script>
 </div>
 <%- include('../partials/footer') %>

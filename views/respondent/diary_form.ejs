@@ -47,7 +47,7 @@
     <div>
       <label class="block text-sm font-medium text-slate-600 mb-1.5">When did this occasion happen?</label>
       <input type="datetime-local" name="occurrence_time" required class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
-      <p class="text-xs text-slate-400 mt-1">Recall window: within <%= study.recall_window_hours %>h. Back-entry allowed up to <%= study.back_entry_hours %>h after the occasion.</p>
+      <p class="text-xs text-slate-400 mt-1">You can log something that happened up to <%= study.back_entry_hours %>h ago; later than that and the entry is flagged for review.</p>
     </div>
 
     <% const pf = typeof prefill !== 'undefined' && prefill ? prefill : {}; %>

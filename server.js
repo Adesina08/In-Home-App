@@ -18,6 +18,7 @@ const db = require("./lib/db");
 const { requireLogin } = require("./lib/auth");
 const { icon } = require("./lib/icons");
 const { renderPipeHtml } = require("./lib/piping");
+const { CATEGORIES, formatCategories } = require("./lib/categories");
 const { getMediaUrl } = require("./lib/mediaStorage");
 
 const app = express();
@@ -77,6 +78,10 @@ app.locals.icon = icon;
 // Question-text piping (see lib/piping.js) -- exposed as a view helper so the
 // respondent diary form and the admin live preview render tokens identically.
 app.locals.renderPipeHtml = renderPipeHtml;
+// Study categories are multi-select and stored pipe-delimited, so anywhere
+// one is displayed needs the readable form rather than the raw value.
+app.locals.CATEGORIES = CATEGORIES;
+app.locals.formatCategories = formatCategories;
 // Resolves a stored media file_path ("/uploads/..." or "azureblob://...") to
 // a URL a browser can actually load right now — a short-lived signed URL in
 // Blob-storage mode. Wrapped so one misconfigured/expired storage credential
