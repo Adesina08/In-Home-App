@@ -8,6 +8,53 @@
   </div>
 <% } %>
 
+<% if (typeof invited !== 'undefined' && invited) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %> <%= invited %>
+  </div>
+<% } %>
+<% if (typeof inviteError !== 'undefined' && inviteError) { %>
+  <div class="flex items-center gap-2 mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
+    <%- icon('warning', 'w-4 h-4') %> <%= inviteError %>
+  </div>
+<% } %>
+
+<!-- Invite an existing (or new) person onto this study. Distinct from the
+     public sign-up link below: this is research adding someone deliberately,
+     including a person already on other studies. -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+  <div class="flex items-center gap-2 mb-1">
+    <%- icon('plus', 'w-4 h-4 text-brand-500') %>
+    <span class="font-semibold text-slate-800 text-sm">Invite someone to this study</span>
+  </div>
+  <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+    Enter a phone number or email. If they already have an account — from this or any other study — they're added to it,
+    and this study appears next time they sign in. They still give consent for this study before their diary opens.
+  </p>
+  <form method="POST" action="/admin/studies/<%= study.id %>/respondents/invite" class="flex flex-wrap items-end gap-2">
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-medium text-slate-500 mb-1">Phone or email</label>
+      <input name="contact" required placeholder="e.g. 0801 234 5678"
+             class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+    </div>
+    <div class="flex-1 min-w-[160px]">
+      <label class="block text-xs font-medium text-slate-500 mb-1">Name (optional)</label>
+      <input name="name" placeholder="Only used if we don't already have it"
+             class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+    </div>
+    <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('arrow-right', 'w-4 h-4') %> Invite
+    </button>
+  </form>
+  <% if (!accountsAllowed) { %>
+    <p class="text-[11px] text-amber-700 mt-2.5">
+      This study recruits face-to-face only, so invitees can't sign in with an account —
+      they'll need their personal diary link. Set recruitment to <strong>remote</strong> or <strong>hybrid</strong> on
+      <a href="/admin/studies/<%= study.id %>" class="underline">Settings &amp; Thresholds</a> to let them sign in.
+    </p>
+  <% } %>
+</div>
+
 <!-- Remote self-onboarding invite (spec Flow B step 1). Shown regardless of
      mode so the link is discoverable, but clearly marked inactive when the
      study's recruitment mode or status means it wouldn't currently work. -->

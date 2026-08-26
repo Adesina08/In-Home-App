@@ -15,6 +15,9 @@ const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
 const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const aiSummary = require("../lib/aiSummary");
 const { CATEGORIES, parseCategories, toStoredCategories } = require("../lib/categories");
+const accounts = require("../lib/respondentAccounts");
+const { nextRespondentCode } = require("../lib/respondentCode");
+const { v4: uuidv4 } = require("uuid");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
@@ -729,8 +732,73 @@ router.get("/studies/:id/respondents", (req, res) => {
     joinCode,
     joinUrl: `${appBaseUrl(req)}/join/${joinCode}`,
     remoteOpen: remoteOnboardingOpen(study),
+    accountsAllowed: accounts.accountsAllowedFor(study),
     activated: req.query.activated,
+    invited: req.query.invited,
+    inviteError: req.query.inviteError,
   });
+});
+
+// Invite someone onto this study. If an account already exists for that
+// contact they're enrolled directly -- that's the whole point of accounts: a
+// person on their third study shouldn't be re-registered from scratch, and
+// their existing enrolments stay linked to the same identity.
+//
+// The enrolment starts un-activated with consent pending. Consent is legally
+// per-study, recorded against that study's approved wording, so being on one
+// study can never carry consent into another -- the invitee sees the consent
+// screen for this study before their diary opens.
+router.post("/studies/:id/respondents/invite", (req, res) => {
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
+  const contact = (req.body.contact || "").trim();
+  const name = (req.body.name || "").trim();
+  const back = (msg, ok) =>
+    res.redirect(`/admin/studies/${study.id}/respondents?${ok ? "invited" : "inviteError"}=${encodeURIComponent(msg)}`);
+
+  if (!contact) return back("Enter a phone number or email to invite.", false);
+
+  const account = accounts.findOrCreate({ contact, name });
+  const existing = accounts.enrolmentFor(account.id, study.id);
+  if (existing) {
+    return back(`${name || contact} is already on this study as ${existing.respondent_code}.`, false);
+  }
+
+  // Someone recruited face-to-face on this study may already be using the same
+  // number without an account attached. Creating a second enrolment would split
+  // their diary and read as a duplicate respondent in every report, so refuse
+  // and point at the row that already exists -- the admin can link that row to
+  // the account from the respondent's own page instead.
+  const sameContact = db
+    .prepare(
+      `SELECT respondent_code, name FROM respondents
+       WHERE study_id = ?
+         AND lower(replace(replace(replace(replace(contact,' ',''),'-',''),'(',''),')','')) = ?`
+    )
+    .get(study.id, account.contact.replace(/[\s\-()]/g, "").toLowerCase());
+  if (sameContact) {
+    return back(
+      `That contact is already on this study as ${sameContact.respondent_code}${
+        sameContact.name ? ` (${sameContact.name})` : ""
+      }. Open that respondent to link them to an account instead.`,
+      false
+    );
+  }
+
+  const token = uuidv4();
+  const code = nextRespondentCode(study.id);
+  const info = db
+    .prepare(
+      `INSERT INTO respondents (study_id, respondent_code, name, contact, recruitment_mode, preferred_channel,
+         consent_status, activation_status, unique_token, is_practice, account_id)
+       VALUES (?, ?, ?, ?, 'remote', 'app', 'pending', 'invited', ?, 0, ?)`
+    )
+    .run(study.id, code, account.name || name || null, account.contact, token, account.id);
+
+  logAudit(req.session.user.email, "invite_respondent", "respondents", info.lastInsertRowid, {
+    study_id: study.id, account_id: account.id,
+  });
+  back(`${account.name || account.contact} invited as ${code}. They'll see this study next time they sign in.`, true);
 });
 
 // ---------- Respondent drill-down ----------
@@ -794,6 +862,19 @@ router.get("/studies/:id/respondents/:respondentId", (req, res) => {
     ? db.prepare("SELECT name, email FROM users WHERE id = ?").get(respondent.interviewer_id)
     : null;
 
+  // The sign-in account behind this enrolment, if any, plus the other studies
+  // it's on -- so "is this the same person we already have on Study B?" is
+  // answerable here instead of by eye across two respondent lists.
+  const account = accounts.getById(respondent.account_id);
+  const otherEnrolments = account
+    ? accounts.enrolmentsFor(account.id).filter((e) => e.id !== respondent.id)
+    : [];
+  // Offered when the row has no account yet: an account already registered to
+  // this exact contact, which an admin can attach deliberately. Not attached
+  // automatically -- see the header of lib/respondentAccounts.js.
+  const linkCandidate =
+    !account && respondent.contact ? accounts.findByContact(respondent.contact) : null;
+
   res.render("admin/respondent_detail", {
     study,
     respondent,
@@ -801,10 +882,61 @@ router.get("/studies/:id/respondents/:respondentId", (req, res) => {
     flags,
     hasLock,
     interviewer,
+    account,
+    otherEnrolments,
+    linkCandidate,
+    accountsAllowed: accounts.accountsAllowedFor(study),
+    linked: req.query.linked,
+    linkError: req.query.linkError,
     risk: classifyRisk(respondent.id),
     diaryUrl: respondentDiaryUrl(req, respondent.unique_token),
     tab: "respondents",
   });
+});
+
+// Attach an existing respondent row to a sign-in account, or detach it.
+//
+// Deliberately a manual admin action rather than something the app infers from
+// a matching contact. Respondents recruited face-to-face had their contact
+// typed in by an interviewer and never verified, and a household sharing one
+// phone is an allowed case -- so "same number" is a prompt to a human, not
+// proof of the same person. Both directions are audited.
+router.post("/studies/:id/respondents/:respondentId/account", (req, res) => {
+  const respondent = loadRespondentOr404(req, res);
+  if (!respondent) return;
+  const back = (msg, ok) =>
+    res.redirect(
+      `/admin/studies/${req.params.id}/respondents/${respondent.id}?${
+        ok ? "linked" : "linkError"
+      }=${encodeURIComponent(msg)}`
+    );
+
+  if (req.body.action === "unlink") {
+    if (!respondent.account_id) return back("This respondent isn't linked to an account.", false);
+    db.prepare("UPDATE respondents SET account_id = NULL WHERE id = ?").run(respondent.id);
+    logAudit(req.session.user.email, "unlink_respondent_account", "respondents", respondent.id, {
+      account_id: respondent.account_id,
+    });
+    return back("Account unlinked. Their diary link still works as before.", true);
+  }
+
+  if (respondent.account_id) return back("This respondent is already linked to an account.", false);
+  const contact = (req.body.contact || respondent.contact || "").trim();
+  if (!contact) return back("This respondent has no phone number or email on file.", false);
+
+  const account = accounts.findOrCreate({ contact, name: respondent.name });
+  const clash = accounts.enrolmentFor(account.id, respondent.study_id);
+  if (clash) {
+    return back(
+      `That account is already on this study as ${clash.respondent_code}. Two enrolments on one study would split their diary.`,
+      false
+    );
+  }
+  db.prepare("UPDATE respondents SET account_id = ? WHERE id = ?").run(account.id, respondent.id);
+  logAudit(req.session.user.email, "link_respondent_account", "respondents", respondent.id, {
+    account_id: account.id,
+  });
+  back(`Linked to the account for ${account.contact}. They'll see this study when they sign in.`, true);
 });
 
 router.get("/studies/:id/records/:recordId", (req, res) => {

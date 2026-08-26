@@ -205,6 +205,12 @@ router.get("/:token", (req, res) => {
     saved: req.query.saved,
     pushEnabled: push.isEnabled(),
     vapidPublicKey: push.getPublicKey(),
+    // Only offer "My studies" when the person is signed in as the very account
+    // this enrolment belongs to. Deliberately not "has an account_id": the
+    // token is in the URL, so anyone holding the link would otherwise get a
+    // door into that person's other studies.
+    signedIn:
+      !!respondent.account_id && req.session.respondentAccountId === respondent.account_id,
   });
 });
 

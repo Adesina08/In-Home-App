@@ -29,6 +29,7 @@ const { applyRecruitmentHolds } = require("../lib/qc");
 const otp = require("../lib/otp");
 const { respondentDiaryUrl } = require("../lib/urls");
 const { nextRespondentCode } = require("../lib/respondentCode");
+const accounts = require("../lib/respondentAccounts");
 
 const router = express.Router();
 
@@ -127,27 +128,46 @@ router.post("/:code/profile", async (req, res) => {
   if (!name) return fail("Please enter your name.");
   if (!contact) return fail("Please enter a phone number or email so we can verify it's you.");
 
+  // A study that recruits remotely gets accounts; a face-to-face-only study
+  // never asks anyone to create a login (see lib/respondentAccounts.js). This
+  // route only serves remote/hybrid studies, so an account is always made here
+  // -- the guard stays explicit so it survives the rule changing.
+  const account = accounts.accountsAllowedFor(req.study)
+    ? accounts.findOrCreate({ contact, name })
+    : null;
+
   // Create the respondent now that we have consent + profile. Still 'invited'
   // until the contact is verified and the tutorial is done.
   let respondentId = s.respondentId;
+  // Someone already on this study who starts the flow again (a lost link, a
+  // new phone) should land back on their existing enrolment rather than
+  // acquire a second one -- two enrolments would split their diary history and
+  // read as a duplicate respondent in every report.
+  if (!respondentId && account) {
+    const existing = accounts.enrolmentFor(account.id, req.study.id);
+    if (existing) respondentId = existing.id;
+  }
+
   if (respondentId) {
-    db.prepare("UPDATE respondents SET name = ?, contact = ?, preferred_channel = ? WHERE id = ?")
-      .run(name, contact, preferredChannel, respondentId);
+    db.prepare("UPDATE respondents SET name = ?, contact = ?, preferred_channel = ?, account_id = COALESCE(account_id, ?) WHERE id = ?")
+      .run(name, contact, preferredChannel, account ? account.id : null, respondentId);
   } else {
     const info = db
       .prepare(
         `INSERT INTO respondents (study_id, respondent_code, name, contact, recruitment_mode, preferred_channel,
-           consent_status, activation_status, unique_token, is_practice)
-         VALUES (?, ?, ?, ?, 'remote', ?, 'given', 'invited', ?, 0)`
+           consent_status, activation_status, unique_token, is_practice, account_id)
+         VALUES (?, ?, ?, ?, 'remote', ?, 'given', 'invited', ?, 0, ?)`
       )
-      .run(req.study.id, nextRespondentCode(req.study.id), name, contact, preferredChannel, uuidv4());
+      .run(req.study.id, nextRespondentCode(req.study.id), name, contact, preferredChannel, uuidv4(), account ? account.id : null);
     respondentId = info.lastInsertRowid;
-    s.respondentId = respondentId;
     logAudit("remote-onboarding", "remote_signup_started", "respondents", respondentId, {
       study_id: req.study.id,
       consent_version_id: s.consentVersionId,
+      account_id: account ? account.id : null,
     });
   }
+  s.respondentId = respondentId;
+  s.accountId = account ? account.id : null;
 
   s.contact = contact;
   try {
@@ -197,6 +217,7 @@ router.post("/:code/verify", (req, res) => {
 
   db.prepare("UPDATE respondents SET contact_verified_at = datetime('now'), activation_status = 'screened' WHERE id = ?")
     .run(s.respondentId);
+  if (s.accountId) accounts.markVerified(s.accountId);
   s.verified = true;
   logAudit("remote-onboarding", "contact_verified", "respondents", s.respondentId, {});
   res.redirect(`/join/${req.params.code}/tutorial`);
@@ -253,6 +274,12 @@ router.post("/:code/finish", (req, res) => {
   logAudit("remote-onboarding", "remote_signup_completed", "respondents", respondent.id, {
     held: holds.length > 0,
   });
+
+  // They verified a code sent to their own contact moments ago, so signing
+  // them in here is no weaker than making them repeat the same code on the
+  // login page -- and it means an account holder lands on their study list
+  // rather than being asked to log in to something they just created.
+  if (respondent.account_id) req.session.respondentAccountId = respondent.account_id;
 
   // Sign-up is finished -- drop the session state so a shared/public device
   // doesn't leave the next person inside someone else's flow.

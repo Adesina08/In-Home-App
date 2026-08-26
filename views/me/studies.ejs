@@ -1,0 +1,96 @@
+<%- include('../partials/header', { title: 'My studies — INICIO', user: null }) %>
+
+<div class="max-w-2xl mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 mb-5">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="text-brand-700 font-bold text-lg mb-0.5">INICIO</div>
+        <div class="text-slate-700">Hi <strong><%= account.name || 'there' %></strong> 👋</div>
+        <div class="text-xs text-slate-400 mt-1"><%= account.contact %></div>
+      </div>
+      <form method="POST" action="/me/logout" class="shrink-0">
+        <button class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+          <%- icon('logout', 'w-3.5 h-3.5') %> Sign out
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+      <%- icon('clipboard', 'w-4 h-4 text-brand-500') %> My studies
+    </div>
+    <p class="text-xs text-slate-500 mb-4">
+      <%= enrolments.length === 1 ? "You're taking part in one study." : `You're taking part in ${enrolments.length} studies.` %>
+      Open one to log an entry or see your history.
+    </p>
+
+    <div class="space-y-3">
+      <% enrolments.forEach(e => {
+           const closed = e.study_status === 'closed';
+           const blocked = e.activation_status === 'disqualified' || e.activation_status === 'registered';
+      %>
+        <div class="border border-slate-200 rounded-xl p-4 <%= closed || blocked ? 'bg-slate-50' : '' %>">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div class="min-w-0">
+              <div class="font-semibold text-slate-800"><%= e.study_name %></div>
+              <div class="text-xs text-slate-500 mt-0.5">
+                <%= [e.market, formatCategories(e.category)].filter(Boolean).join(' · ') %>
+                <% if (e.market || e.category) { %> · <% } %><%= e.diary_mode %> diary
+              </div>
+              <div class="text-xs text-slate-400 mt-1">
+                Your code <span class="font-mono"><%= e.respondent_code %></span>
+                · <%= e.submitted_count %> <%= e.submitted_count === 1 ? 'entry' : 'entries' %> submitted
+              </div>
+            </div>
+            <div class="shrink-0">
+              <% if (closed) { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-200 text-slate-600">Closed</span>
+              <% } else if (e.activation_status === 'disqualified') { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-200 text-slate-600">Ended</span>
+              <% } else if (e.activation_status === 'registered') { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full badge-amber">Being checked</span>
+              <% } else if (e.consent_status !== 'given') { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full badge-amber">Consent needed</span>
+              <% } else { %>
+                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full badge-green">Active</span>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <% if (closed) { %>
+              <span class="text-xs text-slate-400">This study has finished — thank you for taking part.</span>
+            <% } else if (e.activation_status === 'disqualified') { %>
+              <span class="text-xs text-slate-400">Your part in this study is complete. Nothing further is needed.</span>
+            <% } else if (e.activation_status === 'registered') { %>
+              <span class="text-xs text-slate-400">The study team is confirming a couple of details before your diary opens.</span>
+            <% } else { %>
+              <a href="/r/<%= e.unique_token %>"
+                 class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+                <% if (e.consent_status !== 'given') { %>Read and agree to take part<% } else { %>Open my diary<% } %>
+                <%- icon('arrow-right', 'w-3.5 h-3.5') %>
+              </a>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
+
+      <% if (!enrolments.length) { %>
+        <div class="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
+          <div class="flex flex-col items-center gap-2 text-slate-400">
+            <%- icon('clipboard', 'w-6 h-6 text-slate-300') %>
+            <span class="text-sm">You're not on any studies yet.</span>
+            <span class="text-xs">When a study team invites you, it will appear here.</span>
+          </div>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <p class="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
+    Each study asks for your consent separately — agreeing to one never signs you up to another.
+  </p>
+</div>
+
+<%- include('../partials/footer') %>

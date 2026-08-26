@@ -1,0 +1,43 @@
+<%- include('../partials/header', { title: 'Enter your code — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <h1 class="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+      <%- icon('shield', 'w-5 h-5 text-brand-500') %> Enter your code
+    </h1>
+    <p class="text-sm text-slate-500 mb-5">
+      If <strong class="text-slate-700"><%= contact %></strong> is registered, a 6-digit code is on its way.
+      It expires in <%= ttlMinutes %> minutes.
+    </p>
+
+    <% if (error) { %>
+      <div class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-4">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= error %></span>
+      </div>
+    <% } %>
+    <% if (notice) { %>
+      <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl p-3 mb-4">
+        <%- icon('check-circle', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= notice %></span>
+      </div>
+    <% } %>
+
+    <form method="POST" action="/me/verify" class="space-y-4">
+      <input name="code" required inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"
+             autofocus placeholder="000000"
+             class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-center text-2xl font-mono tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        Sign in <%- icon('check', 'w-4 h-4') %>
+      </button>
+    </form>
+
+    <form method="POST" action="/me/verify/resend" class="mt-4 text-center">
+      <button class="text-xs font-medium text-slate-500 hover:text-brand-700 transition">Didn't get it? Send a new code</button>
+    </form>
+
+    <div class="mt-5 pt-4 border-t border-slate-100 text-[11px] text-slate-400 text-center">
+      <a href="/me/login" class="text-brand-600 hover:underline font-medium">Use a different number</a>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

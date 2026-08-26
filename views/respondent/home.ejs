@@ -7,9 +7,16 @@
         <div class="text-brand-700 font-bold text-lg mb-1">INICIO</div>
         <div class="text-slate-500 text-sm mb-4"><%= study.name %></div>
       </div>
-      <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition shrink-0">
-        <%- icon('help', 'w-4 h-4') %> Help
-      </a>
+      <div class="flex items-center gap-3 shrink-0">
+        <% if (typeof signedIn !== 'undefined' && signedIn) { %>
+          <a href="/me" class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+            <%- icon('clipboard', 'w-4 h-4') %> My studies
+          </a>
+        <% } %>
+        <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+          <%- icon('help', 'w-4 h-4') %> Help
+        </a>
+      </div>
     </div>
     <div class="text-slate-700">Hi <strong><%= respondent.name %></strong> 👋</div>
     <div class="text-xs text-slate-400 mt-1">Respondent code: <%= respondent.respondent_code %> · Diary mode: <%= study.diary_mode %></div>
