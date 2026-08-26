@@ -1,0 +1,13 @@
+<%- include('../partials/header', { title: 'Link unavailable — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 text-center">
+    <div class="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto mb-4">
+      <%- icon('warning', 'w-7 h-7') %>
+    </div>
+    <h1 class="text-lg font-bold text-slate-900 mb-1.5">This sign-up link isn't available</h1>
+    <p class="text-sm text-slate-500 leading-relaxed"><%= reason %></p>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

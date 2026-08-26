@@ -6,14 +6,13 @@ const { logAudit } = require("../lib/audit");
 const { qrDataUrl } = require("../lib/qrcode");
 const { respondentDiaryUrl } = require("../lib/urls");
 const { applyRecruitmentHolds } = require("../lib/qc");
+const { nextRespondentCode } = require("../lib/respondentCode");
 
 const router = express.Router();
 router.use(requireRole("interviewer", "admin", "research"));
 
-function genRespondentCode(studyId) {
-  const count = db.prepare("SELECT COUNT(*) c FROM respondents WHERE study_id = ?").get(studyId).c;
-  return `R${String(studyId).padStart(2, "0")}-${String(count + 1).padStart(4, "0")}`;
-}
+// Code allocation lives in lib/respondentCode.js -- shared with the remote
+// self-onboarding flow so both paths allocate the same way.
 
 router.get("/", (req, res) => {
   const studies = db.prepare("SELECT * FROM studies WHERE status != 'closed' ORDER BY id").all();
@@ -49,7 +48,7 @@ router.post("/register", async (req, res) => {
     });
   }
   const token = uuidv4();
-  const code = genRespondentCode(study_id);
+  const code = nextRespondentCode(study_id);
   const info = db
     .prepare(
       `INSERT INTO respondents (study_id, respondent_code, name, contact, recruitment_mode, preferred_channel,

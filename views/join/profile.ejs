@@ -1,0 +1,49 @@
+<%- include('../partials/header', { title: 'Your details — ' + study.name, user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="flex items-center gap-2 text-xs text-slate-400 mb-4">
+      <span class="font-semibold text-brand-600">Step 2 of 3</span>
+      <span class="flex-1 h-1 rounded-full bg-slate-100 overflow-hidden"><span class="block h-full w-2/3 bg-brand-600"></span></span>
+    </div>
+
+    <h1 class="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+      <%- icon('users', 'w-5 h-5 text-brand-500') %> Your details
+    </h1>
+    <p class="text-sm text-slate-500 mb-5">We'll send a short code to check we can reach you.</p>
+
+    <% if (error) { %>
+      <div class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-4">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= error %></span>
+      </div>
+    <% } %>
+
+    <form method="POST" action="/join/<%= code %>/profile" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Your name</label>
+        <input name="name" required value="<%= values.name || '' %>" autocomplete="name"
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Phone number or email</label>
+        <input name="contact" required value="<%= values.contact || '' %>" autocomplete="tel"
+               placeholder="e.g. 0801 234 5678"
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        <p class="text-xs text-slate-400 mt-1.5">Used to verify it's you and to send diary reminders. Never shared outside the research team.</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">How should we remind you?</label>
+        <select name="preferred_channel"
+                class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <option value="app" <%= values.preferred_channel === 'whatsapp' ? '' : 'selected' %>>Notifications on this device</option>
+          <option value="whatsapp" <%= values.preferred_channel === 'whatsapp' ? 'selected' : '' %>>WhatsApp</option>
+        </select>
+      </div>
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        Send me a code <%- icon('arrow-right', 'w-4 h-4') %>
+      </button>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

@@ -113,6 +113,7 @@ app.get("/help", requireLogin, (req, res) => {
   res.render("help", { content, user: req.session.user, currentPath: "/help" });
 });
 
+app.use("/join", require("./routes/join")); // public remote self-onboarding, no login
 app.use("/r", require("./routes/respondent")); // token-based, no session login
 
 app.use((req, res) => {

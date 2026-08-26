@@ -11,7 +11,8 @@ const { parseUpload, parseConditionText } = require("../lib/questionnaireParser"
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { qrPngToResponse } = require("../lib/qrcode");
-const { respondentDiaryUrl } = require("../lib/urls");
+const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
+const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
@@ -662,7 +663,21 @@ router.get("/studies/:id/respondents", (req, res) => {
     diaryUrl: respondentDiaryUrl(req, r.unique_token),
     hasLock: !!lockCountByRespondent[r.id],
   }));
-  res.render("admin/study_respondents", { study, respondents: withRisk, tab: "respondents" });
+  // Remote self-onboarding invite link (spec Flow B step 1). The code is
+  // allocated lazily on first view so studies that never recruit remotely
+  // never get one. remoteOpen reflects whether the link would actually work
+  // right now -- an admin handing out a link for a draft or F2F-only study
+  // would otherwise only find out when respondents hit a refusal page.
+  const joinCode = getOrCreateJoinCode(study.id);
+  res.render("admin/study_respondents", {
+    study,
+    respondents: withRisk,
+    tab: "respondents",
+    joinCode,
+    joinUrl: `${appBaseUrl(req)}/join/${joinCode}`,
+    remoteOpen: remoteOnboardingOpen(study),
+    activated: req.query.activated,
+  });
 });
 
 // Release a recruitment hold (see lib/qc.js applyRecruitmentHolds): a
@@ -681,6 +696,15 @@ router.post("/studies/:id/respondents/:respondentId/activate", (req, res) => {
     respondent_code: respondent.respondent_code,
   });
   res.redirect(`/admin/studies/${req.params.id}/respondents?activated=${encodeURIComponent(respondent.respondent_code)}`);
+});
+
+// QR for the study's public remote sign-up link, so the invite can be printed
+// on a flyer or shown on screen rather than typed out.
+router.get("/studies/:id/join-qr.png", async (req, res) => {
+  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  if (!study) return res.status(404).end();
+  const code = getOrCreateJoinCode(study.id);
+  await qrPngToResponse(res, `${appBaseUrl(req)}/join/${code}`);
 });
 
 // On-demand QR PNG for one respondent's diary link -- generated only when a

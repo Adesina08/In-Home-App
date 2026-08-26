@@ -1,0 +1,59 @@
+<%- include('../partials/header', { title: 'How it works — ' + study.name, user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="text-center mb-5">
+      <div class="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3">
+        <%- icon('check-circle', 'w-7 h-7') %>
+      </div>
+      <h1 class="text-lg font-bold text-slate-900">You're verified, <%= respondent.name %></h1>
+      <p class="text-sm text-slate-500 mt-1">Here's how the diary works — it takes a minute to read.</p>
+    </div>
+
+    <div class="space-y-3.5 mb-6">
+      <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <%- icon('plus', 'w-4 h-4 mt-0.5 text-brand-600 shrink-0') %>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Log each occasion</div>
+          <div class="text-xs text-slate-500 leading-relaxed">Whenever the study asks, tap <strong>Log Consumption</strong> and answer a few short questions about what you had.</div>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <%- icon('photo', 'w-4 h-4 mt-0.5 text-brand-600 shrink-0') %>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Take a photo at the time</div>
+          <div class="text-xs text-slate-500 leading-relaxed">Most studies ask for a photo taken there and then with your camera — not one picked from your gallery.</div>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <%- icon('mic', 'w-4 h-4 mt-0.5 text-brand-600 shrink-0') %>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Or use video and voice</div>
+          <div class="text-xs text-slate-500 leading-relaxed">You can record a short video and let the app fill in what it can, or add a spoken note like a WhatsApp voice message.</div>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+        <%- icon('shield', 'w-4 h-4 mt-0.5 text-brand-600 shrink-0') %>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Your diary is private to you</div>
+          <div class="text-xs text-slate-500 leading-relaxed">You'll set up your fingerprint, Face ID or screen lock so only you can open it on this device.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-brand-50 border border-brand-100 rounded-xl p-3.5 mb-5">
+      <div class="text-sm font-semibold text-slate-800 mb-0.5">Try it out first</div>
+      <div class="text-xs text-slate-600 leading-relaxed">
+        Once you're in, your first entry can be a <strong>practice entry</strong> — it's clearly marked and never counts towards the research, so it's a safe way to see how it works.
+      </div>
+    </div>
+
+    <form method="POST" action="/join/<%= code %>/finish">
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        Open my diary <%- icon('arrow-right', 'w-4 h-4') %>
+      </button>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

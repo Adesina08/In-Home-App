@@ -1,0 +1,55 @@
+<%- include('../partials/header', { title: 'Join ' + study.name + ' — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="text-center mb-6">
+      <img src="/public/icons/logo-header.png" alt="INICIO" class="h-9 w-auto mx-auto mb-4" />
+      <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-1">You're invited to take part</div>
+      <h1 class="text-xl font-bold text-slate-900"><%= study.name %></h1>
+      <% if (study.market || study.category) { %>
+        <p class="text-xs text-slate-400 mt-1"><%= [study.market, study.category].filter(Boolean).join(' · ') %></p>
+      <% } %>
+    </div>
+
+    <div class="space-y-3 mb-6">
+      <div class="flex items-start gap-3">
+        <span class="w-7 h-7 rounded-full bg-brand-50 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Read and agree</div>
+          <div class="text-xs text-slate-500">We'll show you exactly what taking part involves and how your information is used.</div>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="w-7 h-7 rounded-full bg-brand-50 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Tell us how to reach you</div>
+          <div class="text-xs text-slate-500">Your name and a phone number or email — we'll send a short code to check it's really you.</div>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="w-7 h-7 rounded-full bg-brand-50 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">Start your diary</div>
+          <div class="text-xs text-slate-500">A quick walkthrough, then your own private diary opens on this device.</div>
+        </div>
+      </div>
+    </div>
+
+    <% if (!hasConsent) { %>
+      <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3 mb-4">
+        This study isn't quite ready for sign-ups yet. Please check back shortly.
+      </div>
+    <% } %>
+
+    <a href="/join/<%= code %>/consent"
+       class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card <%= hasConsent ? '' : 'opacity-50 pointer-events-none' %>">
+      Get started <%- icon('arrow-right', 'w-4 h-4') %>
+    </a>
+
+    <p class="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
+      Taking part is voluntary and you can stop at any time. Your diary is private to the research team.
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>
