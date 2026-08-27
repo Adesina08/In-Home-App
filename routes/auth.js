@@ -6,31 +6,16 @@ const { qrDataUrl } = require("../lib/qrcode");
 const { appBaseUrl } = require("../lib/urls");
 
 const router = express.Router();
-
-// Native Expo respondent API. Mounted here because routes/auth.js is already
-// public at the application root; each protected mobile endpoint performs its
-// own bearer-token check inside routes/mobileApi.js rather than relying on the
-// browser session used by staff/admin pages.
 router.use("/api/mobile", require("./mobileApi"));
 
 router.get("/login", (req, res) => {
   res.render("login", { error: null, user: null });
 });
 
-// Public, no-login page: a QR code + link for opening the app on a phone and
-// installing it as a PWA ("Add to Home Screen"). The Expo respondent APK lives
-// in expo-mobile/; this page remains the browser/PWA fallback and staff entry
-// point. Respondents recruited normally still get their own personal diary
-// link/QR from their interviewer -- that link is also accepted by the native
-// app's Diary link sign-in option.
 router.get("/get-app", async (req, res) => {
   const url = appBaseUrl(req) + "/login";
   let qr = null;
-  try {
-    qr = await qrDataUrl(url, 280);
-  } catch (e) {
-    qr = null; // Page still renders fine with just the plain link if QR generation fails for any reason.
-  }
+  try { qr = await qrDataUrl(url, 280); } catch (e) { qr = null; }
   res.render("get_app", { url, qr, user: null });
 });
 
