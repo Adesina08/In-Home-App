@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "INICIO Diary",
+    "slug": "inicio-diary",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "inicio",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.inicio.inhome",
+      "versionCode": 1,
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "INICIO uses your photo library only when you choose evidence for a diary entry.",
+          "cameraPermission": "INICIO uses your camera only when you choose to capture diary evidence."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "apiUrl": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net"
+    }
+  }
+}
