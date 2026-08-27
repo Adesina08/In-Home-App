@@ -2,7 +2,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const db = require("../lib/db");
+const store = require("../lib/store");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { logAudit } = require("../lib/audit");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
@@ -22,14 +22,14 @@ const router = express.Router();
 const uploadsRoot = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
 const upload = multer({ dest: uploadsRoot, limits: { fileSize: 60 * 1024 * 1024 } });
 
-function getRespondentByToken(token) {
-  return db.prepare("SELECT * FROM respondents WHERE unique_token = ?").get(token);
+async function getRespondentByToken(token) {
+  return store.findOne("respondents", { unique_token: token });
 }
 
 // Per-respondent PWA manifest so "Add to Home Screen" reopens straight into
 // this respondent's own diary link (a shared static manifest can't do that).
-router.get("/:token/manifest.json", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token/manifest.json", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "not found" });
   res.set("Content-Type", "application/manifest+json");
   res.json({
@@ -59,33 +59,33 @@ router.get("/:token/manifest.json", (req, res) => {
 // route -- so this is "required everywhere it's technically possible," not a
 // feature that can silently brick the pilot for someone's older phone.
 
-router.get("/:token/lock", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token/lock", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "This link is not valid. Please contact your interviewer.", user: null });
   const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
   if (respondent.biometric_exempt) return res.redirect(next);
-  const hasCredential = webauthn.getCredentialsForRespondent(respondent.id).length > 0;
+  const hasCredential = (await webauthn.getCredentialsForRespondent(respondent.id)).length > 0;
   return res.redirect(`/r/${req.params.token}/lock/${hasCredential ? "unlock" : "setup"}?next=${encodeURIComponent(next)}`);
 });
 
-router.get("/:token/lock/setup", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token/lock/setup", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
   const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
   res.render("respondent/lock_setup", { respondent, study, next });
 });
 
-router.get("/:token/lock/unlock", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token/lock/unlock", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
   const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
   res.render("respondent/lock_unlock", { respondent, study, next });
 });
 
 router.post("/:token/lock/registration-options", async (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
   try {
     const options = await webauthn.buildRegistrationOptions(req, respondent);
@@ -97,7 +97,7 @@ router.post("/:token/lock/registration-options", async (req, res) => {
 });
 
 router.post("/:token/lock/registration-verify", async (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
   try {
     const ok = await webauthn.verifyRegistration(req, respondent, req.body);
@@ -112,7 +112,7 @@ router.post("/:token/lock/registration-verify", async (req, res) => {
 });
 
 router.post("/:token/lock/auth-options", async (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
   try {
     const options = await webauthn.buildAuthenticationOptions(req, respondent);
@@ -124,7 +124,7 @@ router.post("/:token/lock/auth-options", async (req, res) => {
 });
 
 router.post("/:token/lock/auth-verify", async (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
   try {
     const ok = await webauthn.verifyAuthentication(req, respondent, req.body);
@@ -142,10 +142,10 @@ router.post("/:token/lock/auth-verify", async (req, res) => {
 // platform authenticator at all -- there is nothing to "require" on hardware
 // that doesn't support it, so this respondent is exempted and logged as such
 // (visible via the respondents list) rather than being locked out entirely.
-router.post("/:token/lock/exempt", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.post("/:token/lock/exempt", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
-  db.prepare("UPDATE respondents SET biometric_exempt = 1 WHERE id = ?").run(respondent.id);
+  await store.update("respondents", { id: respondent.id }, { biometric_exempt: 1 });
   logAudit(respondent.respondent_code, "biometric_lock_exempted", "respondents", respondent.id, {
     reason: "no platform authenticator available on this device",
   });
@@ -157,17 +157,17 @@ router.post("/:token/lock/exempt", (req, res) => {
 // Plain-language usage guide -- reachable regardless of lock state (someone
 // stuck on the lock/unlock screen needs to be able to get help without first
 // getting past it) and contains nothing respondent-specific or sensitive.
-router.get("/:token/help", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token/help", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
   res.render("respondent/help", { respondent, content: require("../lib/helpContent").respondent });
 });
 
 // Applied to every respondent route below this point (registered after the
 // /lock/* and /help routes above, so those always stay reachable regardless of lock state).
-router.use("/:token", (req, res, next) => {
+router.use("/:token", async (req, res, next) => {
   if (req.path === "/manifest.json" || req.path === "/help") return next(); // not sensitive
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return next(); // let the real route handler 404 normally
   // A study-scoped "Terminate survey" skip rule (see lib/skipLogic.js) sets this
   // when it fires -- the respondent's participation is over, so every route
@@ -190,12 +190,14 @@ router.use("/:token", (req, res, next) => {
   return res.redirect(`/r/${req.params.token}/lock?next=${next_}`);
 });
 
-router.get("/:token", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "This link is not valid. Please contact your interviewer.", user: null });
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
-  const consent = db.prepare("SELECT * FROM consent_versions WHERE study_id = ? AND status='approved' ORDER BY version DESC LIMIT 1").get(study.id);
-  const records = db.prepare("SELECT * FROM diary_records WHERE respondent_id = ? ORDER BY datetime(entry_time) DESC").all(respondent.id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const consent = await store.findOne("consent_versions", { study_id: study.id, status: "approved" }, { sort: { version: -1 } });
+  // entry_time is stored as 'YYYY-MM-DD HH:MM:SS', so sorting the string
+  // descending is the same ordering datetime(entry_time) DESC gave.
+  const records = await store.find("diary_records", { respondent_id: respondent.id }, { sort: { entry_time: -1 } });
   res.render("respondent/home", {
     respondent, study, consent, records,
     // Pre-existing gap: the post-submit redirect (see POST /:token/diary below)
@@ -216,32 +218,32 @@ router.get("/:token", (req, res) => {
 });
 
 // ---- Diary reminder push notifications (Web Push / VAPID, see lib/push.js) ----
-router.post("/:token/push/subscribe", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.post("/:token/push/subscribe", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
-  const ok = push.saveSubscription(respondent.id, req.body, req.get("user-agent"));
+  const ok = await push.saveSubscription(respondent.id, req.body, req.get("user-agent"));
   if (!ok) return res.status(400).json({ error: "Malformed subscription." });
   res.json({ subscribed: true });
 });
 
-router.post("/:token/push/unsubscribe", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.post("/:token/push/unsubscribe", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
-  if (req.body && req.body.endpoint) push.removeSubscription(respondent.id, req.body.endpoint);
+  if (req.body && req.body.endpoint) await push.removeSubscription(respondent.id, req.body.endpoint);
   res.json({ unsubscribed: true });
 });
 
-router.post("/:token/consent", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.post("/:token/consent", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
-  db.prepare("UPDATE respondents SET consent_status='given', activation_status='activated' WHERE id = ?").run(respondent.id);
+  await store.update("respondents", { id: respondent.id }, { consent_status: "given", activation_status: "activated" });
   res.redirect(`/r/${req.params.token}`);
 });
 
-router.get("/:token/diary/new", (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+router.get("/:token/diary/new", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
   const mode = req.query.mode;
   const practice = req.query.practice === "1";
 
@@ -256,7 +258,7 @@ router.get("/:token/diary/new", (req, res) => {
     return res.render("respondent/diary_video_capture", { respondent, study, practice });
   }
 
-  const { questions, rules } = loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id);
   res.render("respondent/diary_form", {
     respondent, study, questions, rules, practice,
     mode: mode === "audio" ? "audio" : "standard",
@@ -271,11 +273,11 @@ router.get("/:token/diary/new", (req, res) => {
 // The already-saved video is carried forward via hidden fields so it isn't
 // re-uploaded; final POST /diary attaches it as evidence media.
 router.post("/:token/diary/analyze-video", upload.single("video"), async (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
-  const { questions, rules } = loadQuestionnaire(study.id);
-  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? AND active = 1").all(study.id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const { questions, rules } = await loadQuestionnaire(study.id);
+  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
   const practice = req.body.practice === "1";
 
   if (!req.file) {
@@ -328,16 +330,16 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
 });
 
 router.post("/:token/diary", upload.any(), async (req, res) => {
-  const respondent = getRespondentByToken(req.params.token);
+  const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
   const isSubmit = req.body._action === "submit";
   const isPractice = req.body._practice === "1" ? 1 : 0;
   const entryMode = ["standard", "video", "audio"].includes(req.body._mode) ? req.body._mode : "standard";
   const occurrenceTime = req.body.occurrence_time ? req.body.occurrence_time.replace("T", " ") : new Date().toISOString().slice(0, 19).replace("T", " ");
   const periodLabel = req.body.period_label || occurrenceTime.slice(0, 10);
 
-  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? AND active = 1").all(study.id);
+  const questions = await store.find("questions", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
 
   // "Terminate survey" skip rules (see lib/skipLogic.js) are re-evaluated here
   // server-side, against the answers actually submitted, rather than trusted
@@ -350,7 +352,18 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   // because they typed a disqualifying answer and then saved a draft.
   let terminateMatch = null;
   if (isSubmit) {
-    const rules = db.prepare("SELECT sr.*, cq.text as condition_text FROM skip_rules sr JOIN questions cq ON cq.id = sr.condition_question_id WHERE sr.study_id = ?").all(study.id);
+    // The old query was an INNER JOIN from skip_rules to questions purely to
+    // pick up the condition question's text as `condition_text`; stitched here
+    // in JS. INNER JOIN semantics are preserved deliberately: a rule whose
+    // condition question no longer exists is dropped, not shown blank.
+    const allRules = await store.find("skip_rules", { study_id: study.id }, { sort: { id: 1 } });
+    const conditionQuestions = await store.find("questions", {
+      id: { $in: allRules.map((r) => r.condition_question_id) },
+    });
+    const conditionById = new Map(conditionQuestions.map((q) => [q.id, q]));
+    const rules = allRules
+      .filter((r) => conditionById.has(r.condition_question_id))
+      .map((r) => ({ ...r, condition_text: conditionById.get(r.condition_question_id).text }));
     const answers = {};
     questions.forEach((q) => {
       const field = `q_${q.id}`;
@@ -376,7 +389,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   //
   // Drafts are exempt on purpose -- see lib/answerValidation.js.
   if (isSubmit && !isTerminated) {
-    const { rules: liveRules } = loadQuestionnaire(study.id);
+    const { rules: liveRules } = await loadQuestionnaire(study.id);
     const problems = validateSubmission({
       questions,
       rules: liveRules,
@@ -415,36 +428,33 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     }
   }
 
-  const info = db
-    .prepare(
-      `INSERT INTO diary_records (respondent_id, study_id, period_label, occurrence_time, submit_time, channel, status, is_practice, entry_mode, terminate_note)
-       VALUES (?, ?, ?, ?, ?, 'app', ?, ?, ?, ?)`
-    )
-    .run(
-      respondent.id, study.id, periodLabel, occurrenceTime,
-      isSubmit ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
-      isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"), isPractice, entryMode, terminateNote
-    );
-  const recordId = info.lastInsertRowid;
+  const { id: recordId } = await store.insert("diary_records", {
+    respondent_id: respondent.id,
+    study_id: study.id,
+    period_label: periodLabel,
+    occurrence_time: occurrenceTime,
+    submit_time: isSubmit ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
+    channel: "app",
+    status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"),
+    is_practice: isPractice,
+    entry_mode: entryMode,
+    terminate_note: terminateNote,
+  });
 
-  const insertResponse = db.prepare("INSERT INTO responses (record_id, question_id, value, study_version) VALUES (?, ?, ?, ?)");
   for (const q of questions) {
     const field = `q_${q.id}`;
     if (q.type === "multi") {
       const vals = req.body[field];
       if (vals) {
         const arr = Array.isArray(vals) ? vals : [vals];
-        insertResponse.run(recordId, q.id, arr.join("|"), study.version);
+        await store.insert("responses", { record_id: recordId, question_id: q.id, value: arr.join("|"), study_version: study.version });
       }
     } else if (q.type !== "photo" && q.type !== "video" && req.body[field] !== undefined && req.body[field] !== "") {
-      insertResponse.run(recordId, q.id, req.body[field], study.version);
+      await store.insert("responses", { record_id: recordId, question_id: q.id, value: req.body[field], study_version: study.version });
     }
   }
 
-  const insertMedia = db.prepare(
-    "INSERT INTO media (record_id, media_type, file_path) VALUES (?, ?, ?)"
-  );
-  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? AND active = 1").all(study.id);
+  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
 
   // AI enrichment (brand detection / transcription) is always best-effort and
   // must never block or crash a diary submission -- the diary record and the
@@ -463,8 +473,8 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   // rather than asking the respondent to upload it again.
   if (req.body._pending_media_path) {
     const mediaType = (req.body._pending_media_mimetype || "").startsWith("video/") ? "video" : "photo";
-    const info2 = insertMedia.run(recordId, mediaType, req.body._pending_media_path);
-    const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: mediaType, file_path: req.body._pending_media_path };
+    const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: mediaType, file_path: req.body._pending_media_path });
+    const mediaRow = { id: mediaId, record_id: recordId, media_type: mediaType, file_path: req.body._pending_media_path };
     if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
   }
 
@@ -481,29 +491,29 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     // before the mimetype fallback below, which treats anything non-video as a
     // photo and would otherwise file a voice recording as an image.
     if (f.fieldname === "audio_note" || f.fieldname.startsWith("audio_q_") || (f.mimetype || "").startsWith("audio/")) {
-      const info2 = insertMedia.run(recordId, "audio", storedPath);
-      const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: "audio", file_path: storedPath };
+      const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: "audio", file_path: storedPath });
+      const mediaRow = { id: mediaId, record_id: recordId, media_type: "audio", file_path: storedPath };
       // Queue transcription — runs inline against the mock/Azure provider,
       // see lib/audioTranscription.js.
       if (audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
       continue;
     }
     const mediaType = (f.mimetype || "").startsWith("video/") ? "video" : "photo";
-    const info2 = insertMedia.run(recordId, mediaType, storedPath);
-    const mediaRow = { id: info2.lastInsertRowid, record_id: recordId, media_type: mediaType, file_path: storedPath };
+    const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: mediaType, file_path: storedPath });
+    const mediaRow = { id: mediaId, record_id: recordId, media_type: mediaType, file_path: storedPath };
     // Queue brand detection for evidence that could show a product (photo or video).
     // Runs inline against the mock/Azure provider — see lib/brandDetection.js.
     if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
   }
 
   if (isSubmit && !isPractice) {
-    db.prepare("UPDATE respondents SET activation_status='active' WHERE id = ? AND activation_status != 'active'").run(respondent.id);
+    await store.update("respondents", { id: respondent.id, activation_status: { $ne: "active" } }, { activation_status: "active" });
     // A screened-out entry is a deliberately incomplete/disqualified response,
     // not a real diary submission -- it shouldn't trip QC flags for missing
     // fields/evidence, or count toward the cross-channel-duplicate check.
     if (!isTerminated) {
-      runQcForRecord(recordId);
-      checkCrossChannelDuplicate(respondent.id, periodLabel);
+      await runQcForRecord(recordId);
+      await checkCrossChannelDuplicate(respondent.id, periodLabel);
     }
   }
 
@@ -512,9 +522,11 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   // under /r/:token now shows the end screen instead (see the router.use
   // gate above) until/unless a staff member changes their status by hand.
   if (isTerminated && terminateMatch.terminate_scope === "study" && !isPractice) {
-    db.prepare(
-      "UPDATE respondents SET activation_status='disqualified', disqualified_at=datetime('now'), disqualify_reason=? WHERE id = ?"
-    ).run(terminateNote, respondent.id);
+    await store.update(
+      "respondents",
+      { id: respondent.id },
+      { activation_status: "disqualified", disqualified_at: store.nowSql(), disqualify_reason: terminateNote }
+    );
   }
 
   logAudit(respondent.respondent_code, isTerminated ? "diary_terminated" : (isSubmit ? "diary_submit" : "diary_draft"), "diary_records", recordId, { practice: !!isPractice, terminateScope: isTerminated ? terminateMatch.terminate_scope : undefined });

@@ -51,9 +51,12 @@ Admin → Study → Respondents screen, or generated live via Interviewer → Re
 ## Project layout
 
 - `server.js` — Express app entry point, sessions, static file serving, root-scoped `/sw.js`
-- `lib/db.js` — SQLite schema (studies, users, respondents, questions, skip rules, brands,
-  consent, diary records, responses, media, QC flags, reminders, WhatsApp outbox, KPI
-  config, question imports, audit log)
+- `lib/store/` — the data layer (MongoDB). `index.js` is the API the whole app uses,
+  `mongoDriver.js` talks to a real MongoDB / Azure Cosmos DB, `localDriver.js` runs the same
+  query semantics against a JSON file for development and tests, and `schema.js` holds the
+  per-collection default values. Collections: studies, users, respondents, respondent
+  accounts, questions, skip rules, brands, consent versions, diary records, responses, media,
+  QC flags, reminders, WhatsApp outbox, KPI config, question imports, OTP codes, audit log
 - `lib/qc.js` — the rule-based QC engine (back-entry window, missing photo, duplicate/
   repetitive, burst entry, range/logic, cross-channel duplicate) + risk classification
 - `lib/reminders.js` — reminder scheduling engine

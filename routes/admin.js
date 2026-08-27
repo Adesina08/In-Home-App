@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const path = require("path");
-const db = require("../lib/db");
+const store = require("../lib/store");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { classifyRisk, unresolvedBlockingFlags } = require("../lib/qc");
@@ -53,59 +53,99 @@ router.use((req, res, next) => {
   // Flag only once the response actually succeeded -- a handler that 4xx'd or
   // threw changed nothing, and shouldn't leave the study looking edited.
   res.on("finish", () => {
-    if (res.statusCode < 400) markQuestionnaireDirty(match[1]);
+    // The response has already gone out, so there is nothing left to await
+    // into -- the flag is written fire-and-forget. A failure is logged rather
+    // than swallowed: it would leave an edited study not showing as edited,
+    // which is invisible in the UI and needs to be findable in the logs.
+    if (res.statusCode < 400) {
+      markQuestionnaireDirty(toId(match[1])).catch((e) =>
+        console.error("Could not flag the questionnaire as edited:", e.message)
+      );
+    }
   });
   next();
 });
 
 const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
-function getStudyOrFirst(req) {
-  const studies = db.prepare("SELECT * FROM studies ORDER BY id").all();
+// SQLite's INTEGER affinity quietly turned an id arriving as the string "7"
+// (off a URL or a form field) into the number 7, on both sides of a comparison
+// and on the way into an INTEGER column. The document store matches types
+// exactly, so ids are converted here instead. A non-numeric value is passed
+// through unchanged, so it still matches nothing, exactly as before.
+function toId(v) {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? v : n;
+}
+
+async function getStudyOrFirst(req) {
+  const studies = await store.find("studies", {}, { sort: { id: 1 } });
   const studyId = parseInt(req.query.study || req.params.id, 10);
   const study = studies.find((s) => s.id === studyId) || studies[0] || null;
   return { study, studies };
 }
 
 // ---------- Ops Dashboard ----------
-router.get("/", (req, res) => {
-  const { study, studies } = getStudyOrFirst(req);
+router.get("/", async (req, res) => {
+  const { study, studies } = await getStudyOrFirst(req);
   if (!study) return res.redirect("/admin/studies");
 
-  const funnel = db
-    .prepare(
-      `SELECT activation_status, COUNT(*) c FROM respondents WHERE study_id = ? AND is_practice = 0 GROUP BY activation_status`
+  // GROUP BY activation_status in one round trip -- countBy returns the same
+  // { value: count } shape the old Object.fromEntries built.
+  const funnelMap = await store.countBy("respondents", "activation_status", { study_id: study.id, is_practice: 0 });
+
+  const totalRespondents = await store.count("respondents", { study_id: study.id, is_practice: 0 });
+  const expected = await store.count("diary_records", { study_id: study.id, is_practice: 0 });
+  const completed = await store.count("diary_records", { study_id: study.id, status: "submitted", is_practice: 0 });
+  const missed = await store.count("diary_records", { study_id: study.id, status: "draft", is_practice: 0 });
+  const screenedOut = await store.count("diary_records", { study_id: study.id, status: "screened_out", is_practice: 0 });
+
+  // The qc_flags -> respondents JOIN done in JS: the study scope becomes an
+  // $in over that study's respondent ids, and respondent_code /
+  // respondent_name are stitched on afterwards under the same aliases the
+  // template reads.
+  const flagRespondents = await store.find(
+    "respondents",
+    { study_id: study.id },
+    { projection: { id: 1, respondent_code: 1, name: 1 } }
+  );
+  const flagRespById = new Map(flagRespondents.map((r) => [r.id, r]));
+  const openFlags = (
+    await store.find(
+      "qc_flags",
+      { respondent_id: { $in: [...flagRespById.keys()] }, status: "open" },
+      { sort: { created_time: -1 }, limit: 8 }
     )
-    .all(study.id);
-  const funnelMap = Object.fromEntries(funnel.map((f) => [f.activation_status, f.c]));
+  ).map((f) => ({
+    ...f,
+    respondent_code: flagRespById.get(f.respondent_id).respondent_code,
+    respondent_name: flagRespById.get(f.respondent_id).name,
+  }));
 
-  const totalRespondents = db.prepare("SELECT COUNT(*) c FROM respondents WHERE study_id = ? AND is_practice = 0").get(study.id).c;
-  const expected = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND is_practice = 0").get(study.id).c;
-  const completed = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND status='submitted' AND is_practice = 0").get(study.id).c;
-  const missed = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND status='draft' AND is_practice = 0").get(study.id).c;
-  const screenedOut = db.prepare("SELECT COUNT(*) c FROM diary_records WHERE study_id = ? AND status='screened_out' AND is_practice = 0").get(study.id).c;
+  // The LEFT JOIN users -> respondents tally, done in JS. The join condition
+  // carried the study, so a respondent on another study counts towards neither
+  // column -- and an interviewer who recruited nobody still gets a row of
+  // zeroes, exactly as the LEFT JOIN produced.
+  const interviewerUsers = await store.find("users", { role: "interviewer" }, { sort: { id: 1 } });
+  const respondentsForInterviewers = await store.find(
+    "respondents",
+    { study_id: study.id },
+    { projection: { id: 1, interviewer_id: 1, activation_status: 1 } }
+  );
+  const interviewers = interviewerUsers.map((u) => {
+    const mine = respondentsForInterviewers.filter((r) => r.interviewer_id === u.id);
+    return {
+      id: u.id,
+      name: u.name,
+      recruited: mine.length,
+      activated: mine.filter((r) => ["active", "activated", "completed"].includes(r.activation_status)).length,
+    };
+  });
 
-  const openFlags = db
-    .prepare(
-      `SELECT qc_flags.*, respondents.respondent_code, respondents.name as respondent_name
-       FROM qc_flags JOIN respondents ON respondents.id = qc_flags.respondent_id
-       WHERE respondents.study_id = ? AND qc_flags.status = 'open'
-       ORDER BY datetime(qc_flags.created_time) DESC LIMIT 8`
-    )
-    .all(study.id);
-
-  const interviewers = db
-    .prepare(
-      `SELECT u.id, u.name, COUNT(r.id) recruited,
-        SUM(CASE WHEN r.activation_status IN ('active','activated','completed') THEN 1 ELSE 0 END) activated
-       FROM users u LEFT JOIN respondents r ON r.interviewer_id = u.id AND r.study_id = ?
-       WHERE u.role = 'interviewer' GROUP BY u.id`
-    )
-    .all(study.id);
-
-  const respondentsForRisk = db.prepare("SELECT id FROM respondents WHERE study_id = ? AND is_practice = 0").all(study.id);
+  const respondentsForRisk = await store.find("respondents", { study_id: study.id, is_practice: 0 }, { projection: { id: 1 } });
   const riskCounts = { green: 0, amber: 0, red: 0 };
-  respondentsForRisk.forEach((r) => riskCounts[classifyRisk(r.id)]++);
+  for (const r of respondentsForRisk) riskCounts[await classifyRisk(r.id)]++;
 
   res.render("admin/dashboard", {
     study,
@@ -123,19 +163,15 @@ router.get("/", (req, res) => {
 });
 
 // ---------- Studies ----------
-router.get("/studies", (req, res) => {
-  const studies = db.prepare("SELECT * FROM studies ORDER BY id DESC").all();
+router.get("/studies", async (req, res) => {
+  const studies = await store.find("studies", {}, { sort: { id: -1 } });
   res.render("admin/studies", { studies });
 });
 
-router.post("/studies", (req, res) => {
+router.post("/studies", async (req, res) => {
   const { name, market, diary_mode, recruitment_mode } = req.body;
   const category = toStoredCategories(req.body.category);
-  const info = db
-    .prepare(
-      `INSERT INTO studies (name, market, category, diary_mode, recruitment_mode) VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(name, market, category, diary_mode, recruitment_mode);
+  const { id } = await store.insert("studies", { name, market, category, diary_mode, recruitment_mode });
   // seed default KPI candidates
   const defaults = [
     ["completion_rate", "Diary Completion Rate"],
@@ -145,14 +181,15 @@ router.post("/studies", (req, res) => {
     ["qc_flag_rate", "QC Flag Rate"],
     ["active_respondents", "Active Respondents"],
   ];
-  const insertKpi = db.prepare("INSERT INTO kpi_config (study_id, kpi_key, label, enabled) VALUES (?, ?, ?, 1)");
-  defaults.forEach(([k, l]) => insertKpi.run(info.lastInsertRowid, k, l));
-  logAudit(req.session.user.email, "create", "studies", info.lastInsertRowid, req.body);
-  res.redirect(`/admin/studies/${info.lastInsertRowid}`);
+  for (const [k, l] of defaults) {
+    await store.insert("kpi_config", { study_id: id, kpi_key: k, label: l, enabled: 1 });
+  }
+  logAudit(req.session.user.email, "create", "studies", id, req.body);
+  res.redirect(`/admin/studies/${id}`);
 });
 
-router.get("/studies/:id", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+router.get("/studies/:id", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!study) return res.status(404).render("error", { message: "Study not found", user: req.session.user });
   res.render("admin/study_settings", {
     study, tab: "settings",
@@ -160,19 +197,20 @@ router.get("/studies/:id", (req, res) => {
   });
 });
 
-router.post("/studies/:id/settings", (req, res) => {
+router.post("/studies/:id/settings", async (req, res) => {
   const b = req.body;
+  const studyId = toId(req.params.id);
 
   // End validation (spec 4.1): a study can't be closed while critical/high QC
   // exceptions are still unreviewed -- closing is what freezes the dataset for
   // delivery, so anything still in dispute has to be dispositioned first.
   // Every other settings change on this form saves normally; only the
   // transition *into* 'closed' is gated.
-  const current = db.prepare("SELECT status FROM studies WHERE id = ?").get(req.params.id);
+  const current = await store.findOne("studies", { id: studyId }, { projection: { status: 1 } });
   if (b.status === "closed" && current && current.status !== "closed") {
-    const blocking = unresolvedBlockingFlags({ studyId: req.params.id });
+    const blocking = await unresolvedBlockingFlags({ studyId });
     if (blocking.length) {
-      const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+      const study = await store.findOne("studies", { id: studyId });
       return res.status(400).render("admin/study_settings", {
         study,
         tab: "settings",
@@ -188,46 +226,55 @@ router.post("/studies/:id/settings", (req, res) => {
   // typo'd 900 can't silently disable the rule by making it unreachable.
   const dupPct = Math.min(100, Math.max(1, parseInt(b.duplicate_similarity_pct, 10) || 90));
 
-  db.prepare(
-    `UPDATE studies SET name=?, market=?, category=?, status=?, diary_mode=?, recruitment_mode=?,
-      back_entry_hours=?, mandatory_photo=?, duplicate_similarity_threshold=?,
-      burst_entry_count_threshold=?, burst_entry_window_hours=?, reminder_due_hours=?, reminder_missed_hours=?,
-      default_reminder_channel=?, qc_back_entry_enabled=?, qc_duplicate_enabled=?, qc_burst_enabled=?,
-      invite_brief=?
-     WHERE id=?`
-  ).run(
-    b.name, b.market, toStoredCategories(b.category), b.status, b.diary_mode, b.recruitment_mode,
-    parseInt(b.back_entry_hours) || 24, b.mandatory_photo ? 1 : 0,
-    dupPct / 100, parseInt(b.burst_entry_count_threshold) || 3,
-    parseInt(b.burst_entry_window_hours) || 2, b.reminder_due_hours ? parseInt(b.reminder_due_hours) : null,
-    b.reminder_missed_hours ? parseInt(b.reminder_missed_hours) : null, b.default_reminder_channel,
-    b.qc_back_entry_enabled ? 1 : 0, b.qc_duplicate_enabled ? 1 : 0, b.qc_burst_enabled ? 1 : 0,
-    (b.invite_brief || "").trim() || null,
-    req.params.id
-  );
+  await store.update("studies", { id: studyId }, {
+    name: b.name,
+    market: b.market,
+    category: toStoredCategories(b.category),
+    status: b.status,
+    diary_mode: b.diary_mode,
+    recruitment_mode: b.recruitment_mode,
+    back_entry_hours: parseInt(b.back_entry_hours) || 24,
+    mandatory_photo: b.mandatory_photo ? 1 : 0,
+    duplicate_similarity_threshold: dupPct / 100,
+    burst_entry_count_threshold: parseInt(b.burst_entry_count_threshold) || 3,
+    burst_entry_window_hours: parseInt(b.burst_entry_window_hours) || 2,
+    reminder_due_hours: b.reminder_due_hours ? parseInt(b.reminder_due_hours) : null,
+    reminder_missed_hours: b.reminder_missed_hours ? parseInt(b.reminder_missed_hours) : null,
+    default_reminder_channel: b.default_reminder_channel,
+    qc_back_entry_enabled: b.qc_back_entry_enabled ? 1 : 0,
+    qc_duplicate_enabled: b.qc_duplicate_enabled ? 1 : 0,
+    qc_burst_enabled: b.qc_burst_enabled ? 1 : 0,
+    invite_brief: (b.invite_brief || "").trim() || null,
+  });
   logAudit(req.session.user.email, "update_settings", "studies", req.params.id, b);
   res.redirect(`/admin/studies/${req.params.id}?saved=1`);
 });
 
 // ---------- Questionnaire builder ----------
-router.get("/studies/:id/questionnaire", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const questions = db.prepare("SELECT * FROM questions WHERE study_id = ? ORDER BY order_index").all(req.params.id);
+router.get("/studies/:id/questionnaire", async (req, res) => {
+  const studyId = toId(req.params.id);
+  const study = await store.findOne("studies", { id: studyId });
+  const questions = await store.find("questions", { study_id: studyId }, { sort: { order_index: 1 } });
   // This page also carries the Skip Logic and Brand/SKU sections (previously
   // separate tabs, merged onto one scrollable page) -- so it loads their data
   // too. Skip Logic's dropdowns/section list only ever consider active
   // (non-removed) questions, same filter the old standalone route used.
   const activeQuestions = questions.filter((q) => q.active);
   const sections = [...new Set(activeQuestions.map((q) => q.section).filter(Boolean))];
-  const rules = db
-    .prepare(
-      `SELECT sr.*, tq.text as target_text, cq.text as condition_text FROM skip_rules sr
-       LEFT JOIN questions tq ON tq.id = sr.target_question_id
-       JOIN questions cq ON cq.id = sr.condition_question_id
-       WHERE sr.study_id = ?`
-    )
-    .all(req.params.id);
-  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? ORDER BY name").all(req.params.id);
+  // The skip-rule joins done in JS: LEFT onto the target question, INNER onto
+  // the condition question. Both sides are questions of this same study, so
+  // the list already loaded above is the lookup. The inner join dropped a rule
+  // whose condition question had gone -- that is kept. target_text /
+  // condition_text keep their aliases, the template reads them.
+  const questionsById = new Map(questions.map((q) => [q.id, q]));
+  const rules = (await store.find("skip_rules", { study_id: studyId }, { sort: { id: 1 } }))
+    .filter((sr) => questionsById.has(sr.condition_question_id))
+    .map((sr) => ({
+      ...sr,
+      target_text: questionsById.has(sr.target_question_id) ? questionsById.get(sr.target_question_id).text : null,
+      condition_text: questionsById.get(sr.condition_question_id).text,
+    }));
+  const brands = await store.find("brands", { study_id: studyId }, { sort: { name: 1 } });
   res.render("admin/study_questionnaire", {
     study, questions, activeQuestions, sections, rules, brands, tab: "questionnaire",
     imported: req.query.imported,
@@ -240,8 +287,8 @@ router.get("/studies/:id/questionnaire", (req, res) => {
 // Publish the next questionnaire version. Every response saved from here on
 // is stamped with the new number (see routes/respondent.js), so entries
 // answered against the old wording stay attributed to the old version.
-router.post("/studies/:id/questionnaire/publish", (req, res) => {
-  const version = publishVersion(req.params.id, req.session.user.email);
+router.post("/studies/:id/questionnaire/publish", async (req, res) => {
+  const version = await publishVersion(toId(req.params.id), req.session.user.email);
   const suffix = version ? `published=${version}` : "published=none";
   res.redirect(`/admin/studies/${req.params.id}/questionnaire?${suffix}`);
 });
@@ -251,10 +298,10 @@ router.post("/studies/:id/questionnaire/publish", (req, res) => {
 // respondent diary form uses (lib/questionnaire.js), so what an admin sees
 // here (including which questions the skip logic shows/hides as they click
 // around) matches production exactly. Nothing here is ever saved.
-router.get("/studies/:id/questionnaire/live-preview", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+router.get("/studies/:id/questionnaire/live-preview", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
-  const { questions, rules } = loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id);
   // Stand-in respondent so {respondent_name}-style pipe tokens render as a
   // realistic example here instead of the bare "…" fallback -- an admin
   // checking their wording needs to see the shape of the finished sentence.
@@ -264,20 +311,29 @@ router.get("/studies/:id/questionnaire/live-preview", (req, res) => {
   });
 });
 
-router.post("/studies/:id/questionnaire", (req, res) => {
+router.post("/studies/:id/questionnaire", async (req, res) => {
   const { code, type, text, required, options, min_value, max_value, section } = req.body;
-  const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(req.params.id).m || 0;
+  const studyId = toId(req.params.id);
+  const maxOrder = (await store.max("questions", "order_index", { study_id: studyId })) || 0;
   const optionsJson = options ? JSON.stringify(options.split(",").map((o) => o.trim()).filter(Boolean)) : null;
-  db.prepare(
-    `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value, section)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(req.params.id, maxOrder + 1, code, type, text, required ? 1 : 0, optionsJson, min_value || null, max_value || null, (section || "").trim() || null);
+  await store.insert("questions", {
+    study_id: studyId,
+    order_index: maxOrder + 1,
+    code,
+    type,
+    text,
+    required: required ? 1 : 0,
+    options_json: optionsJson,
+    min_value: min_value || null,
+    max_value: max_value || null,
+    section: (section || "").trim() || null,
+  });
   logAudit(req.session.user.email, "add_question", "questions", null, req.body);
   res.redirect(`/admin/studies/${req.params.id}/questionnaire`);
 });
 
-router.post("/studies/:id/questionnaire/:qid/delete", (req, res) => {
-  db.prepare("UPDATE questions SET active = 0 WHERE id = ?").run(req.params.qid);
+router.post("/studies/:id/questionnaire/:qid/delete", async (req, res) => {
+  await store.update("questions", { id: toId(req.params.qid) }, { active: 0 });
   logAudit(req.session.user.email, "deactivate_question", "questions", req.params.qid, {});
   if (req.xhr) return res.json({ ok: true });
   res.redirect(`/admin/studies/${req.params.id}/questionnaire`);
@@ -292,22 +348,28 @@ router.post("/studies/:id/questionnaire/:qid/delete", (req, res) => {
 // Create a new blank question, appended at the end of the questionnaire (or
 // of a given section). The client focuses its text field immediately after
 // creation; reordering it into a specific spot is done afterwards by drag.
-router.post("/studies/:id/questions", (req, res) => {
+router.post("/studies/:id/questions", async (req, res) => {
   const section = (req.body.section || "").trim() || null;
-  const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(req.params.id).m || 0;
-  const info = db
-    .prepare(`INSERT INTO questions (study_id, order_index, type, text, required, section) VALUES (?, ?, 'text', '', 1, ?)`)
-    .run(req.params.id, maxOrder + 1, section);
-  logAudit(req.session.user.email, "add_question_inline", "questions", info.lastInsertRowid, { section });
-  const created = db.prepare("SELECT * FROM questions WHERE id = ?").get(info.lastInsertRowid);
+  const studyId = toId(req.params.id);
+  const maxOrder = (await store.max("questions", "order_index", { study_id: studyId })) || 0;
+  const { id } = await store.insert("questions", {
+    study_id: studyId,
+    order_index: maxOrder + 1,
+    type: "text",
+    text: "",
+    required: 1,
+    section,
+  });
+  logAudit(req.session.user.email, "add_question_inline", "questions", id, { section });
+  const created = await store.findOne("questions", { id });
   res.json(created);
 });
 
 // Partial update of one question's fields -- whatever the card's autosave
 // sends (text on blur, type/required/section on change, the options array
 // whenever a row is added/removed/edited).
-router.patch("/studies/:id/questions/:qid", (req, res) => {
-  const q = db.prepare("SELECT * FROM questions WHERE id = ? AND study_id = ?").get(req.params.qid, req.params.id);
+router.patch("/studies/:id/questions/:qid", async (req, res) => {
+  const q = await store.findOne("questions", { id: toId(req.params.qid), study_id: toId(req.params.id) });
   if (!q) return res.status(404).json({ error: "Question not found." });
   const b = req.body || {};
   const text = b.text !== undefined ? String(b.text).trim() : q.text;
@@ -328,32 +390,42 @@ router.patch("/studies/:id/questions/:qid", (req, res) => {
     max_value: b.max_value !== undefined ? (b.max_value === "" || b.max_value === null ? null : parseFloat(b.max_value)) : q.max_value,
     section: b.section !== undefined ? (String(b.section).trim() || null) : q.section,
   };
-  db.prepare(
-    `UPDATE questions SET code=?, type=?, text=?, required=?, options_json=?, min_value=?, max_value=?, section=? WHERE id=?`
-  ).run(next.code, next.type, next.text, next.required, next.options_json, next.min_value, next.max_value, next.section, q.id);
+  await store.update("questions", { id: q.id }, {
+    code: next.code,
+    type: next.type,
+    text: next.text,
+    required: next.required,
+    options_json: next.options_json,
+    min_value: next.min_value,
+    max_value: next.max_value,
+    section: next.section,
+  });
   logAudit(req.session.user.email, "update_question_inline", "questions", q.id, b);
-  res.json(db.prepare("SELECT * FROM questions WHERE id = ?").get(q.id));
+  res.json(await store.findOne("questions", { id: q.id }));
 });
 
 // Persist a full drag-and-drop reorder -- the client sends every active
 // question id in its new top-to-bottom order and this renumbers them 1..N.
-router.post("/studies/:id/questions/reorder", (req, res) => {
+router.post("/studies/:id/questions/reorder", async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter((n) => Number.isInteger(n)) : [];
-  const stmt = db.prepare("UPDATE questions SET order_index = ? WHERE id = ? AND study_id = ?");
-  db.transaction((list) => {
-    list.forEach((id, i) => stmt.run(i + 1, id, req.params.id));
-  })(ids);
+  const studyId = toId(req.params.id);
+  // The store has no transaction: the renumbering is applied one row at a
+  // time, in the order the client sent, which is what the transaction body did.
+  for (const [i, id] of ids.entries()) {
+    await store.update("questions", { id, study_id: studyId }, { order_index: i + 1 });
+  }
   res.json({ ok: true });
 });
 
 // Rename a section across every question that carries it (and any
 // section-level skip rule pointed at the old name).
-router.patch("/studies/:id/sections", (req, res) => {
+router.patch("/studies/:id/sections", async (req, res) => {
   const oldName = (req.body.oldName || "").trim();
   const newName = (req.body.newName || "").trim();
   if (!oldName || !newName) return res.status(400).json({ error: "Section name can't be empty." });
-  db.prepare("UPDATE questions SET section = ? WHERE study_id = ? AND section = ?").run(newName, req.params.id, oldName);
-  db.prepare("UPDATE skip_rules SET target_section = ? WHERE study_id = ? AND target_section = ?").run(newName, req.params.id, oldName);
+  const studyId = toId(req.params.id);
+  await store.update("questions", { study_id: studyId, section: oldName }, { section: newName });
+  await store.update("skip_rules", { study_id: studyId, target_section: oldName }, { target_section: newName });
   logAudit(req.session.user.email, "rename_section", "questions", null, { oldName, newName });
   res.json({ ok: true });
 });
@@ -361,23 +433,24 @@ router.patch("/studies/:id/sections", (req, res) => {
 // Ungroup a section: its questions go back to "No section" and any
 // section-level skip rule targeting it is removed (a rule with no section
 // to attach to would otherwise be orphaned).
-router.post("/studies/:id/sections/delete", (req, res) => {
+router.post("/studies/:id/sections/delete", async (req, res) => {
   const name = (req.body.name || "").trim();
   if (!name) return res.status(400).json({ error: "Section name can't be empty." });
-  db.prepare("UPDATE questions SET section = NULL WHERE study_id = ? AND section = ?").run(req.params.id, name);
-  db.prepare("DELETE FROM skip_rules WHERE study_id = ? AND target_section = ?").run(req.params.id, name);
+  const studyId = toId(req.params.id);
+  await store.update("questions", { study_id: studyId, section: name }, { section: null });
+  await store.remove("skip_rules", { study_id: studyId, target_section: name });
   logAudit(req.session.user.email, "delete_section", "questions", null, { name });
   res.json({ ok: true });
 });
 
 // ---------- Questionnaire upload / parse / preview / commit ----------
-router.get("/studies/:id/questionnaire/upload", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+router.get("/studies/:id/questionnaire/upload", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
   res.render("admin/study_questionnaire_upload", { study, tab: "questionnaire", error: null });
 });
 
 router.post("/studies/:id/questionnaire/upload", importUpload.single("file"), async (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!req.file) {
     return res.render("admin/study_questionnaire_upload", { study, tab: "questionnaire", error: "Please choose a file to upload." });
   }
@@ -390,34 +463,35 @@ router.post("/studies/:id/questionnaire/upload", importUpload.single("file"), as
         error: (result.warnings && result.warnings[0]) || "No questions could be parsed from that file.",
       });
     }
-    const info = db
-      .prepare(
-        `INSERT INTO question_imports (study_id, source_filename, source_type, payload_json, warnings_json)
-         VALUES (?, ?, ?, ?, ?)`
-      )
-      .run(study.id, req.file.originalname, result.sourceType, JSON.stringify(result.rows), JSON.stringify(result.warnings || []));
-    logAudit(req.session.user.email, "questionnaire_upload", "question_imports", info.lastInsertRowid, {
+    const { id } = await store.insert("question_imports", {
+      study_id: study.id,
+      source_filename: req.file.originalname,
+      source_type: result.sourceType,
+      payload_json: JSON.stringify(result.rows),
+      warnings_json: JSON.stringify(result.warnings || []),
+    });
+    logAudit(req.session.user.email, "questionnaire_upload", "question_imports", id, {
       filename: req.file.originalname,
       rows: result.rows.length,
     });
-    res.redirect(`/admin/studies/${study.id}/questionnaire/preview/${info.lastInsertRowid}`);
+    res.redirect(`/admin/studies/${study.id}/questionnaire/preview/${id}`);
   } catch (e) {
     res.render("admin/study_questionnaire_upload", { study, tab: "questionnaire", error: `Could not read that file: ${e.message}` });
   }
 });
 
-router.get("/studies/:id/questionnaire/preview/:importId", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const imp = db.prepare("SELECT * FROM question_imports WHERE id = ? AND study_id = ?").get(req.params.importId, req.params.id);
+router.get("/studies/:id/questionnaire/preview/:importId", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
+  const imp = await store.findOne("question_imports", { id: toId(req.params.importId), study_id: toId(req.params.id) });
   if (!imp) return res.status(404).render("error", { message: "Import not found or already committed.", user: req.session.user });
   const rows = JSON.parse(imp.payload_json);
   const fileWarnings = JSON.parse(imp.warnings_json || "[]");
   res.render("admin/study_questionnaire_preview", { study, imp, rows, fileWarnings, tab: "questionnaire", VALID_TYPES: require("../lib/questionnaireParser").VALID_TYPES });
 });
 
-router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const imp = db.prepare("SELECT * FROM question_imports WHERE id = ? AND study_id = ?").get(req.params.importId, req.params.id);
+router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
+  const imp = await store.findOne("question_imports", { id: toId(req.params.importId), study_id: toId(req.params.id) });
   if (!imp) return res.status(404).render("error", { message: "Import not found or already committed.", user: req.session.user });
 
   const editedRows = Array.isArray(req.body.rows) ? req.body.rows : Object.values(req.body.rows || {});
@@ -425,60 +499,63 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) =>
   // fields (condition_raw, is_section_anchor, the template's own "#" number) --
   // zip them back up by index with the edited text/type/options the user confirmed.
   const originalRows = JSON.parse(imp.payload_json);
-  const maxOrder = db.prepare("SELECT MAX(order_index) m FROM questions WHERE study_id = ?").get(study.id).m || 0;
-  const insertQ = db.prepare(
-    `INSERT INTO questions (study_id, order_index, code, type, text, required, options_json, min_value, max_value, section)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
+  const maxOrder = (await store.max("questions", "order_index", { study_id: study.id })) || 0;
   let inserted = 0;
   const questionIdByTemplateRow = new Map(); // template "#" -> newly inserted question id, included rows only
-  editedRows.forEach((r, i) => {
-    if (!r || !r.include || !r.text || !r.text.trim()) return;
+  // for...of rather than forEach: each insert is awaited, and the running
+  // `inserted` counter feeds the next row's order_index, so they have to stay
+  // in sequence.
+  for (const [i, r] of editedRows.entries()) {
+    if (!r || !r.include || !r.text || !r.text.trim()) continue;
     const optionsArr = (r.options || "")
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);
-    const info = insertQ.run(
-      study.id,
-      maxOrder + inserted + 1,
-      r.code || null,
-      r.type || "text",
-      r.text.trim(),
-      r.required ? 1 : 0,
-      optionsArr.length ? JSON.stringify(optionsArr) : null,
-      r.min !== undefined && r.min !== "" ? parseFloat(r.min) : null,
-      r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null,
-      r.section && r.section.trim() ? r.section.trim() : null
-    );
+    const { id } = await store.insert("questions", {
+      study_id: study.id,
+      order_index: maxOrder + inserted + 1,
+      code: r.code || null,
+      type: r.type || "text",
+      text: r.text.trim(),
+      required: r.required ? 1 : 0,
+      options_json: optionsArr.length ? JSON.stringify(optionsArr) : null,
+      min_value: r.min !== undefined && r.min !== "" ? parseFloat(r.min) : null,
+      max_value: r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null,
+      section: r.section && r.section.trim() ? r.section.trim() : null,
+    });
     inserted++;
     const orig = originalRows[i];
-    if (orig && orig.row !== undefined) questionIdByTemplateRow.set(orig.row, info.lastInsertRowid);
-  });
+    if (orig && orig.row !== undefined) questionIdByTemplateRow.set(orig.row, id);
+  }
 
   // Second pass: turn each row's parsed Condition into real skip_rules now that
   // every included row has a question id. A section anchor's own condition
   // becomes ONE section-level rule (covers every question in that section); a
   // plain "Show if" on a non-anchor row, or a "; show if ..." tacked onto a
   // "Same section as" reference, becomes a per-question rule targeting that row.
-  const insertRule = db.prepare(
-    `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action)
-     VALUES (?, ?, ?, ?, ?, ?, 'show')`
-  );
   const sectionsRuled = new Set();
   let rulesCreated = 0;
   let rulesSkipped = 0;
-  originalRows.forEach((orig, i) => {
+  for (const [i, orig] of originalRows.entries()) {
     const edited = editedRows[i];
-    if (!edited || !edited.include || !questionIdByTemplateRow.has(orig.row)) return;
+    if (!edited || !edited.include || !questionIdByTemplateRow.has(orig.row)) continue;
     const parsed = parseConditionText(orig.condition_raw);
-    if (parsed.empty) return;
+    if (parsed.empty) continue;
 
     if (orig.is_section_anchor && parsed.own) {
       const sectionKey = (edited.section || "").trim();
       if (sectionKey && !sectionsRuled.has(sectionKey)) {
         const conditionId = questionIdByTemplateRow.get(parsed.own.conditionRow);
         if (conditionId) {
-          insertRule.run(study.id, null, sectionKey, conditionId, parsed.own.operator, parsed.own.values.join("|"));
+          await store.insert("skip_rules", {
+            study_id: study.id,
+            target_question_id: null,
+            target_section: sectionKey,
+            condition_question_id: conditionId,
+            operator: parsed.own.operator,
+            value: parsed.own.values.join("|"),
+            action: "show",
+          });
           sectionsRuled.add(sectionKey);
           rulesCreated++;
         } else {
@@ -489,21 +566,29 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", (req, res) =>
       const conditionId = questionIdByTemplateRow.get(parsed.own.conditionRow);
       const targetId = questionIdByTemplateRow.get(orig.row);
       if (conditionId && targetId) {
-        insertRule.run(study.id, targetId, null, conditionId, parsed.own.operator, parsed.own.values.join("|"));
+        await store.insert("skip_rules", {
+          study_id: study.id,
+          target_question_id: targetId,
+          target_section: null,
+          condition_question_id: conditionId,
+          operator: parsed.own.operator,
+          value: parsed.own.values.join("|"),
+          action: "show",
+        });
         rulesCreated++;
       } else {
         rulesSkipped++;
       }
     }
-  });
+  }
 
-  db.prepare("DELETE FROM question_imports WHERE id = ?").run(imp.id);
+  await store.remove("question_imports", { id: imp.id });
   logAudit(req.session.user.email, "questionnaire_commit", "questions", null, { importId: imp.id, inserted, rulesCreated, rulesSkipped });
   res.redirect(`/admin/studies/${study.id}/questionnaire?imported=${inserted}&rulesCreated=${rulesCreated}&rulesSkipped=${rulesSkipped}`);
 });
 
-router.post("/studies/:id/questionnaire/preview/:importId/discard", (req, res) => {
-  db.prepare("DELETE FROM question_imports WHERE id = ?").run(req.params.importId);
+router.post("/studies/:id/questionnaire/preview/:importId/discard", async (req, res) => {
+  await store.remove("question_imports", { id: toId(req.params.importId) });
   res.redirect(`/admin/studies/${req.params.id}/questionnaire/upload`);
 });
 
@@ -515,7 +600,7 @@ router.get("/studies/:id/skip-logic", (req, res) => {
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
-router.post("/studies/:id/skip-logic", (req, res) => {
+router.post("/studies/:id/skip-logic", async (req, res) => {
   const { target_type, target_question_id, target_section, condition_question_id, operator, value, action, terminate_scope } = req.body;
   const isTerminate = action === "terminate";
   const isSection = !isTerminate && target_type === "section";
@@ -525,41 +610,37 @@ router.post("/studies/:id/skip-logic", (req, res) => {
   const storedValue = ["in", "not_in", "includes"].includes(operator)
     ? String(value || "").split(",").map((v) => v.trim()).filter(Boolean).join("|")
     : value;
-  const info = db
-    .prepare(
-      `INSERT INTO skip_rules (study_id, target_question_id, target_section, condition_question_id, operator, value, action, terminate_scope)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      req.params.id,
-      // A terminate rule has no target question/section -- it ends the entry
-      // (or the respondent's whole participation) rather than showing/hiding
-      // something else, so both stay null regardless of what target_type was posted.
-      isTerminate ? null : (isSection ? null : target_question_id || null),
-      isTerminate ? null : (isSection ? target_section || null : null),
-      condition_question_id,
-      operator,
-      storedValue,
-      action,
-      isTerminate && terminate_scope === "study" ? "study" : (isTerminate ? "entry" : null)
-    );
+  const { id } = await store.insert("skip_rules", {
+    study_id: toId(req.params.id),
+    // A terminate rule has no target question/section -- it ends the entry
+    // (or the respondent's whole participation) rather than showing/hiding
+    // something else, so both stay null regardless of what target_type was posted.
+    target_question_id: isTerminate ? null : (isSection ? null : toId(target_question_id)),
+    target_section: isTerminate ? null : (isSection ? target_section || null : null),
+    condition_question_id: toId(condition_question_id),
+    operator,
+    value: storedValue,
+    action,
+    terminate_scope: isTerminate && terminate_scope === "study" ? "study" : (isTerminate ? "entry" : null),
+  });
   logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
   if (req.xhr) {
-    const rule = db
-      .prepare(
-        `SELECT sr.*, tq.text as target_text, cq.text as condition_text FROM skip_rules sr
-         LEFT JOIN questions tq ON tq.id = sr.target_question_id
-         JOIN questions cq ON cq.id = sr.condition_question_id
-         WHERE sr.id = ?`
-      )
-      .get(info.lastInsertRowid);
+    // Same two joins as the Questionnaire page, for this one rule: LEFT onto
+    // the target question, INNER onto the condition question -- so a rule
+    // whose condition question is missing yields nothing, as before.
+    const created = await store.findOne("skip_rules", { id });
+    const tq = created.target_question_id ? await store.findOne("questions", { id: created.target_question_id }) : null;
+    const cq = await store.findOne("questions", { id: created.condition_question_id });
+    const rule = cq
+      ? { ...created, target_text: tq ? tq.text : null, condition_text: cq.text }
+      : undefined;
     return res.json(rule);
   }
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
-router.post("/studies/:id/skip-logic/:rid/delete", (req, res) => {
-  db.prepare("DELETE FROM skip_rules WHERE id = ?").run(req.params.rid);
+router.post("/studies/:id/skip-logic/:rid/delete", async (req, res) => {
+  await store.remove("skip_rules", { id: toId(req.params.rid) });
   if (req.xhr) return res.json({ ok: true });
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
@@ -571,55 +652,62 @@ router.get("/studies/:id/brands", (req, res) => {
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
 });
 
-router.post("/studies/:id/brands", (req, res) => {
+router.post("/studies/:id/brands", async (req, res) => {
   const { name, category, sku } = req.body;
-  db.prepare("INSERT INTO brands (study_id, name, category, sku) VALUES (?, ?, ?, ?)").run(req.params.id, name, category, sku);
+  await store.insert("brands", { study_id: toId(req.params.id), name, category, sku });
   logAudit(req.session.user.email, "add_brand", "brands", null, req.body);
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
 });
 
-router.post("/studies/:id/brands/:bid/delete", (req, res) => {
-  db.prepare("UPDATE brands SET active = 0 WHERE id = ?").run(req.params.bid);
+router.post("/studies/:id/brands/:bid/delete", async (req, res) => {
+  await store.update("brands", { id: toId(req.params.bid) }, { active: 0 });
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
 });
 
 // ---------- Consent ----------
-router.get("/studies/:id/consent", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const versions = db.prepare("SELECT * FROM consent_versions WHERE study_id = ? ORDER BY version DESC").all(req.params.id);
+router.get("/studies/:id/consent", async (req, res) => {
+  const studyId = toId(req.params.id);
+  const study = await store.findOne("studies", { id: studyId });
+  const versions = await store.find("consent_versions", { study_id: studyId }, { sort: { version: -1 } });
   res.render("admin/study_consent", { study, versions, tab: "consent" });
 });
 
-router.post("/studies/:id/consent", (req, res) => {
+router.post("/studies/:id/consent", async (req, res) => {
   const { body } = req.body;
-  const maxV = db.prepare("SELECT MAX(version) m FROM consent_versions WHERE study_id = ?").get(req.params.id).m || 0;
-  db.prepare("INSERT INTO consent_versions (study_id, version, body, status) VALUES (?, ?, ?, 'draft')").run(req.params.id, maxV + 1, body);
+  const studyId = toId(req.params.id);
+  const maxV = (await store.max("consent_versions", "version", { study_id: studyId })) || 0;
+  await store.insert("consent_versions", { study_id: studyId, version: maxV + 1, body, status: "draft" });
   logAudit(req.session.user.email, "add_consent_draft", "consent_versions", null, { version: maxV + 1 });
   res.redirect(`/admin/studies/${req.params.id}/consent`);
 });
 
-router.post("/studies/:id/consent/:cid/approve", (req, res) => {
-  db.prepare("UPDATE consent_versions SET status='approved', approved_by=?, approved_at=datetime('now') WHERE id=?").run(
-    req.session.user.name,
-    req.params.cid
-  );
+router.post("/studies/:id/consent/:cid/approve", async (req, res) => {
+  await store.update("consent_versions", { id: toId(req.params.cid) }, {
+    status: "approved",
+    approved_by: req.session.user.name,
+    approved_at: store.nowSql(),
+  });
   logAudit(req.session.user.email, "approve_consent", "consent_versions", req.params.cid, {});
   res.redirect(`/admin/studies/${req.params.id}/consent`);
 });
 
 // ---------- KPIs ----------
-router.get("/studies/:id/kpis", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const kpis = db.prepare("SELECT * FROM kpi_config WHERE study_id = ?").all(req.params.id);
-  const questions = db
-    .prepare("SELECT id, code, text, type, options_json FROM questions WHERE study_id = ? AND active = 1 ORDER BY order_index, id")
-    .all(req.params.id);
+router.get("/studies/:id/kpis", async (req, res) => {
+  const studyId = toId(req.params.id);
+  const study = await store.findOne("studies", { id: studyId });
+  // No ORDER BY before: rowid order, which is the id, and the list is shown.
+  const kpis = await store.find("kpi_config", { study_id: studyId }, { sort: { id: 1 } });
+  const questions = await store.find(
+    "questions",
+    { study_id: studyId, active: 1 },
+    { sort: { order_index: 1, id: 1 }, projection: { id: 1, code: 1, text: 1, type: 1, options_json: 1 } }
+  );
   const questionsById = Object.fromEntries(questions.map((q) => [q.id, q]));
 
   // Computed here as well as on the client dashboard so an admin can see the
   // real number while building the KPI, rather than defining it blind and
   // finding out days later that it reads 0% or an em-dash.
-  const { results, entryCount } = kpiEngine.computeAll(study.id, kpis);
+  const { results, entryCount } = await kpiEngine.computeAll(study.id, kpis);
 
   res.render("admin/study_kpis", {
     study,
@@ -636,16 +724,16 @@ router.get("/studies/:id/kpis", (req, res) => {
   });
 });
 
-router.post("/studies/:id/kpis/:kid/toggle", (req, res) => {
-  const kpi = db.prepare("SELECT * FROM kpi_config WHERE id = ?").get(req.params.kid);
-  db.prepare("UPDATE kpi_config SET enabled = ? WHERE id = ?").run(kpi.enabled ? 0 : 1, req.params.kid);
+router.post("/studies/:id/kpis/:kid/toggle", async (req, res) => {
+  const kpi = await store.findOne("kpi_config", { id: toId(req.params.kid) });
+  await store.update("kpi_config", { id: toId(req.params.kid) }, { enabled: kpi.enabled ? 0 : 1 });
   res.redirect(`/admin/studies/${req.params.id}/kpis`);
 });
 
-router.post("/studies/:id/kpis/:kid/delete", (req, res) => {
-  const kpi = db.prepare("SELECT * FROM kpi_config WHERE id = ? AND study_id = ?").get(req.params.kid, req.params.id);
+router.post("/studies/:id/kpis/:kid/delete", async (req, res) => {
+  const kpi = await store.findOne("kpi_config", { id: toId(req.params.kid), study_id: toId(req.params.id) });
   if (kpi) {
-    db.prepare("DELETE FROM kpi_config WHERE id = ?").run(kpi.id);
+    await store.remove("kpi_config", { id: kpi.id });
     logAudit(req.session.user.email, "delete_kpi", "kpi_config", kpi.id, { label: kpi.label });
   }
   res.redirect(`/admin/studies/${req.params.id}/kpis`);
@@ -654,7 +742,7 @@ router.post("/studies/:id/kpis/:kid/delete", (req, res) => {
 // Build a KPI from the study's own questionnaire. The conditions arrive as
 // parallel arrays (cond_question[], cond_operator[], cond_value[]) because
 // the builder lets an admin add as many filter rows as they need.
-router.post("/studies/:id/kpis", (req, res) => {
+router.post("/studies/:id/kpis", async (req, res) => {
   const studyId = req.params.id;
   const back = (msg) =>
     res.redirect(`/admin/studies/${studyId}/kpis${msg ? `?error=${encodeURIComponent(msg)}` : ""}`);
@@ -688,17 +776,18 @@ router.post("/studies/:id/kpis", (req, res) => {
   // generated one keeps custom KPIs distinguishable without asking an admin
   // to invent a machine name.
   const key = `custom_${metric}_${Date.now().toString(36)}`;
-  const info = db
-    .prepare(
-      `INSERT INTO kpi_config (study_id, kpi_key, label, enabled, metric, question_id, option_value, conditions_json, unit)
-       VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      studyId, key, label, metric, questionId, optionValue,
-      conditions.length ? JSON.stringify(conditions) : null,
-      (req.body.unit || "").trim() || null
-    );
-  logAudit(req.session.user.email, "create_kpi", "kpi_config", info.lastInsertRowid, { label, metric });
+  const { id } = await store.insert("kpi_config", {
+    study_id: toId(studyId),
+    kpi_key: key,
+    label,
+    enabled: 1,
+    metric,
+    question_id: questionId,
+    option_value: optionValue,
+    conditions_json: conditions.length ? JSON.stringify(conditions) : null,
+    unit: (req.body.unit || "").trim() || null,
+  });
+  logAudit(req.session.user.email, "create_kpi", "kpi_config", id, { label, metric });
   back(null);
 });
 
@@ -707,19 +796,30 @@ router.post("/studies/:id/kpis", (req, res) => {
 router.use("/studies/:id/bulk-invite", require("./bulkInvite"));
 
 // ---------- Users ----------
-router.get("/users", (req, res) => {
-  const users = db.prepare("SELECT users.*, studies.name as study_name FROM users LEFT JOIN studies ON studies.id = users.study_id ORDER BY users.id").all();
-  const studies = db.prepare("SELECT * FROM studies ORDER BY name").all();
+router.get("/users", async (req, res) => {
+  const userRows = await store.find("users", {}, { sort: { id: 1 } });
+  const studies = await store.find("studies", {}, { sort: { name: 1 } });
+  // LEFT JOIN users -> studies, done in JS off the study list this page already
+  // loads. study_name keeps its alias -- the template reads it.
+  const studiesById = new Map(studies.map((s) => [s.id, s]));
+  const users = userRows.map((u) => ({
+    ...u,
+    study_name: studiesById.has(u.study_id) ? studiesById.get(u.study_id).name : null,
+  }));
   res.render("admin/users", { users, studies });
 });
 
-router.post("/users", (req, res) => {
+router.post("/users", async (req, res) => {
   const { name, email, password, role, study_id } = req.body;
   const hash = bcrypt.hashSync(password, 10);
   try {
-    db.prepare("INSERT INTO users (name, email, password_hash, role, study_id) VALUES (?, ?, ?, ?, ?)").run(
-      name, email.toLowerCase(), hash, role, study_id || null
-    );
+    await store.insert("users", {
+      name,
+      email: email.toLowerCase(),
+      password_hash: hash,
+      role,
+      study_id: toId(study_id),
+    });
     logAudit(req.session.user.email, "create_user", "users", null, { email, role });
   } catch (e) {
     return res.render("error", { message: "Could not create user (email may already exist).", user: req.session.user });
@@ -728,13 +828,13 @@ router.post("/users", (req, res) => {
 });
 
 // ---------- AI summary (spec 4.3, P1) ----------
-router.get("/ai-summary", (req, res) => {
-  const { study, studies } = getStudyOrFirst(req);
+router.get("/ai-summary", async (req, res) => {
+  const { study, studies } = await getStudyOrFirst(req);
   if (!study) return res.redirect("/admin/studies");
   res.render("admin/ai_summary", {
     study,
     studies,
-    summaries: aiSummary.listSummaries(study.id),
+    summaries: await aiSummary.listSummaries(study.id),
     aiConfigured: aiSummary.isAiModelConfigured(),
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
     from: req.query.from || "",
@@ -767,48 +867,62 @@ router.post("/ai-summary/generate", async (req, res) => {
 });
 
 // ---------- QC worklist ----------
-router.get("/qc", (req, res) => {
-  const { study, studies } = getStudyOrFirst(req);
+router.get("/qc", async (req, res) => {
+  const { study, studies } = await getStudyOrFirst(req);
   if (!study) return res.redirect("/admin/studies");
   const statusFilter = req.query.status || "open";
-  const flags = db
-    .prepare(
-      `SELECT qc_flags.*, respondents.respondent_code, respondents.name as respondent_name, respondents.id as rid
-       FROM qc_flags JOIN respondents ON respondents.id = qc_flags.respondent_id
-       WHERE respondents.study_id = ? AND (? = 'all' OR qc_flags.status = ?)
-       ORDER BY datetime(qc_flags.created_time) DESC`
-    )
-    .all(study.id, statusFilter, statusFilter);
+  // The qc_flags -> respondents JOIN in JS. The "(? = 'all' OR status = ?)"
+  // switch becomes a filter key that is simply left off when 'all' is asked
+  // for; respondent_code / respondent_name / rid keep their aliases.
+  const qcRespondents = await store.find(
+    "respondents",
+    { study_id: study.id },
+    { projection: { id: 1, respondent_code: 1, name: 1 } }
+  );
+  const qcRespById = new Map(qcRespondents.map((r) => [r.id, r]));
+  const flagFilter = { respondent_id: { $in: [...qcRespById.keys()] } };
+  if (statusFilter !== "all") flagFilter.status = statusFilter;
+  const flags = (await store.find("qc_flags", flagFilter, { sort: { created_time: -1 } })).map((f) => {
+    const r = qcRespById.get(f.respondent_id);
+    return { ...f, respondent_code: r.respondent_code, respondent_name: r.name, rid: r.id };
+  });
   res.render("admin/qc_worklist", { study, studies, flags, statusFilter });
 });
 
-router.post("/qc/:id/action", (req, res) => {
+router.post("/qc/:id/action", async (req, res) => {
   const { status, action_note } = req.body;
-  db.prepare(
-    `UPDATE qc_flags SET status=?, reviewer=?, action_note=?, resolved_at=CASE WHEN ?='resolved' THEN datetime('now') ELSE resolved_at END WHERE id=?`
-  ).run(status, req.session.user.name, action_note, status, req.params.id);
+  const patch = { status, reviewer: req.session.user.name, action_note };
+  // The SQL CASE only stamped resolved_at on the move to 'resolved', and left
+  // whatever was already there for every other status.
+  if (status === "resolved") patch.resolved_at = store.nowSql();
+  await store.update("qc_flags", { id: toId(req.params.id) }, patch);
   logAudit(req.session.user.email, "qc_action", "qc_flags", req.params.id, { status, action_note });
   res.redirect(req.get("Referrer") || "/admin/qc");
 });
 
 // ---------- Respondents (recruitment detail) ----------
-router.get("/studies/:id/respondents", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const respondents = db.prepare("SELECT * FROM respondents WHERE study_id = ? ORDER BY id DESC").all(req.params.id);
-  const lockCounts = db.prepare("SELECT respondent_id, COUNT(*) c FROM respondent_credentials GROUP BY respondent_id").all();
-  const lockCountByRespondent = Object.fromEntries(lockCounts.map((row) => [row.respondent_id, row.c]));
-  const withRisk = respondents.map((r) => ({
-    ...r,
-    risk: classifyRisk(r.id),
-    diaryUrl: respondentDiaryUrl(req, r.unique_token),
-    hasLock: !!lockCountByRespondent[r.id],
-  }));
+router.get("/studies/:id/respondents", async (req, res) => {
+  const studyId = toId(req.params.id);
+  const study = await store.findOne("studies", { id: studyId });
+  const respondents = await store.find("respondents", { study_id: studyId }, { sort: { id: -1 } });
+  // GROUP BY respondent_id in one round trip. The keys are strings, exactly as
+  // Object.fromEntries produced before, so the lookup below still works.
+  const lockCountByRespondent = await store.countBy("respondent_credentials", "respondent_id");
+  const withRisk = [];
+  for (const r of respondents) {
+    withRisk.push({
+      ...r,
+      risk: await classifyRisk(r.id),
+      diaryUrl: respondentDiaryUrl(req, r.unique_token),
+      hasLock: !!lockCountByRespondent[r.id],
+    });
+  }
   // Remote self-onboarding invite link (spec Flow B step 1). The code is
   // allocated lazily on first view so studies that never recruit remotely
   // never get one. remoteOpen reflects whether the link would actually work
   // right now -- an admin handing out a link for a draft or F2F-only study
   // would otherwise only find out when respondents hit a refusal page.
-  const joinCode = getOrCreateJoinCode(study.id);
+  const joinCode = await getOrCreateJoinCode(study.id);
   res.render("admin/study_respondents", {
     study,
     respondents: withRisk,
@@ -832,8 +946,8 @@ router.get("/studies/:id/respondents", (req, res) => {
 // per-study, recorded against that study's approved wording, so being on one
 // study can never carry consent into another -- the invitee sees the consent
 // screen for this study before their diary opens.
-router.post("/studies/:id/respondents/invite", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+router.post("/studies/:id/respondents/invite", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
   const contact = (req.body.contact || "").trim();
   const name = (req.body.name || "").trim();
@@ -842,8 +956,8 @@ router.post("/studies/:id/respondents/invite", (req, res) => {
 
   if (!contact) return back("Enter a phone number or email to invite.", false);
 
-  const account = accounts.findOrCreate({ contact, name });
-  const existing = accounts.enrolmentFor(account.id, study.id);
+  const account = await accounts.findOrCreate({ contact, name });
+  const existing = await accounts.enrolmentFor(account.id, study.id);
   if (existing) {
     return back(`${name || contact} is already on this study as ${existing.respondent_code}.`, false);
   }
@@ -853,13 +967,17 @@ router.post("/studies/:id/respondents/invite", (req, res) => {
   // their diary and read as a duplicate respondent in every report, so refuse
   // and point at the row that already exists -- the admin can link that row to
   // the account from the respondent's own page instead.
-  const sameContact = db
-    .prepare(
-      `SELECT respondent_code, name FROM respondents
-       WHERE study_id = ?
-         AND lower(replace(replace(replace(replace(contact,' ',''),'-',''),'(',''),')','')) = ?`
+  // The lower(replace(...)) comparison is done in JS -- both sides are
+  // normalised the same way and compared as strings, rather than putting a
+  // contact the admin typed into a regex.
+  const normalisedContact = account.contact.replace(/[\s\-()]/g, "").toLowerCase();
+  const sameContact = (
+    await store.find(
+      "respondents",
+      { study_id: study.id },
+      { sort: { id: 1 }, projection: { respondent_code: 1, name: 1, contact: 1 } }
     )
-    .get(study.id, account.contact.replace(/[\s\-()]/g, "").toLowerCase());
+  ).find((r) => r.contact != null && r.contact.replace(/[\s\-()]/g, "").toLowerCase() === normalisedContact);
   if (sameContact) {
     return back(
       `That contact is already on this study as ${sameContact.respondent_code}${
@@ -870,16 +988,22 @@ router.post("/studies/:id/respondents/invite", (req, res) => {
   }
 
   const token = uuidv4();
-  const code = nextRespondentCode(study.id);
-  const info = db
-    .prepare(
-      `INSERT INTO respondents (study_id, respondent_code, name, contact, recruitment_mode, preferred_channel,
-         consent_status, activation_status, unique_token, is_practice, account_id)
-       VALUES (?, ?, ?, ?, 'remote', 'app', 'pending', 'invited', ?, 0, ?)`
-    )
-    .run(study.id, code, account.name || name || null, account.contact, token, account.id);
+  const code = await nextRespondentCode(study.id);
+  const { id } = await store.insert("respondents", {
+    study_id: study.id,
+    respondent_code: code,
+    name: account.name || name || null,
+    contact: account.contact,
+    recruitment_mode: "remote",
+    preferred_channel: "app",
+    consent_status: "pending",
+    activation_status: "invited",
+    unique_token: token,
+    is_practice: 0,
+    account_id: account.id,
+  });
 
-  logAudit(req.session.user.email, "invite_respondent", "respondents", info.lastInsertRowid, {
+  logAudit(req.session.user.email, "invite_respondent", "respondents", id, {
     study_id: study.id, account_id: account.id,
   });
   back(`${account.name || account.contact} invited as ${code}. They'll see this study next time they sign in.`, true);
@@ -898,10 +1022,11 @@ router.post("/studies/:id/respondents/invite", (req, res) => {
 // is shown, and the decision is audited. Letting staff retype an answer would
 // quietly break that guarantee, so review happens here and disposition happens
 // on the QC Worklist.
-function loadRespondentOr404(req, res) {
-  const respondent = db
-    .prepare("SELECT * FROM respondents WHERE id = ? AND study_id = ?")
-    .get(req.params.respondentId, req.params.id);
+async function loadRespondentOr404(req, res) {
+  const respondent = await store.findOne("respondents", {
+    id: toId(req.params.respondentId),
+    study_id: toId(req.params.id),
+  });
   if (!respondent) {
     res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
     return null;
@@ -909,55 +1034,64 @@ function loadRespondentOr404(req, res) {
   return respondent;
 }
 
-router.get("/studies/:id/respondents/:respondentId", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const respondent = loadRespondentOr404(req, res);
+router.get("/studies/:id/respondents/:respondentId", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
+  const respondent = await loadRespondentOr404(req, res);
   if (!respondent) return;
 
   // Counts are joined in rather than queried per row so a respondent with a
   // few hundred entries doesn't fan out into hundreds of extra statements.
-  const records = db
-    .prepare(
-      `SELECT dr.*,
-              (SELECT COUNT(*) FROM responses  WHERE record_id = dr.id) AS answer_count,
-              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id) AS media_count,
-              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id AND media_type = 'photo') AS photo_count,
-              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id AND media_type = 'video') AS video_count,
-              (SELECT COUNT(*) FROM media      WHERE record_id = dr.id AND media_type = 'audio') AS audio_count,
-              (SELECT COUNT(*) FROM qc_flags   WHERE record_id = dr.id AND status = 'open') AS open_flags
-       FROM diary_records dr
-       WHERE dr.respondent_id = ?
-       ORDER BY datetime(dr.entry_time) DESC`
-    )
-    .all(respondent.id);
+  // The correlated sub-selects become one query per collection over this
+  // respondent's records, tallied in JS.
+  const recordRows = await store.find("diary_records", { respondent_id: respondent.id }, { sort: { entry_time: -1 } });
+  const recordIds = recordRows.map((r) => r.id);
+  const answerCounts = await store.countBy("responses", "record_id", { record_id: { $in: recordIds } });
+  const mediaForRecords = await store.find(
+    "media",
+    { record_id: { $in: recordIds } },
+    { projection: { record_id: 1, media_type: 1 } }
+  );
+  const openFlagCounts = await store.countBy("qc_flags", "record_id", { record_id: { $in: recordIds }, status: "open" });
+  const records = recordRows.map((dr) => {
+    const mine = mediaForRecords.filter((m) => m.record_id === dr.id);
+    return {
+      ...dr,
+      // countBy keys are strings; the id indexes them the same way it did the
+      // Object.fromEntries maps this code used before.
+      answer_count: answerCounts[dr.id] || 0,
+      media_count: mine.length,
+      photo_count: mine.filter((m) => m.media_type === "photo").length,
+      video_count: mine.filter((m) => m.media_type === "video").length,
+      audio_count: mine.filter((m) => m.media_type === "audio").length,
+      open_flags: openFlagCounts[dr.id] || 0,
+    };
+  });
 
   // Respondent-level flags (recruitment holds, burst entry, cross-channel
   // duplicates) aren't tied to any one entry, so they'd be invisible on the
   // entry pages -- surface them here.
-  const flags = db
-    .prepare("SELECT * FROM qc_flags WHERE respondent_id = ? ORDER BY datetime(created_time) DESC")
-    .all(respondent.id);
+  const flags = await store.find("qc_flags", { respondent_id: respondent.id }, { sort: { created_time: -1 } });
 
-  const hasLock = !!db
-    .prepare("SELECT COUNT(*) c FROM respondent_credentials WHERE respondent_id = ?")
-    .get(respondent.id).c;
+  const hasLock = !!(await store.count("respondent_credentials", { respondent_id: respondent.id }));
 
   const interviewer = respondent.interviewer_id
-    ? db.prepare("SELECT name, email FROM users WHERE id = ?").get(respondent.interviewer_id)
+    ? await store.findOne("users", { id: respondent.interviewer_id }, { projection: { name: 1, email: 1 } })
     : null;
 
   // The sign-in account behind this enrolment, if any, plus the other studies
   // it's on -- so "is this the same person we already have on Study B?" is
   // answerable here instead of by eye across two respondent lists.
-  const account = accounts.getById(respondent.account_id);
+  const account = await accounts.getById(respondent.account_id);
   const otherEnrolments = account
-    ? accounts.enrolmentsFor(account.id).filter((e) => e.id !== respondent.id)
+    ? (await accounts.enrolmentsFor(account.id)).filter((e) => e.id !== respondent.id)
     : [];
   // Offered when the row has no account yet: an account already registered to
   // this exact contact, which an admin can attach deliberately. Not attached
   // automatically -- see the header of lib/respondentAccounts.js.
   const linkCandidate =
-    !account && respondent.contact ? accounts.findByContact(respondent.contact) : null;
+    !account && respondent.contact ? await accounts.findByContact(respondent.contact) : null;
+
+  const risk = await classifyRisk(respondent.id);
 
   res.render("admin/respondent_detail", {
     study,
@@ -972,7 +1106,7 @@ router.get("/studies/:id/respondents/:respondentId", (req, res) => {
     accountsAllowed: accounts.accountsAllowedFor(study),
     linked: req.query.linked,
     linkError: req.query.linkError,
-    risk: classifyRisk(respondent.id),
+    risk,
     respondentLink: respondentDiaryUrl(req, respondent.unique_token),
     messagingLive: messaging.isRealMessagingConfigured(),
     tab: "respondents",
@@ -983,9 +1117,9 @@ router.get("/studies/:id/respondents/:respondentId", (req, res) => {
 // field, for the case where someone loses their link after fieldwork has moved
 // on and there's nobody standing in front of them with a QR code.
 router.post("/studies/:id/respondents/:respondentId/send-link", async (req, res) => {
-  const respondent = loadRespondentOr404(req, res);
+  const respondent = await loadRespondentOr404(req, res);
   if (!respondent) return;
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
   const back = (key, msg) =>
     res.redirect(`/admin/studies/${req.params.id}/respondents/${respondent.id}?${key}=${encodeURIComponent(msg)}`);
 
@@ -1022,8 +1156,8 @@ router.post("/studies/:id/respondents/:respondentId/send-link", async (req, res)
 // typed in by an interviewer and never verified, and a household sharing one
 // phone is an allowed case -- so "same number" is a prompt to a human, not
 // proof of the same person. Both directions are audited.
-router.post("/studies/:id/respondents/:respondentId/account", (req, res) => {
-  const respondent = loadRespondentOr404(req, res);
+router.post("/studies/:id/respondents/:respondentId/account", async (req, res) => {
+  const respondent = await loadRespondentOr404(req, res);
   if (!respondent) return;
   const back = (msg, ok) =>
     res.redirect(
@@ -1034,7 +1168,7 @@ router.post("/studies/:id/respondents/:respondentId/account", (req, res) => {
 
   if (req.body.action === "unlink") {
     if (!respondent.account_id) return back("This respondent isn't linked to an account.", false);
-    db.prepare("UPDATE respondents SET account_id = NULL WHERE id = ?").run(respondent.id);
+    await store.update("respondents", { id: respondent.id }, { account_id: null });
     logAudit(req.session.user.email, "unlink_respondent_account", "respondents", respondent.id, {
       account_id: respondent.account_id,
     });
@@ -1045,28 +1179,27 @@ router.post("/studies/:id/respondents/:respondentId/account", (req, res) => {
   const contact = (req.body.contact || respondent.contact || "").trim();
   if (!contact) return back("This respondent has no phone number or email on file.", false);
 
-  const account = accounts.findOrCreate({ contact, name: respondent.name });
-  const clash = accounts.enrolmentFor(account.id, respondent.study_id);
+  const account = await accounts.findOrCreate({ contact, name: respondent.name });
+  const clash = await accounts.enrolmentFor(account.id, respondent.study_id);
   if (clash) {
     return back(
       `That account is already on this study as ${clash.respondent_code}. Two enrolments on one study would split their diary.`,
       false
     );
   }
-  db.prepare("UPDATE respondents SET account_id = ? WHERE id = ?").run(account.id, respondent.id);
+  await store.update("respondents", { id: respondent.id }, { account_id: account.id });
   logAudit(req.session.user.email, "link_respondent_account", "respondents", respondent.id, {
     account_id: account.id,
   });
   back(`Linked to the account for ${account.contact}. They'll see this study when they sign in.`, true);
 });
 
-router.get("/studies/:id/records/:recordId", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const record = db
-    .prepare("SELECT * FROM diary_records WHERE id = ? AND study_id = ?")
-    .get(req.params.recordId, req.params.id);
+router.get("/studies/:id/records/:recordId", async (req, res) => {
+  const studyId = Number(req.params.id);
+  const study = await store.findOne("studies", { id: studyId });
+  const record = await store.findOne("diary_records", { id: Number(req.params.recordId), study_id: studyId });
   if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
-  const respondent = db.prepare("SELECT * FROM respondents WHERE id = ?").get(record.respondent_id);
+  const respondent = await store.findOne("respondents", { id: record.respondent_id });
 
   // LEFT JOIN from questions, not from responses: a question that was skipped
   // (or hidden by skip logic) has no response row, and showing the gap is the
@@ -1074,21 +1207,28 @@ router.get("/studies/:id/records/:recordId", (req, res) => {
   // simply aren't rendered is exactly the thing QC review needs to catch.
   // Inactive questions are still included when they carry an answer, so an
   // entry answered against an older questionnaire version still reads in full.
-  const answers = db
-    .prepare(
-      `SELECT q.id, q.code, q.text, q.type, q.section, q.order_index, q.required, q.active,
-              r.value, r.study_version
-       FROM questions q
-       LEFT JOIN responses r ON r.question_id = q.id AND r.record_id = ?
-       WHERE q.study_id = ? AND (q.active = 1 OR r.value IS NOT NULL)
-       ORDER BY q.order_index, q.id`
-    )
-    .all(record.id, study.id);
+  // The LEFT JOIN is stitched in JS: every question for the study, with this
+  // entry's answer attached where one exists. The WHERE clause is reproduced
+  // exactly -- an inactive question is kept only when it actually carries an
+  // answer, which is what lets an entry answered against an older
+  // questionnaire version still read in full.
+  const allQuestions = await store.find("questions", { study_id: study.id }, { sort: { order_index: 1, id: 1 } });
+  const responseRows = await store.find("responses", { record_id: record.id });
+  const answerByQuestion = new Map(responseRows.map((r) => [r.question_id, r]));
+  const answers = allQuestions
+    .map((q) => {
+      const r = answerByQuestion.get(q.id);
+      return {
+        id: q.id, code: q.code, text: q.text, type: q.type, section: q.section,
+        order_index: q.order_index, required: q.required, active: q.active,
+        value: r ? r.value : null,
+        study_version: r ? r.study_version : null,
+      };
+    })
+    .filter((a) => a.active === 1 || (a.value !== null && a.value !== undefined));
 
-  const media = db.prepare("SELECT * FROM media WHERE record_id = ? ORDER BY id").all(record.id);
-  const flags = db
-    .prepare("SELECT * FROM qc_flags WHERE record_id = ? ORDER BY datetime(created_time) DESC")
-    .all(record.id);
+  const media = await store.find("media", { record_id: record.id }, { sort: { id: 1 } });
+  const flags = await store.find("qc_flags", { record_id: record.id }, { sort: { created_time: -1 } });
 
   // The version stamped on this entry's answers, which may be older than the
   // study's current version if the questionnaire has been republished since.
@@ -1103,64 +1243,102 @@ router.get("/studies/:id/records/:recordId", (req, res) => {
 // One row per answer (long format) rather than one wide row per entry, because
 // the questionnaire changes between versions and a wide export silently drops
 // or misaligns columns when it does.
-function answerRowsForRecords(recordIds) {
+// One row per ANSWER rather than one wide row per entry, so a questionnaire
+// that changes between versions can't silently misalign columns.
+//
+// The joins are stitched in JS. Key order in these objects IS the CSV column
+// order (see toCsv), so it reproduces the old SELECT list exactly -- an export
+// whose columns move is an export that breaks whatever the client built on it.
+async function answerRowsForRecords(recordIds) {
   if (!recordIds.length) return [];
-  const placeholders = recordIds.map(() => "?").join(",");
-  return db
-    .prepare(
-      `SELECT r.respondent_code, dr.id AS record_id, dr.period_label, dr.occurrence_time,
-              dr.entry_time, dr.submit_time, dr.status, dr.entry_mode, dr.is_practice,
-              q.code AS question_code, q.text AS question_text, q.type AS question_type,
-              q.section, resp.value AS answer, resp.study_version
-       FROM diary_records dr
-       JOIN respondents r ON r.id = dr.respondent_id
-       LEFT JOIN responses resp ON resp.record_id = dr.id
-       LEFT JOIN questions q ON q.id = resp.question_id
-       WHERE dr.id IN (${placeholders})
-       ORDER BY dr.id, q.order_index`
-    )
-    .all(...recordIds);
+  const records = await store.find("diary_records", { id: { $in: recordIds } }, { sort: { id: 1 } });
+  const respondents = await store.find("respondents", { id: { $in: [...new Set(records.map((r) => r.respondent_id))] } });
+  const byRespondent = new Map(respondents.map((r) => [r.id, r]));
+  const responses = await store.find("responses", { record_id: { $in: recordIds } });
+  const questions = await store.find("questions", { id: { $in: [...new Set(responses.map((r) => r.question_id))] } });
+  const byQuestion = new Map(questions.map((q) => [q.id, q]));
+
+  const out = [];
+  for (const dr of records) {
+    const r = byRespondent.get(dr.respondent_id);
+    if (!r) continue; // INNER JOIN on respondents: an orphaned entry is dropped
+    const mine = responses
+      .filter((resp) => resp.record_id === dr.id)
+      .sort((a, b) => {
+        const qa = byQuestion.get(a.question_id);
+        const qb = byQuestion.get(b.question_id);
+        return (qa ? qa.order_index : 0) - (qb ? qb.order_index : 0);
+      });
+    // LEFT JOIN: an entry with no responses at all still produces one row.
+    const rows = mine.length ? mine : [null];
+    for (const resp of rows) {
+      const q = resp ? byQuestion.get(resp.question_id) : null;
+      out.push({
+        respondent_code: r.respondent_code,
+        record_id: dr.id,
+        period_label: dr.period_label,
+        occurrence_time: dr.occurrence_time,
+        entry_time: dr.entry_time,
+        submit_time: dr.submit_time,
+        status: dr.status,
+        entry_mode: dr.entry_mode,
+        is_practice: dr.is_practice,
+        question_code: q ? q.code : null,
+        question_text: q ? q.text : null,
+        question_type: q ? q.type : null,
+        section: q ? q.section : null,
+        answer: resp ? resp.value : null,
+        study_version: resp ? resp.study_version : null,
+      });
+    }
+  }
+  return out;
 }
 
-function mediaRowsForRecords(recordIds) {
+async function mediaRowsForRecords(recordIds) {
   if (!recordIds.length) return [];
-  const placeholders = recordIds.map(() => "?").join(",");
-  return db
-    .prepare(
-      `SELECT record_id, media_type, file_path, upload_time,
-              detection_status, detected_brand, transcript_status, transcript_text
-       FROM media WHERE record_id IN (${placeholders}) ORDER BY record_id, id`
-    )
-    .all(...recordIds);
+  const rows = await store.find("media", { record_id: { $in: recordIds } }, { sort: { record_id: 1, id: 1 } });
+  // Key order is the CSV column order -- kept identical to the old SELECT list.
+  return rows.map((m) => ({
+    record_id: m.record_id,
+    media_type: m.media_type,
+    file_path: m.file_path,
+    upload_time: m.upload_time,
+    detection_status: m.detection_status,
+    detected_brand: m.detected_brand,
+    transcript_status: m.transcript_status,
+    transcript_text: m.transcript_text,
+  }));
 }
 
-router.get("/studies/:id/respondents/:respondentId/export.csv", (req, res) => {
-  const respondent = loadRespondentOr404(req, res);
+router.get("/studies/:id/respondents/:respondentId/export.csv", async (req, res) => {
+  const respondent = await loadRespondentOr404(req, res);
   if (!respondent) return;
-  const ids = db.prepare("SELECT id FROM diary_records WHERE respondent_id = ?").all(respondent.id).map((r) => r.id);
-  const rows = answerRowsForRecords(ids);
+  const ids = (await store.find("diary_records", { respondent_id: respondent.id }, { sort: { id: 1 }, projection: { id: 1 } })).map((r) => r.id);
+  const rows = await answerRowsForRecords(ids);
   logAudit(req.session.user.email, "export_respondent", "respondents", respondent.id, { rows: rows.length });
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", `attachment; filename=${respondent.respondent_code || "respondent"}_answers.csv`);
   res.send(toCsv(rows));
 });
 
-router.get("/studies/:id/respondents/:respondentId/media.csv", (req, res) => {
-  const respondent = loadRespondentOr404(req, res);
+router.get("/studies/:id/respondents/:respondentId/media.csv", async (req, res) => {
+  const respondent = await loadRespondentOr404(req, res);
   if (!respondent) return;
-  const ids = db.prepare("SELECT id FROM diary_records WHERE respondent_id = ?").all(respondent.id).map((r) => r.id);
-  const rows = mediaRowsForRecords(ids);
+  const ids = (await store.find("diary_records", { respondent_id: respondent.id }, { sort: { id: 1 }, projection: { id: 1 } })).map((r) => r.id);
+  const rows = await mediaRowsForRecords(ids);
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", `attachment; filename=${respondent.respondent_code || "respondent"}_media.csv`);
   res.send(toCsv(rows));
 });
 
-router.get("/studies/:id/records/:recordId/export.csv", (req, res) => {
-  const record = db
-    .prepare("SELECT * FROM diary_records WHERE id = ? AND study_id = ?")
-    .get(req.params.recordId, req.params.id);
+router.get("/studies/:id/records/:recordId/export.csv", async (req, res) => {
+  const record = await store.findOne("diary_records", {
+    id: Number(req.params.recordId),
+    study_id: Number(req.params.id),
+  });
   if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
-  const rows = answerRowsForRecords([record.id]);
+  const rows = await answerRowsForRecords([record.id]);
   logAudit(req.session.user.email, "export_record", "diary_records", record.id, { rows: rows.length });
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", `attachment; filename=entry_${record.id}_answers.csv`);
@@ -1173,12 +1351,13 @@ router.get("/studies/:id/records/:recordId/export.csv", (req, res) => {
 // flag and activated them here. The flag itself is deliberately NOT
 // auto-resolved -- the QC design rule is that flags stay visible and are
 // dispositioned explicitly on the worklist, with the audit trail intact.
-router.post("/studies/:id/respondents/:respondentId/activate", (req, res) => {
-  const respondent = db
-    .prepare("SELECT * FROM respondents WHERE id = ? AND study_id = ?")
-    .get(req.params.respondentId, req.params.id);
+router.post("/studies/:id/respondents/:respondentId/activate", async (req, res) => {
+  const respondent = await store.findOne("respondents", {
+    id: Number(req.params.respondentId),
+    study_id: Number(req.params.id),
+  });
   if (!respondent) return res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
-  db.prepare("UPDATE respondents SET activation_status = 'activated' WHERE id = ?").run(respondent.id);
+  await store.update("respondents", { id: respondent.id }, { activation_status: "activated" });
   logAudit(req.session.user.email, "release_recruitment_hold", "respondents", respondent.id, {
     respondent_code: respondent.respondent_code,
   });
@@ -1188,9 +1367,9 @@ router.post("/studies/:id/respondents/:respondentId/activate", (req, res) => {
 // QR for the study's public remote sign-up link, so the invite can be printed
 // on a flyer or shown on screen rather than typed out.
 router.get("/studies/:id/join-qr.png", async (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+  const study = await store.findOne("studies", { id: Number(req.params.id) });
   if (!study) return res.status(404).end();
-  const code = getOrCreateJoinCode(study.id);
+  const code = await getOrCreateJoinCode(study.id);
   await qrPngToResponse(res, `${appBaseUrl(req)}/join/${code}`);
 });
 
@@ -1198,9 +1377,10 @@ router.get("/studies/:id/join-qr.png", async (req, res) => {
 // staff member actually opens it (rather than up front for every row), so a
 // study with hundreds of respondents doesn't pay to render codes no one views.
 router.get("/studies/:id/respondents/:respondentId/qr.png", async (req, res) => {
-  const respondent = db
-    .prepare("SELECT * FROM respondents WHERE id = ? AND study_id = ?")
-    .get(req.params.respondentId, req.params.id);
+  const respondent = await store.findOne("respondents", {
+    id: Number(req.params.respondentId),
+    study_id: Number(req.params.id),
+  });
   if (!respondent) return res.status(404).end();
   await qrPngToResponse(res, respondentDiaryUrl(req, respondent.unique_token));
 });
@@ -1211,14 +1391,15 @@ router.post("/reminders/run", async (req, res) => {
   res.redirect(`/admin?ran=${result.created}`);
 });
 
-router.get("/whatsapp-outbox", (req, res) => {
-  const messages = db
-    .prepare(
-      `SELECT whatsapp_outbox.*, respondents.respondent_code FROM whatsapp_outbox
-       LEFT JOIN respondents ON respondents.id = whatsapp_outbox.respondent_id
-       ORDER BY datetime(whatsapp_outbox.created_at) DESC LIMIT 100`
-    )
-    .all();
+router.get("/whatsapp-outbox", async (req, res) => {
+  const outbox = await store.find("whatsapp_outbox", {}, { sort: { created_at: -1 }, limit: 100 });
+  // LEFT JOIN stitched in JS: a message whose respondent has since been
+  // deleted still appears, with a blank code, exactly as before.
+  const codeById = new Map(
+    (await store.find("respondents", { id: { $in: [...new Set(outbox.map((m) => m.respondent_id))] } }))
+      .map((r) => [r.id, r.respondent_code])
+  );
+  const messages = outbox.map((m) => ({ ...m, respondent_code: codeById.get(m.respondent_id) || null }));
   res.render("admin/whatsapp_outbox", {
     messages,
     isReal: messaging.isRealMessagingConfigured(),
@@ -1228,52 +1409,60 @@ router.get("/whatsapp-outbox", (req, res) => {
 });
 
 // ---------- Media review / brand detection ----------
-router.get("/studies/:id/media", (req, res) => {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
-  const items = db
-    .prepare(
-      `SELECT media.*, respondents.respondent_code, diary_records.period_label
-       FROM media
-       JOIN diary_records ON diary_records.id = media.record_id
-       JOIN respondents ON respondents.id = diary_records.respondent_id
-       WHERE diary_records.study_id = ?
-       ORDER BY datetime(media.upload_time) DESC`
-    )
-    .all(req.params.id);
+router.get("/studies/:id/media", async (req, res) => {
+  const studyId = Number(req.params.id);
+  const study = await store.findOne("studies", { id: studyId });
+  // Two INNER JOINs, stitched in JS. Media whose entry or respondent has gone
+  // is dropped rather than shown with blanks, matching the old query.
+  const records = await store.find("diary_records", { study_id: studyId });
+  const recordById = new Map(records.map((r) => [r.id, r]));
+  const codeById = new Map(
+    (await store.find("respondents", { id: { $in: [...new Set(records.map((r) => r.respondent_id))] } }))
+      .map((r) => [r.id, r.respondent_code])
+  );
+  const items = (await store.find("media", { record_id: { $in: records.map((r) => r.id) } }, { sort: { upload_time: -1 } }))
+    .map((m) => {
+      const rec = recordById.get(m.record_id);
+      if (!rec) return null;
+      const code = codeById.get(rec.respondent_id);
+      if (code === undefined) return null;
+      return { ...m, respondent_code: code, period_label: rec.period_label };
+    })
+    .filter(Boolean);
   res.render("admin/study_media", { study, items, tab: "media" });
 });
 
 router.post("/media/:id/detect", async (req, res) => {
-  const media = db.prepare("SELECT * FROM media WHERE id = ?").get(req.params.id);
+  const media = await store.findOne("media", { id: Number(req.params.id) });
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
-  const record = db.prepare("SELECT * FROM diary_records WHERE id = ?").get(media.record_id);
-  const brands = db.prepare("SELECT * FROM brands WHERE study_id = ? AND active = 1").all(record.study_id);
+  const record = await store.findOne("diary_records", { id: media.record_id });
+  const brands = await store.find("brands", { study_id: record.study_id, active: 1 }, { sort: { id: 1 } });
   try {
     const provider = getBrandDetectionProvider();
     await provider.detect(media, brands);
     logAudit(req.session.user.email, "brand_detection_run", "media", media.id, {});
   } catch (e) {
-    db.prepare("UPDATE media SET detection_status = 'error', detection_raw_json = ? WHERE id = ?").run(
-      JSON.stringify({ error: e.message }),
-      media.id
-    );
+    await store.update("media", { id: media.id }, {
+      detection_status: "error",
+      detection_raw_json: JSON.stringify({ error: e.message }),
+    });
   }
   res.redirect(req.get("Referrer") || `/admin/studies/${record.study_id}/media`);
 });
 
 router.post("/media/:id/transcribe", async (req, res) => {
-  const media = db.prepare("SELECT * FROM media WHERE id = ?").get(req.params.id);
+  const media = await store.findOne("media", { id: Number(req.params.id) });
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
-  const record = db.prepare("SELECT * FROM diary_records WHERE id = ?").get(media.record_id);
+  const record = await store.findOne("diary_records", { id: media.record_id });
   try {
     const provider = getAudioTranscriptionProvider();
     await provider.transcribe(media);
     logAudit(req.session.user.email, "audio_transcription_run", "media", media.id, {});
   } catch (e) {
-    db.prepare("UPDATE media SET transcript_status = 'error', transcript_raw_json = ? WHERE id = ?").run(
-      JSON.stringify({ error: e.message }),
-      media.id
-    );
+    await store.update("media", { id: media.id }, {
+      transcript_status: "error",
+      transcript_raw_json: JSON.stringify({ error: e.message }),
+    });
   }
   res.redirect(req.get("Referrer") || `/admin/studies/${record.study_id}/media`);
 });
@@ -1286,35 +1475,46 @@ function toCsv(rows) {
   return [headers.join(","), ...rows.map((r) => headers.map((h) => esc(r[h])).join(","))].join("\n");
 }
 
-router.get("/export/respondents.csv", (req, res) => {
-  const { study } = getStudyOrFirst(req);
-  const rows = db.prepare("SELECT * FROM respondents WHERE study_id = ?").all(study.id);
+router.get("/export/respondents.csv", async (req, res) => {
+  const { study } = await getStudyOrFirst(req);
+  const rows = await store.find("respondents", { study_id: study.id }, { sort: { id: 1 } });
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", "attachment; filename=respondents.csv");
   res.send(toCsv(rows));
 });
 
-router.get("/export/diary.csv", (req, res) => {
-  const { study } = getStudyOrFirst(req);
-  const rows = db
-    .prepare(
-      `SELECT dr.id, dr.respondent_id, r.respondent_code, dr.period_label, dr.occurrence_time, dr.entry_time,
-              dr.submit_time, dr.channel, dr.status, dr.terminate_note, dr.is_practice
-       FROM diary_records dr JOIN respondents r ON r.id = dr.respondent_id WHERE dr.study_id = ?`
-    )
-    .all(study.id);
+router.get("/export/diary.csv", async (req, res) => {
+  const { study } = await getStudyOrFirst(req);
+  const records = await store.find("diary_records", { study_id: study.id }, { sort: { id: 1 } });
+  const codeById = new Map(
+    (await store.find("respondents", { id: { $in: [...new Set(records.map((r) => r.respondent_id))] } }))
+      .map((r) => [r.id, r.respondent_code])
+  );
+  // Key order is the CSV column order -- identical to the old SELECT list.
+  const rows = records
+    .filter((dr) => codeById.has(dr.respondent_id)) // INNER JOIN semantics
+    .map((dr) => ({
+      id: dr.id,
+      respondent_id: dr.respondent_id,
+      respondent_code: codeById.get(dr.respondent_id),
+      period_label: dr.period_label,
+      occurrence_time: dr.occurrence_time,
+      entry_time: dr.entry_time,
+      submit_time: dr.submit_time,
+      channel: dr.channel,
+      status: dr.status,
+      terminate_note: dr.terminate_note,
+      is_practice: dr.is_practice,
+    }));
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", "attachment; filename=diary_records.csv");
   res.send(toCsv(rows));
 });
 
-router.get("/export/qc.csv", (req, res) => {
-  const { study } = getStudyOrFirst(req);
-  const rows = db
-    .prepare(
-      `SELECT qf.* FROM qc_flags qf JOIN respondents r ON r.id = qf.respondent_id WHERE r.study_id = ?`
-    )
-    .all(study.id);
+router.get("/export/qc.csv", async (req, res) => {
+  const { study } = await getStudyOrFirst(req);
+  const respondentIds = (await store.find("respondents", { study_id: study.id }, { projection: { id: 1 } })).map((r) => r.id);
+  const rows = await store.find("qc_flags", { respondent_id: { $in: respondentIds } }, { sort: { id: 1 } });
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", "attachment; filename=qc_flags.csv");
   res.send(toCsv(rows));

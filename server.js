@@ -10,11 +10,12 @@ const express = require("express");
 // which is what actually happens in Express 5 natively. See PRODUCTION_READINESS.md.
 require("express-async-errors");
 const session = require("express-session");
+const MongoStore = require("connect-mongo");
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 
-const db = require("./lib/db");
+const store = require("./lib/store");
 const { requireLogin } = require("./lib/auth");
 const { icon } = require("./lib/icons");
 const { renderPipeHtml } = require("./lib/piping");
@@ -53,11 +54,31 @@ app.get("/sw.js", (req, res) => res.sendFile(path.join(__dirname, "public", "sw.
 // local/dev runs are unaffected and keep working over plain HTTP.
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction) app.set("trust proxy", 1);
+
+// Sessions live in MongoDB when there is one.
+//
+// Express's default session store keeps sessions in this process's memory,
+// which means every deploy, restart or scale-out silently signs every staff
+// user out mid-task -- and on App Service, restarts are routine. Putting them
+// in the same database the rest of the app uses fixes that with no extra
+// infrastructure. Without MONGODB_URI there is nowhere durable to put them, so
+// the in-memory store stands (fine for development, and the startup warning
+// below already says the instance isn't production-shaped).
+const sessionStore = process.env.MONGODB_URI
+  ? MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI,
+      dbName: process.env.MONGODB_DB || "inicio",
+      collectionName: "sessions",
+      ttl: 8 * 60 * 60, // seconds -- matches the cookie's maxAge below
+    })
+  : undefined;
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "dev-only-insecure-secret-change-me",
     resave: false,
     saveUninitialized: false,
+    store: sessionStore,
     cookie: {
       maxAge: 8 * 60 * 60 * 1000,
       secure: isProduction,
@@ -163,7 +184,35 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-app.listen(PORT, () => {
-  console.log(`INICIO In-Home Consumption MVP running on http://localhost:${PORT}`);
-  require("./lib/scheduler").start();
-});
+// The database connection is opened BEFORE the port, not alongside it.
+//
+// Every route in this app assumes the store is already available -- the same
+// assumption it could make for free when the store was a file opened
+// synchronously at require time. Listening first would open a window in which
+// a request could arrive and fail on a connection that isn't up yet, which on
+// a cold Azure start is exactly when the first request tends to arrive.
+//
+// A database that cannot be reached is fatal on purpose: an app that starts
+// and then 500s every page is harder to diagnose than one that refuses to
+// start and says why.
+store
+  .connect()
+  .then(() => {
+    if (store.driverName === "local") {
+      console.warn(
+        "WARNING: MONGODB_URI is not set, so this instance is running on the local JSON store. " +
+          "That is fine for development, but it is not durable and is not shared between instances — " +
+          "set MONGODB_URI for any real deployment."
+      );
+    } else {
+      console.log("Connected to MongoDB.");
+    }
+    app.listen(PORT, () => {
+      console.log(`INICIO In-Home Consumption MVP running on http://localhost:${PORT}`);
+      require("./lib/scheduler").start();
+    });
+  })
+  .catch((e) => {
+    console.error("Could not open the database, so the app did not start:", e.message);
+    process.exit(1);
+  });

@@ -82,10 +82,28 @@ Current auth is email + bcrypt password + server session — fine for a sandbox 
 
 **Media storage — done, just needs turning on.** `lib/mediaStorage.js` is a pluggable storage layer: `STORAGE_PROVIDER=local` (default) keeps using the app's own disk exactly as before; `STORAGE_PROVIDER=azure_blob` pushes every upload to a **private** Azure Blob Storage container and serves it back only via a short-lived signed (SAS) URL generated on demand — never a permanent public link, since diary media can be identifiable. Set `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_ACCOUNT_KEY` in `.env`. See the Azure Deployment Runbook for exact resource setup.
 
-**Database — two honest paths, pick based on how much engineering time you have:**
+**Database — done. The app runs on MongoDB.**
 
-- **Path A (recommended for a pilot at this budget — zero code changes).** The app already reads its SQLite file path from `DATABASE_PATH` (`lib/db.js`). Point that at Azure App Service's persisted `/home` mount (e.g. `DATABASE_PATH=/home/data/data.sqlite`) so the database survives restarts and redeploys, and turn on App Service's built-in scheduled **Backup** feature (Standard tier or above) pointed at a Storage Account. This is genuinely durable for a single-instance pilot; it does not support horizontal scaling (more than one App Service instance sharing the same database), which a pilot generally doesn't need. The Azure Deployment Runbook sets this up step by step.
-- **Path B (real production — a separate, larger engineering task).** Swap SQLite for a managed Postgres instance (Azure Database for PostgreSQL Flexible Server). The SQL in this app is plain `better-sqlite3` prepared statements, not an ORM, spread across roughly 160 call sites in every route file and `lib/db.js` — a genuine data-layer rewrite (different placeholder syntax, async instead of synchronous calls, SQLite-specific functions like `datetime('now')` mapped to Postgres equivalents), not a config change. Budget this as its own scoped phase once the pilot has validated the product and you're ready to support real concurrent scale.
+`lib/store/` is the data layer, and it has two drivers:
+
+- **`mongodb`** — used whenever `MONGODB_URI` is set. Built and tuned for **Azure Cosmos DB for MongoDB**: no `retryWrites` (Cosmos rejects it), no multi-document transactions, and no aggregation stages outside the supported set. It will work equally well against MongoDB Atlas or any MongoDB-compatible server.
+- **`local`** — used when `MONGODB_URI` is absent. MongoDB query semantics running in-process against a JSON file, for development and for the test suite. **Not durable and not shared between instances** — the app logs a loud warning at startup if it finds itself running on this in a deployment.
+
+Settings:
+
+| Setting | Value |
+|---|---|
+| `MONGODB_URI` | The connection string from your Cosmos DB / Atlas account. |
+| `MONGODB_DB` | Database name. Defaults to `inicio`. |
+
+Two design decisions worth knowing about:
+
+- **Ids are integers, not ObjectIds.** A `counters` collection allocates them with an atomic `$inc`, the way an AUTOINCREMENT column did. Every URL, export column and foreign key in the app keeps working, and an id in a CSV is still readable by a human.
+- **Timestamps are strings, in `YYYY-MM-DD HH:MM:SS` UTC.** The app compares and sorts times as strings throughout; keeping SQLite's format means every one of those comparisons still means what it meant. `store.nowSql()` is the only place the format is produced.
+
+Sessions are in MongoDB too (`connect-mongo`, the `sessions` collection) rather than in process memory, so a restart or a redeploy no longer signs every staff user out mid-task.
+
+Horizontal scaling now works: multiple App Service instances share one database. Turn on Cosmos DB's continuous backup (or Atlas's) for point-in-time restore.
 
 ## B5 — Secrets management
 

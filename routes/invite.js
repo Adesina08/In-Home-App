@@ -11,7 +11,7 @@
 // they reach consent and the diary.
 
 const express = require("express");
-const db = require("../lib/db");
+const store = require("../lib/store");
 const { logAudit } = require("../lib/audit");
 
 const router = express.Router();
@@ -39,18 +39,18 @@ const CADENCE = {
   monthly: "once a month",
 };
 
-function loadInvite(req, res) {
-  const respondent = db.prepare("SELECT * FROM respondents WHERE unique_token = ?").get(req.params.token);
+async function loadInvite(req, res) {
+  const respondent = await store.findOne("respondents", { unique_token: req.params.token });
   if (!respondent) {
     res.status(404).render("error", { message: "This invitation link is not valid. Please check the link in your message.", user: null });
     return null;
   }
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(respondent.study_id);
+  const study = await store.findOne("studies", { id: respondent.study_id });
   return { respondent, study };
 }
 
-router.get("/:token", (req, res) => {
-  const loaded = loadInvite(req, res);
+router.get("/:token", async (req, res) => {
+  const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
 
@@ -74,13 +74,13 @@ router.get("/:token", (req, res) => {
 // Recording the choice is what makes recruitment reportable -- otherwise
 // "which mode do people prefer" is unanswerable, and that's one of the things
 // a pilot exists to find out.
-router.post("/:token/choose", (req, res) => {
-  const loaded = loadInvite(req, res);
+router.post("/:token/choose", async (req, res) => {
+  const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent } = loaded;
   const mode = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
 
-  db.prepare("UPDATE respondents SET chosen_mode = ? WHERE id = ?").run(mode, respondent.id);
+  await store.update("respondents", { id: respondent.id }, { chosen_mode: mode });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_mode_chosen", "respondents", respondent.id, { mode });
 
   if (mode === "apk" && apkUrl()) {
@@ -94,13 +94,19 @@ router.post("/:token/choose", (req, res) => {
 // Declining has to be one tap and must not require signing in. A respondent
 // with no way to say no simply stops answering, which is indistinguishable
 // from a broken link and leaves the study chasing them with reminders.
-router.post("/:token/decline", (req, res) => {
-  const loaded = loadInvite(req, res);
+router.post("/:token/decline", async (req, res) => {
+  const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent } = loaded;
-  db.prepare(
-    "UPDATE respondents SET activation_status = 'disqualified', disqualify_reason = 'Declined the invitation', disqualified_at = datetime('now') WHERE id = ?"
-  ).run(respondent.id);
+  await store.update(
+    "respondents",
+    { id: respondent.id },
+    {
+      activation_status: "disqualified",
+      disqualify_reason: "Declined the invitation",
+      disqualified_at: store.nowSql(),
+    }
+  );
   logAudit(`respondent:${respondent.respondent_code}`, "invite_declined", "respondents", respondent.id, {});
   res.render("invite/declined", { study: loaded.study, user: null });
 });

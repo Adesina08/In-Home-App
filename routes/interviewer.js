@@ -1,6 +1,6 @@
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
-const db = require("../lib/db");
+const store = require("../lib/store");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { qrDataUrl, qrPngToResponse } = require("../lib/qrcode");
@@ -15,24 +15,26 @@ router.use(requireRole("interviewer", "admin"));
 // Code allocation lives in lib/respondentCode.js -- shared with the remote
 // self-onboarding flow so both paths allocate the same way.
 
-router.get("/", (req, res) => {
-  const studies = db.prepare("SELECT * FROM studies WHERE status != 'closed' ORDER BY id").all();
-  const mine = db
-    .prepare(
-      `SELECT respondents.*, studies.name as study_name FROM respondents
-       JOIN studies ON studies.id = respondents.study_id
-       WHERE respondents.interviewer_id = ? ORDER BY respondents.id DESC`
-    )
-    .all(req.session.user.id);
+router.get("/", async (req, res) => {
+  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
+  // JOIN done in JS: every study is fetched (not just the open ones above,
+  // since a closed study must still supply its name) and stitched on. The
+  // `study_name` alias is kept because the template reads it. It was an inner
+  // join, so a respondent whose study row is missing is still dropped.
+  const mineRows = await store.find("respondents", { interviewer_id: req.session.user.id }, { sort: { id: -1 } });
+  const studyById = new Map((await store.find("studies", {})).map((s) => [s.id, s]));
+  const mine = mineRows
+    .filter((r) => studyById.has(r.study_id))
+    .map((r) => ({ ...r, study_name: studyById.get(r.study_id).name }));
   res.render("interviewer/dashboard", { studies, mine });
 });
 
-router.get("/register", (req, res) => {
-  const studies = db.prepare("SELECT * FROM studies WHERE status != 'closed' ORDER BY id").all();
+router.get("/register", async (req, res) => {
+  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
   const studyId = req.query.study || (studies[0] && studies[0].id);
   const study = studies.find((s) => s.id == studyId);
   const consent = study
-    ? db.prepare("SELECT * FROM consent_versions WHERE study_id = ? AND status='approved' ORDER BY version DESC LIMIT 1").get(study.id)
+    ? await store.findOne("consent_versions", { study_id: study.id, status: "approved" }, { sort: { version: -1 } })
     : null;
   res.render("interviewer/register", { studies, study, consent });
 });
@@ -40,33 +42,40 @@ router.get("/register", (req, res) => {
 // F2F flow: Screen -> Consent -> Register -> Verify -> Activate, captured as one submission for the pilot demo
 router.post("/register", async (req, res) => {
   const { study_id, name, contact, eligible, consent_given, preferred_channel, practice } = req.body;
+  // Form fields arrive as strings. SQLite's INTEGER affinity turned "7" into 7
+  // on the way into the query and the row; MongoDB stores and matches it as a
+  // string, so the id is made a number once, here.
+  const studyId = Number(study_id);
   if (!eligible) {
     return res.render("interviewer/register", {
-      studies: db.prepare("SELECT * FROM studies").all(),
-      study: db.prepare("SELECT * FROM studies WHERE id=?").get(study_id),
+      studies: await store.find("studies", {}, { sort: { id: 1 } }),
+      study: await store.findOne("studies", { id: studyId }),
       consent: null,
       error: "Respondent screened as not eligible. Recruitment stopped (screen stage).",
     });
   }
   const token = uuidv4();
-  const code = nextRespondentCode(study_id);
-  const info = db
-    .prepare(
-      `INSERT INTO respondents (study_id, respondent_code, name, contact, recruitment_mode, preferred_channel,
-        consent_status, activation_status, unique_token, interviewer_id, is_practice)
-       VALUES (?, ?, ?, ?, 'f2f', ?, ?, 'activated', ?, ?, ?)`
-    )
-    .run(
-      study_id, code, name, contact, preferred_channel || "app",
-      consent_given ? "given" : "declined", token, req.session.user.id, practice ? 1 : 0
-    );
-  logAudit(req.session.user.email, "f2f_onboard", "respondents", info.lastInsertRowid, { name, code });
+  const code = await nextRespondentCode(studyId);
+  const { id } = await store.insert("respondents", {
+    study_id: studyId,
+    respondent_code: code,
+    name,
+    contact,
+    recruitment_mode: "f2f",
+    preferred_channel: preferred_channel || "app",
+    consent_status: consent_given ? "given" : "declined",
+    activation_status: "activated",
+    unique_token: token,
+    interviewer_id: req.session.user.id,
+    is_practice: practice ? 1 : 0,
+  });
+  logAudit(req.session.user.email, "f2f_onboard", "respondents", id, { name, code });
 
   // Recruitment/identity QC (spec 4.1): a duplicate contact in this study, or
   // a registration without consent, holds activation for research review
   // instead of letting the respondent straight into the sample.
-  const holds = applyRecruitmentHolds(info.lastInsertRowid, {
-    studyId: study_id,
+  const holds = await applyRecruitmentHolds(id, {
+    studyId,
     contact,
     consentGiven: !!consent_given,
   });
@@ -75,7 +84,7 @@ router.post("/register", async (req, res) => {
       code,
       name,
       holds,
-      respondentId: info.lastInsertRowid,
+      respondentId: id,
     });
   }
 
@@ -89,7 +98,7 @@ router.post("/register", async (req, res) => {
   } catch (e) {
     console.error("QR generation failed:", e);
   }
-  res.render("interviewer/activated", { code, token, respondentId: info.lastInsertRowid, diaryUrl, qr });
+  res.render("interviewer/activated", { code, token, respondentId: id, diaryUrl, qr });
 });
 
 // ---- Hand a respondent their link ----
@@ -105,18 +114,18 @@ router.post("/register", async (req, res) => {
 //
 // So the interviewer never opens the diary. They hand it over: a QR to scan,
 // a link to copy, and a button to text it to the number already on file.
-function loadOwnRespondent(req, res) {
-  const respondent = db
-    .prepare(
-      `SELECT respondents.*, studies.name AS study_name FROM respondents
-       JOIN studies ON studies.id = respondents.study_id
-       WHERE respondents.id = ?`
-    )
-    .get(req.params.id);
-  if (!respondent) {
+async function loadOwnRespondent(req, res) {
+  // Route params are strings; the id column is an integer, so it is coerced
+  // here the way SQLite's affinity used to.
+  const respondent = await store.findOne("respondents", { id: Number(req.params.id) });
+  // JOIN done in JS for `study_name`. It was an inner join, so a respondent
+  // with no matching study row counts as "not found", exactly as before.
+  const study = respondent ? await store.findOne("studies", { id: respondent.study_id }) : null;
+  if (!respondent || !study) {
     res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
     return null;
   }
+  respondent.study_name = study.name;
   // An interviewer only ever sees the people they recruited. Admins reach the
   // same screen for support, since they can already see every respondent.
   if (req.session.user.role !== "admin" && respondent.interviewer_id !== req.session.user.id) {
@@ -126,8 +135,8 @@ function loadOwnRespondent(req, res) {
   return respondent;
 }
 
-router.get("/respondents/:id", (req, res) => {
-  const respondent = loadOwnRespondent(req, res);
+router.get("/respondents/:id", async (req, res) => {
+  const respondent = await loadOwnRespondent(req, res);
   if (!respondent) return;
   res.render("interviewer/share", {
     respondent,
@@ -141,13 +150,13 @@ router.get("/respondents/:id", (req, res) => {
 // Generated on demand rather than inlined as a data URI, so the roster page
 // stays light no matter how many respondents an interviewer has.
 router.get("/respondents/:id/qr.png", async (req, res) => {
-  const respondent = loadOwnRespondent(req, res);
+  const respondent = await loadOwnRespondent(req, res);
   if (!respondent) return;
   await qrPngToResponse(res, respondentDiaryUrl(req, respondent.unique_token));
 });
 
 router.post("/respondents/:id/send-link", async (req, res) => {
-  const respondent = loadOwnRespondent(req, res);
+  const respondent = await loadOwnRespondent(req, res);
   if (!respondent) return;
   const back = (key, msg) => res.redirect(`/interviewer/respondents/${respondent.id}?${key}=${encodeURIComponent(msg)}`);
 

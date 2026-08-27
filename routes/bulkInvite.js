@@ -8,7 +8,7 @@
 
 const express = require("express");
 const multer = require("multer");
-const db = require("../lib/db");
+const store = require("../lib/store");
 const { logAudit } = require("../lib/audit");
 const bulk = require("../lib/bulkInvite");
 const { enrol, existingContactsFor } = require("../lib/enrolment");
@@ -27,8 +27,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 *
 
 // An interviewer may only invite onto a study; an admin may do the same. Both
 // mount this router, so the study is resolved and checked here.
-function loadStudy(req, res) {
-  const study = db.prepare("SELECT * FROM studies WHERE id = ?").get(req.params.id);
+async function loadStudy(req, res) {
+  // Route params are strings; the id column is an integer, so it is coerced
+  // here the way SQLite's affinity used to.
+  const study = await store.findOne("studies", { id: Number(req.params.id) });
   if (!study) {
     res.status(404).render("error", { message: "Study not found.", user: req.session.user });
     return null;
@@ -46,8 +48,8 @@ router.get("/template.csv", (req, res) => {
   res.send(bulk.templateCsv());
 });
 
-router.get("/", (req, res) => {
-  const study = loadStudy(req, res);
+router.get("/", async (req, res) => {
+  const study = await loadStudy(req, res);
   if (!study) return;
   res.render("bulk_invite/upload", {
     study,
@@ -60,8 +62,8 @@ router.get("/", (req, res) => {
 });
 
 // Step 2: parse and classify. Nothing is written and nothing is sent.
-router.post("/review", upload.single("roster"), (req, res) => {
-  const study = loadStudy(req, res);
+router.post("/review", upload.single("roster"), async (req, res) => {
+  const study = await loadStudy(req, res);
   if (!study) return;
   const back = (msg) => res.redirect(`${basePath(req)}/bulk-invite?error=${encodeURIComponent(msg)}`);
 
@@ -75,7 +77,7 @@ router.post("/review", upload.single("roster"), (req, res) => {
   const reviewed = bulk.reviewRoster({
     rows: parsed.rows,
     countryCode,
-    existingContacts: existingContactsFor(study.id),
+    existingContacts: await existingContactsFor(study.id),
   });
 
   res.render("bulk_invite/review", {
@@ -95,7 +97,7 @@ router.post("/review", upload.single("roster"), (req, res) => {
 // from the form, so a tampered or stale page can't smuggle in a row the
 // review rejected.
 router.post("/send", async (req, res) => {
-  const study = loadStudy(req, res);
+  const study = await loadStudy(req, res);
   if (!study) return;
 
   const names = [].concat(req.body.name || []);
@@ -107,7 +109,7 @@ router.post("/send", async (req, res) => {
   const reviewed = bulk.reviewRoster({
     rows,
     countryCode: (req.body.country_code || "").trim(),
-    existingContacts: existingContactsFor(study.id),
+    existingContacts: await existingContactsFor(study.id),
   });
   const toInvite = bulk.invitableRows(reviewed);
 
@@ -117,7 +119,7 @@ router.post("/send", async (req, res) => {
   for (const row of toInvite) {
     let respondent;
     try {
-      const result = enrol({
+      const result = await enrol({
         studyId: study.id,
         contact: row.contact,
         name: row.name,
@@ -146,7 +148,7 @@ router.post("/send", async (req, res) => {
     });
 
     if (sendResult.ok && !sendResult.simulated) {
-      db.prepare("UPDATE respondents SET invite_sent_at = datetime('now') WHERE id = ?").run(respondent.id);
+      await store.update("respondents", { id: respondent.id }, { invite_sent_at: store.nowSql() });
       outcome.invited++;
     } else if (sendResult.simulated) {
       // The respondent exists and can still be reached by their link; the

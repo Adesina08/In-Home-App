@@ -1,6 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const db = require("../lib/db");
+const store = require("../lib/store");
 const { logAudit } = require("../lib/audit");
 const { qrDataUrl } = require("../lib/qrcode");
 const { appBaseUrl } = require("../lib/urls");
@@ -30,9 +30,9 @@ router.get("/get-app", async (req, res) => {
   res.render("get_app", { url, qr, user: null });
 });
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE email = ?").get((email || "").trim().toLowerCase());
+  const user = await store.findOne("users", { email: (email || "").trim().toLowerCase() });
   if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
     return res.render("login", { error: "Invalid email or password.", user: null });
   }

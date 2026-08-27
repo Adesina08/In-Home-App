@@ -11,7 +11,6 @@
 // face-to-face recruit gets a usable diary in the field without anyone
 // creating a login. Accounts are an addition, not a replacement.
 const express = require("express");
-const db = require("../lib/db");
 const { logAudit } = require("../lib/audit");
 const otp = require("../lib/otp");
 const accounts = require("../lib/respondentAccounts");
@@ -19,20 +18,20 @@ const messaging = require("../lib/whatsapp");
 
 const router = express.Router();
 
-function currentAccount(req) {
+async function currentAccount(req) {
   return req.session.respondentAccountId ? accounts.getById(req.session.respondentAccountId) : null;
 }
 
-function requireAccount(req, res, next) {
-  const account = currentAccount(req);
+async function requireAccount(req, res, next) {
+  const account = await currentAccount(req);
   if (!account) return res.redirect("/me/login");
   req.account = account;
   next();
 }
 
 // ---- Login: step 1, who are you ----
-router.get("/login", (req, res) => {
-  if (currentAccount(req)) return res.redirect("/me");
+router.get("/login", async (req, res) => {
+  if (await currentAccount(req)) return res.redirect("/me");
   res.render("me/login", { error: null, contact: "", user: null });
 });
 
@@ -41,7 +40,7 @@ router.post("/login", async (req, res) => {
   const fail = (error) => res.status(400).render("me/login", { error, contact, user: null });
   if (!contact) return fail("Enter the phone number or email you signed up with.");
 
-  const account = accounts.findByContact(contact);
+  const account = await accounts.findByContact(contact);
   // Deliberately does NOT say whether the account exists. Otherwise this page
   // becomes a way to test whether a given phone number is on a study, which
   // leaks participation -- and participation in a consumption study is exactly
@@ -63,8 +62,8 @@ router.post("/login", async (req, res) => {
 });
 
 // ---- Login: step 2, the code ----
-router.get("/verify", (req, res) => {
-  if (currentAccount(req)) return res.redirect("/me");
+router.get("/verify", async (req, res) => {
+  if (await currentAccount(req)) return res.redirect("/me");
   if (!req.session.pendingLoginContact) return res.redirect("/me/login");
   res.render("me/verify", {
     contact: req.session.pendingLoginContact,
@@ -79,7 +78,7 @@ router.get("/verify", (req, res) => {
   });
 });
 
-router.post("/verify", (req, res) => {
+router.post("/verify", async (req, res) => {
   const contact = req.session.pendingLoginContact;
   if (!contact) return res.redirect("/me/login");
   const render = (error) =>
@@ -89,16 +88,16 @@ router.post("/verify", (req, res) => {
       ttlMinutes: otp.TTL_MINUTES, user: null,
     });
 
-  const result = otp.verifyCode({ contact, code: req.body.code, purpose: "account_login" });
+  const result = await otp.verifyCode({ contact, code: req.body.code, purpose: "account_login" });
   if (!result.ok) return render(result.reason);
 
   // Only now look the account up. A correct code for a contact with no account
   // is treated the same as a wrong one, so the earlier non-disclosure isn't
   // undone at this step.
-  const account = accounts.findByContact(contact);
+  const account = await accounts.findByContact(contact);
   if (!account) return render("That code isn't right.");
 
-  accounts.markVerified(account.id);
+  await accounts.markVerified(account.id);
   req.session.respondentAccountId = account.id;
   delete req.session.pendingLoginContact;
   logAudit(`account:${account.contact}`, "respondent_login", "respondent_accounts", account.id, {});
@@ -108,7 +107,7 @@ router.post("/verify", (req, res) => {
 router.post("/verify/resend", async (req, res) => {
   const contact = req.session.pendingLoginContact;
   if (!contact) return res.redirect("/me/login");
-  if (accounts.findByContact(contact)) {
+  if (await accounts.findByContact(contact)) {
     try {
       await otp.sendCode({ contact, respondentId: null, purpose: "account_login" });
     } catch (e) {
@@ -131,10 +130,10 @@ router.post("/logout", (req, res) => {
 });
 
 // ---- My studies ----
-router.get("/", requireAccount, (req, res) => {
+router.get("/", requireAccount, async (req, res) => {
   res.render("me/studies", {
     account: req.account,
-    enrolments: accounts.enrolmentsFor(req.account.id),
+    enrolments: await accounts.enrolmentsFor(req.account.id),
     user: null,
   });
 });
