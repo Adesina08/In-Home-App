@@ -7,18 +7,22 @@ const { appBaseUrl } = require("../lib/urls");
 
 const router = express.Router();
 
+// Native Expo respondent API. Mounted here because routes/auth.js is already
+// public at the application root; each protected mobile endpoint performs its
+// own bearer-token check inside routes/mobileApi.js rather than relying on the
+// browser session used by staff/admin pages.
+router.use("/api/mobile", require("./mobileApi"));
+
 router.get("/login", (req, res) => {
   res.render("login", { error: null, user: null });
 });
 
 // Public, no-login page: a QR code + link for opening the app on a phone and
-// installing it as a PWA ("Add to Home Screen"). There's no native iOS/Android
-// app to publish to an app store -- this page is the closest equivalent, and
-// works for any role (a respondent handed this link, or field staff wanting
-// the app shortcut on their own phone). Respondents recruited normally still
-// get their own personal diary link/QR from their interviewer -- that link is
-// what actually opens their diary; this one just opens the app's login/entry
-// screen.
+// installing it as a PWA ("Add to Home Screen"). The Expo respondent APK lives
+// in expo-mobile/; this page remains the browser/PWA fallback and staff entry
+// point. Respondents recruited normally still get their own personal diary
+// link/QR from their interviewer -- that link is also accepted by the native
+// app's Diary link sign-in option.
 router.get("/get-app", async (req, res) => {
   const url = appBaseUrl(req) + "/login";
   let qr = null;
