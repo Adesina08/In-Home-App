@@ -10,7 +10,7 @@ const express = require("express");
 // which is what actually happens in Express 5 natively. See PRODUCTION_READINESS.md.
 require("express-async-errors");
 const session = require("express-session");
-const MongoStore = require("connect-mongo");
+const { MongoStore } = require("connect-mongo");
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
@@ -70,6 +70,11 @@ const sessionStore = process.env.MONGODB_URI
       dbName: process.env.MONGODB_DB || "inicio",
       collectionName: "sessions",
       ttl: 8 * 60 * 60, // seconds -- matches the cookie's maxAge below
+      // Azure Cosmos DB for MongoDB does not support the native TTL-index path
+      // connect-mongo uses by default. Let connect-mongo remove expired
+      // sessions on an interval instead.
+      autoRemove: "interval",
+      autoRemoveInterval: 10,
     })
   : undefined;
 
