@@ -24,6 +24,22 @@ export type MobileEnrolment = {
   submittedCount: number;
 };
 
+export type RespondentProfile = {
+  id: number;
+  name: string | null;
+  location: string | null;
+  age: number | null;
+  gender: string | null;
+  educationLevel: string | null;
+  occupation: string | null;
+  religion: string | null;
+  maritalStatus: string | null;
+  recontactConsent: string | null;
+  completed: boolean;
+  completedAt: string | null;
+  updatedAt: string | null;
+};
+
 export async function getToken() {
   return SecureStore.getItemAsync(TOKEN_KEY);
 }
@@ -45,6 +61,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const error: any = new Error(payload?.error || `Request failed (${response.status})`);
     error.status = response.status;
     error.problems = payload?.problems || [];
+    error.fields = payload?.fields || {};
+    error.profileRequired = !!payload?.profileRequired;
     throw error;
   }
   return payload as T;
@@ -57,6 +75,8 @@ export const api = {
   diaryLinkLogin: (value: string) => request<{ token: string }>("/api/mobile/auth/diary-link", { method: "POST", body: JSON.stringify({ url: value }) }),
   logout: () => request<{ ok: boolean }>("/api/mobile/auth/logout", { method: "POST" }),
   me: () => request<{ account: any; linkOnly: boolean; enrolments: MobileEnrolment[] }>("/api/mobile/me"),
+  profile: () => request<{ profile: RespondentProfile | null; required: boolean; prefillName: string }>("/api/mobile/profile"),
+  saveProfile: (values: any) => request<{ profile: RespondentProfile; required: boolean }>("/api/mobile/profile", { method: "PUT", body: JSON.stringify(values) }),
   home: (respondentId: number) => request<any>(`/api/mobile/respondents/${respondentId}/home`),
   consent: (respondentId: number) => request<{ ok: boolean }>(`/api/mobile/respondents/${respondentId}/consent`, { method: "POST", body: "{}" }),
   questionnaire: (respondentId: number) => request<any>(`/api/mobile/respondents/${respondentId}/questionnaire`),
