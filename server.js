@@ -82,6 +82,9 @@ app.get("/", (req, res) => {
 });
 
 app.use("/", require("./routes/auth"));
+// These exact invitation-sharing endpoints are mounted before the older staff
+// routers so first-time links and QR codes always enter /invite/:token.
+app.use("/", requireLogin, require("./routes/invitationLinks"));
 app.use("/admin", requireLogin, require("./routes/admin"));
 app.use("/interviewer", requireLogin, require("./routes/interviewer"));
 app.use("/client", requireLogin, require("./routes/client"));
