@@ -7,6 +7,23 @@
   <link rel="stylesheet" href="/public/tailwind.css" />
   <link rel="icon" href="/public/icons/icon-192.png" />
   <meta name="theme-color" content="#1F3864" />
+  <script>
+    // Respondents now install the native Inicio Diary APK. Retire any old
+    // browser-installed PWA/service-worker state left from earlier pilot builds
+    // so public /join and /invite links stay in the browser onboarding flow.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.getRegistrations()
+          .then(function (regs) { return Promise.all(regs.map(function (reg) { return reg.unregister(); })); })
+          .catch(function () {});
+        if (window.caches && caches.keys) {
+          caches.keys()
+            .then(function (keys) { return Promise.all(keys.map(function (key) { return caches.delete(key); })); })
+            .catch(function () {});
+        }
+      });
+    }
+  </script>
   <style>
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
     .badge-green { background:#E6F4EA; color:#1E7E34; }
