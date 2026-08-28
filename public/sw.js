@@ -1,96 +1,22 @@
-// Minimal service worker: precaches the app shell's static assets and falls
-// back to a simple offline page for navigations when there's no connection.
-// This app is server-rendered with live data, so it is not a full offline-first
-// SPA — the honest offline story here is "the app installs like an app, static
-// assets load instantly, and a dropped connection gets a clear offline screen
-// instead of a browser error." In-progress diary answers are additionally
-// autosaved to localStorage (see diary_form.ejs) so a flaky connection during
-// a submit doesn't lose what a respondent already typed.
-
-const CACHE_NAME = "inicio-shell-v1";
-const PRECACHE_URLS = [
-  "/public/tailwind.css",
-  "/public/manifest.json",
-  "/public/icons/icon-192.png",
-  "/public/icons/icon-512.png",
-  "/public/offline.html",
-];
-
+// Inicio Diary respondents now use the native Android APK, not the old
+// browser-installed PWA. This retirement worker removes the previous root-scope
+// service worker and its caches so /join and /invite links stay in the browser
+// onboarding flow instead of being captured by an obsolete web-app shell.
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((clients) => Promise.all(clients.map((client) => client.navigate(client.url))))
   );
 });
 
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-
-  // Static assets under /public: cache-first.
-  if (req.url.includes("/public/")) {
-    event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-        return res;
-      }))
-    );
-    return;
-  }
-
-  // Page navigations: network-first, offline fallback on failure.
-  if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req).catch(() => caches.match("/public/offline.html"))
-    );
-  }
-});
-
-// Diary reminder notifications (see lib/push.js on the server, and
-// public/js/push-subscribe.js which registers the subscription this depends
-// on). The reminder engine sends a small JSON payload -- title/body/url --
-// so this handler stays generic and doesn't need updating for new reminder
-// wording.
-self.addEventListener("push", (event) => {
-  let data = { title: "INICIO", body: "You have a reminder.", url: "/" };
-  if (event.data) {
-    try {
-      data = Object.assign(data, event.data.json());
-    } catch (e) {
-      data.body = event.data.text() || data.body;
-    }
-  }
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: "/public/icons/icon-192.png",
-      badge: "/public/icons/icon-192.png",
-      data: { url: data.url || "/" },
-      tag: data.tag || "inicio-reminder",
-    })
-  );
-});
-
-// Focuses an already-open diary tab for this respondent instead of opening a
-// duplicate one, falling back to opening a new tab if none is open.
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes(targetUrl) && "focus" in client) return client.focus();
-      }
-      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
-    })
-  );
+self.addEventListener("fetch", () => {
+  // Deliberately no interception. Network navigation belongs to the normal
+  // browser; the installed Android APK is the only respondent app surface.
 });
