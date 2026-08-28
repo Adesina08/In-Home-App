@@ -1,18 +1,11 @@
 /*
  * Live camera capture for diary photo/video questions.
  *
- * Respondents must capture a real-time photo or video with the device
- * camera -- there is no path to pick an existing file from the gallery,
- * on any browser or device. A button with class "camera-capture-trigger"
- * opens a full-screen live camera view; the captured photo/video is
- * written into the associated hidden <input type="file"> as a real File
- * object (via DataTransfer), so the surrounding <form> and server-side
- * upload handling need no changes at all.
- *
- * Usage (see diary_form.ejs / diary_video_capture.ejs):
- *   <button type="button" class="camera-capture-trigger"
- *           data-kind="photo|video" data-target="<input id>" data-label="<span id>">
- *   <input type="file" id="..." name="..." accept="image/*|video/*" class="hidden" />
+ * Respondents capture evidence live with the device camera. Photos continue to
+ * prefer the rear/environment camera because they normally show a product.
+ * Video questions and the capture-first Video format intentionally prefer the
+ * front/user camera so the respondent can speak to camera while logging the
+ * consumption occasion.
  */
 (function () {
   "use strict";
@@ -27,7 +20,7 @@
   var recording = false;
   var timerInterval = null;
   var recordSeconds = 0;
-  var current = null; // { kind, targetInput, labelEl }
+  var current = null;
 
   var modal, videoPreview, photoPreview, videoPlayback, permissionMsg, timerEl,
     shutterBtn, retakeBtn, useBtn, closeBtn, retryPermBtn, titleEl, canvas;
@@ -47,7 +40,7 @@
       '  <img id="camPhotoPreview" alt="Captured photo preview" class="w-full h-full object-contain hidden" />' +
       '  <video id="camVideoPlayback" playsinline controls class="w-full h-full object-contain hidden"></video>' +
       '  <div id="camPermissionMsg" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center text-white/90 text-sm p-8 gap-4">' +
-      "    <span>Camera access is needed to capture this. Please allow camera access for this site, then try again.</span>" +
+      "    <span>Camera access is needed to capture this. Please allow camera access for Inicio Diary, then try again.</span>" +
       '    <button type="button" id="camRetryPermBtn" class="border border-white/40 rounded-lg px-4 py-2 text-sm text-white">Try again</button>' +
       "  </div>" +
       '  <div id="camTimer" class="hidden absolute top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs font-semibold rounded-full px-3 py-1">0:00</div>' +
@@ -109,8 +102,9 @@
 
   function startStream() {
     permissionMsg.classList.add("hidden");
+    var preferredFacingMode = current && current.kind === "video" ? "user" : "environment";
     var constraints = {
-      video: { facingMode: { ideal: "environment" } },
+      video: { facingMode: { ideal: preferredFacingMode } },
       audio: current.kind === "video",
     };
     stopStream();
@@ -128,7 +122,7 @@
   function openModal(kind, targetInput, labelEl) {
     buildModalOnce();
     current = { kind: kind, targetInput: targetInput, labelEl: labelEl };
-    titleEl.textContent = kind === "video" ? "Record a video" : "Take a photo";
+    titleEl.textContent = kind === "video" ? "Record with front camera" : "Take a photo";
     resetVisualState();
     modal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
@@ -136,9 +130,7 @@
   }
 
   function closeModal() {
-    if (recording && mediaRecorder && mediaRecorder.state !== "inactive") {
-      mediaRecorder.stop();
-    }
+    if (recording && mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
     stopStream();
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     modal.classList.add("hidden");
@@ -153,12 +145,7 @@
   }
 
   function pickVideoMimeType() {
-    var candidates = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm",
-      "video/mp4",
-    ];
+    var candidates = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
     if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
     for (var i = 0; i < candidates.length; i++) {
       if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
@@ -167,13 +154,9 @@
   }
 
   function onShutter() {
-    if (current.kind === "photo") {
-      capturePhoto();
-    } else if (!recording) {
-      startRecording();
-    } else {
-      stopRecording();
-    }
+    if (current.kind === "photo") capturePhoto();
+    else if (!recording) startRecording();
+    else stopRecording();
   }
 
   function capturePhoto() {
@@ -181,19 +164,15 @@
     canvas.height = videoPreview.videoHeight || 720;
     var ctx = canvas.getContext("2d");
     ctx.drawImage(videoPreview, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(
-      function (blob) {
-        capturedPhotoBlob = blob;
-        photoPreview.src = URL.createObjectURL(blob);
-        videoPreview.classList.add("hidden");
-        photoPreview.classList.remove("hidden");
-        shutterBtn.classList.add("hidden");
-        retakeBtn.classList.remove("hidden");
-        useBtn.classList.remove("hidden");
-      },
-      "image/jpeg",
-      0.87
-    );
+    canvas.toBlob(function (blob) {
+      capturedPhotoBlob = blob;
+      photoPreview.src = URL.createObjectURL(blob);
+      videoPreview.classList.add("hidden");
+      photoPreview.classList.remove("hidden");
+      shutterBtn.classList.add("hidden");
+      retakeBtn.classList.remove("hidden");
+      useBtn.classList.remove("hidden");
+    }, "image/jpeg", 0.87);
   }
 
   function startRecording() {
@@ -201,15 +180,12 @@
     try {
       mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
     } catch (e) {
-      permissionMsg.querySelector("span").textContent =
-        "Video recording isn't supported in this browser. Please try a different browser or device.";
+      permissionMsg.querySelector("span").textContent = "Video recording isn't supported on this device.";
       permissionMsg.classList.remove("hidden");
       return;
     }
     recordedChunks = [];
-    mediaRecorder.ondataavailable = function (e) {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
+    mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = function () {
       recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
       videoPlayback.src = URL.createObjectURL(recordedBlob);
@@ -242,7 +218,7 @@
 
   function onRetake() {
     resetVisualState();
-    videoPreview.srcObject = stream; // stream is still live; just show it again
+    videoPreview.srcObject = stream;
   }
 
   function onUse() {
@@ -256,17 +232,14 @@
       var ext = (mediaRecorder && mediaRecorder.mimeType || "").indexOf("mp4") !== -1 ? "mp4" : "webm";
       file = new File([recordedBlob], "video-" + Date.now() + "." + ext, { type: recordedBlob.type });
       statusText = "✓ Video captured (" + formatTime(recordSeconds) + ") — tap to retake";
-    } else {
-      return;
-    }
+    } else return;
+
     try {
       var dt = new DataTransfer();
       dt.items.add(file);
       input.files = dt.files;
       input.dispatchEvent(new Event("change", { bubbles: true }));
-    } catch (e) {
-      // DataTransfer construction failed (very old browser) -- nothing more we can do here.
-    }
+    } catch (e) {}
     if (labelEl) labelEl.textContent = statusText;
     closeModal();
   }
@@ -276,7 +249,7 @@
     var labelEl = labelElId ? document.getElementById(labelElId) : null;
     if (!input) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert("Your browser doesn't support live camera capture. Please try a different browser.");
+      alert("This device doesn't support live camera capture in Inicio Diary.");
       return;
     }
     openModal(kind, input, labelEl);
