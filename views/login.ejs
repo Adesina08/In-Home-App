@@ -1,4 +1,4 @@
-<%- include('partials/header', { title: 'Log in — INICIO', user: null }) %>
+<%- include('partials/header', { title: 'Log in — Inicio Diary Portal', user: null }) %>
 <div class="min-h-[80vh] flex items-center justify-center -mt-4">
   <div class="w-full max-w-4xl grid md:grid-cols-2 rounded-3xl overflow-hidden shadow-pop border border-slate-200/70 bg-white">
 
@@ -6,24 +6,24 @@
       <div class="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-white/5"></div>
       <div class="absolute -right-6 bottom-10 w-40 h-40 rounded-full bg-white/5"></div>
       <div class="relative">
-        <img src="/public/icons/logo-header.png" alt="INICIO" class="h-11 w-auto mb-8" />
-        <div class="text-2xl font-bold leading-snug">In-Home Consumption<br/>Research Platform</div>
-        <p class="text-brand-100 text-sm mt-3 max-w-xs">Recruitment, diary capture, QC, and client reporting for the pilot study — in one place.</p>
+        <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-11 w-auto mb-8" />
+        <div class="text-2xl font-bold leading-snug">Inicio Diary<br/>Research Operations Portal</div>
+        <p class="text-brand-100 text-sm mt-3 max-w-xs">Study setup, respondent management, quality control, and client reporting — in one place.</p>
       </div>
       <div class="relative space-y-3 text-sm">
-        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Rule-based QC &amp; risk scoring</div>
-        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Mobile-first respondent diary</div>
-        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Video/photo evidence + brand detection</div>
+        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Study configuration &amp; questionnaire logic</div>
+        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Respondent operations &amp; QC monitoring</div>
+        <div class="flex items-center gap-2 text-brand-100"><%- icon('check-circle', 'w-4 h-4 text-emerald-300') %> Client reporting &amp; media review</div>
       </div>
     </div>
 
     <div class="p-8 sm:p-10 flex flex-col justify-center">
       <div class="mb-7 md:hidden text-center">
-        <div class="text-brand-700 font-bold text-2xl tracking-wide">INICIO</div>
-        <div class="text-slate-500 text-sm">In-Home Consumption App — Pilot MVP</div>
+        <div class="text-brand-700 font-bold text-2xl tracking-wide">Inicio Diary</div>
+        <div class="text-slate-500 text-sm">Staff &amp; Client Portal</div>
       </div>
       <h1 class="text-xl font-bold text-slate-900 mb-1">Welcome back</h1>
-      <p class="text-sm text-slate-500 mb-6">Sign in to your staff account.</p>
+      <p class="text-sm text-slate-500 mb-6">Sign in to your staff or client account.</p>
 
       <% if (error) { %>
         <div class="flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 border border-red-100">
@@ -54,6 +54,7 @@
       <div class="mt-7 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
         <div class="font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5"><%- icon('users', 'w-3.5 h-3.5') %> Demo accounts (seeded sample data)</div>
         <div class="space-y-0.5 font-mono text-[11px] leading-relaxed text-slate-500">
+          <div>superadmin@inicio.demo</div>
           <div>admin@inicio.demo</div>
           <div>interviewer@inicio.demo</div>
           <div>client@inicio.demo</div>
