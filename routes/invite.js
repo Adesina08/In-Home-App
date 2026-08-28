@@ -2,7 +2,8 @@
 //
 // Target sequence:
 // invite link / QR -> configurable pre-survey -> choose participation channel
-// -> create reusable username/password -> app download or WhatsApp handoff.
+// -> create reusable username/password (or reuse an existing Inicio Diary
+// account) -> app download or WhatsApp handoff.
 const express = require("express");
 const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
@@ -60,6 +61,20 @@ async function loadInvite(req, res) {
     return null;
   }
   return { respondent, study };
+}
+
+async function continueAfterAccount(res, respondent) {
+  if (respondent.chosen_mode === "whatsapp") {
+    const wa = whatsappChatUrl(respondent.unique_token);
+    if (wa) return res.redirect(wa);
+    return res.status(503).render("error", {
+      message: "WhatsApp participation is not configured for this deployment yet. Please return to your invitation and choose the Inicio Diary mobile app.",
+      user: null,
+    });
+  }
+  const downloadUrl = apkUrl();
+  const separator = downloadUrl.includes("?") ? "&" : "?";
+  return res.redirect(`${downloadUrl}${separator}invite=${encodeURIComponent(respondent.unique_token)}`);
 }
 
 router.get("/:token/presurvey", async (req, res) => {
@@ -144,6 +159,7 @@ router.get("/:token/account", async (req, res) => {
     respondent,
     study,
     username: existing && existing.username ? existing.username : "",
+    existingAccount: !!(existing && existing.password_hash),
     error: null,
     user: null,
   });
@@ -159,20 +175,32 @@ router.post("/:token/account", async (req, res) => {
   const username = String(req.body.username || "").trim().toLowerCase();
   const password = String(req.body.password || "");
   const confirmPassword = String(req.body.confirm_password || "");
-  const fail = (error) => res.status(400).render("invite/account", { respondent, study, username, error, user: null });
-  if (password !== confirmPassword) return fail("The passwords do not match.");
+  const currentAccount = respondent.account_id ? await accounts.getById(respondent.account_id) : null;
+  const fail = (error) => res.status(400).render("invite/account", {
+    respondent,
+    study,
+    username,
+    existingAccount: !!(currentAccount && currentAccount.password_hash),
+    error,
+    user: null,
+  });
 
   try {
-    const account = respondent.account_id
-      ? await accounts.getById(respondent.account_id)
-      : await accounts.findOrCreate({ contact: respondent.contact, name: respondent.name });
+    const account = currentAccount || await accounts.findOrCreate({ contact: respondent.contact, name: respondent.name });
     if (!account) return fail("We couldn't create your Inicio Diary account. Please try again.");
-    await accounts.setCredentials(account.id, { username, password });
+
+    // A returning respondent keeps the credentials they already use on their
+    // other studies. Never allow a new study invitation to reset that password.
+    if (!account.password_hash) {
+      if (password !== confirmPassword) return fail("The passwords do not match.");
+      await accounts.setCredentials(account.id, { username, password });
+    }
+
     await store.update("respondents", { id: respondent.id }, {
       account_id: account.id,
-      account_created_at: store.nowSql(),
+      account_created_at: respondent.account_created_at || store.nowSql(),
     });
-    logAudit(`respondent:${respondent.respondent_code}`, "inicio_diary_account_created", "respondent_accounts", account.id, {
+    logAudit(`respondent:${respondent.respondent_code}`, account.password_hash ? "inicio_diary_account_reused" : "inicio_diary_account_created", "respondent_accounts", account.id, {
       study_id: study.id,
       channel: respondent.chosen_mode,
     });
@@ -180,18 +208,7 @@ router.post("/:token/account", async (req, res) => {
     return fail(e.message || "We couldn't create your Inicio Diary account. Please try again.");
   }
 
-  if (respondent.chosen_mode === "whatsapp") {
-    const wa = whatsappChatUrl(respondent.unique_token);
-    if (wa) return res.redirect(wa);
-    return res.status(503).render("error", {
-      message: "WhatsApp participation is not configured for this deployment yet. Please return to your invitation and choose the Inicio Diary mobile app.",
-      user: null,
-    });
-  }
-
-  const downloadUrl = apkUrl();
-  const separator = downloadUrl.includes("?") ? "&" : "?";
-  return res.redirect(`${downloadUrl}${separator}invite=${encodeURIComponent(respondent.unique_token)}`);
+  return continueAfterAccount(res, respondent);
 });
 
 router.get("/:token", async (req, res) => {
@@ -215,6 +232,20 @@ router.get("/:token", async (req, res) => {
     return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   }
 
+  // Even an existing Inicio Diary user chooses how they want to participate
+  // in this study before we reuse their account.
+  if (!respondent.chosen_mode) {
+    return res.render("invite/welcome", {
+      respondent,
+      study,
+      cadence: CADENCE[study.diary_mode] || "from time to time",
+      apkUrl: apkUrl(),
+      whatsappNumber: whatsappReady(),
+      declined: false,
+      user: null,
+    });
+  }
+
   if (respondent.account_id) {
     const account = await accounts.getById(respondent.account_id);
     if (account && account.password_hash) {
@@ -226,15 +257,7 @@ router.get("/:token", async (req, res) => {
     }
   }
 
-  res.render("invite/welcome", {
-    respondent,
-    study,
-    cadence: CADENCE[study.diary_mode] || "from time to time",
-    apkUrl: apkUrl(),
-    whatsappNumber: whatsappReady(),
-    declined: false,
-    user: null,
-  });
+  return res.redirect(`/invite/${respondent.unique_token}/account`);
 });
 
 router.post("/:token/choose", async (req, res) => {
