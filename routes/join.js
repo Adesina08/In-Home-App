@@ -27,6 +27,7 @@ const { logAudit } = require("../lib/audit");
 const { findStudyByJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const { applyRecruitmentHolds } = require("../lib/qc");
 const otp = require("../lib/otp");
+const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
 const { respondentDiaryUrl } = require("../lib/urls");
 const { nextRespondentCode } = require("../lib/respondentCode");
 const accounts = require("../lib/respondentAccounts");
@@ -41,16 +42,12 @@ async function approvedConsent(studyId) {
   );
 }
 
-// Per-study slot in the session, so someone can (harmlessly) have two sign-ups
-// in flight in the same browser without them overwriting each other.
 function slot(req, studyId) {
   req.session.join = req.session.join || {};
   req.session.join[studyId] = req.session.join[studyId] || {};
   return req.session.join[studyId];
 }
 
-// Resolves :code -> study for every route below, and refuses politely if the
-// study isn't open to remote recruitment (draft, closed, or F2F-only).
 router.use("/:code", async (req, res, next) => {
   const study = await findStudyByJoinCode(req.params.code);
   if (!study) {
@@ -72,13 +69,11 @@ router.use("/:code", async (req, res, next) => {
   next();
 });
 
-// ---- 1. Invite: what this is, what's involved ----
 router.get("/:code", async (req, res) => {
   const consent = await approvedConsent(req.study.id);
   res.render("join/welcome", { study: req.study, code: req.params.code, hasConsent: !!consent, user: null });
 });
 
-// ---- 2. Consent ----
 router.get("/:code/consent", async (req, res) => {
   const consent = await approvedConsent(req.study.id);
   if (!consent) {
@@ -108,7 +103,6 @@ router.post("/:code/consent", async (req, res) => {
   res.redirect(`/join/${req.params.code}/profile`);
 });
 
-// ---- 2b. Minimum profile ----
 router.get("/:code/profile", (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.consentGiven) return res.redirect(`/join/${req.params.code}/consent`);
@@ -128,31 +122,19 @@ router.post("/:code/profile", async (req, res) => {
     res.status(400).render("join/profile", { study: req.study, code: req.params.code, error, values, user: null });
 
   if (!name) return fail("Please enter your name.");
-  if (!contact) return fail("Please enter a phone number or email so we can verify it's you.");
+  if (!contact) return fail("Please enter a phone number or email so we can identify your INICIO account.");
 
-  // A study that recruits remotely gets accounts; a face-to-face-only study
-  // never asks anyone to create a login (see lib/respondentAccounts.js). This
-  // route only serves remote/hybrid studies, so an account is always made here
-  // -- the guard stays explicit so it survives the rule changing.
   const account = accounts.accountsAllowedFor(req.study)
     ? await accounts.findOrCreate({ contact, name })
     : null;
 
-  // Create the respondent now that we have consent + profile. Still 'invited'
-  // until the contact is verified and the tutorial is done.
   let respondentId = s.respondentId;
-  // Someone already on this study who starts the flow again (a lost link, a
-  // new phone) should land back on their existing enrolment rather than
-  // acquire a second one -- two enrolments would split their diary history and
-  // read as a duplicate respondent in every report.
   if (!respondentId && account) {
     const existing = await accounts.enrolmentFor(account.id, req.study.id);
     if (existing) respondentId = existing.id;
   }
 
   if (respondentId) {
-    // COALESCE(account_id, ?) done in JS: a respondent already linked to an
-    // account keeps that link, and only one with none picks up this account.
     const current = await store.findOne("respondents", { id: respondentId });
     await store.update(
       "respondents",
@@ -187,30 +169,38 @@ router.post("/:code/profile", async (req, res) => {
   }
   s.respondentId = respondentId;
   s.accountId = account ? account.id : null;
-
   s.contact = contact;
   s.simulated = false;
+
+  if (respondentOtpBypassed()) {
+    await store.update(
+      "respondents",
+      { id: respondentId },
+      { contact_verified_at: store.nowSql(), activation_status: "screened" }
+    );
+    if (account) await accounts.markVerified(account.id);
+    s.verified = true;
+    logAudit("remote-onboarding", "contact_verification_bypassed", "respondents", respondentId, {});
+    return res.redirect(`/join/${req.params.code}/tutorial`);
+  }
+
   try {
     const sent = await otp.sendCode({
       contact,
       respondentId,
       studyName: req.study.name,
     });
-    // Mock mode delivers nothing. Carried through to the verify screen so it
-    // can say so, rather than asking someone to watch a phone that will never
-    // ring.
     s.simulated = !!sent.simulated;
   } catch (e) {
     if (e.code !== "COOLDOWN") return fail(e.message || "We couldn't send a verification code just now. Please try again.");
-    // Within the cooldown a live code already exists -- go verify that one.
   }
   res.redirect(`/join/${req.params.code}/verify`);
 });
 
-// ---- 3. Verify (OTP) ----
 router.get("/:code/verify", (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.respondentId || !s.contact) return res.redirect(`/join/${req.params.code}/profile`);
+  if (respondentOtpBypassed() && s.verified) return res.redirect(`/join/${req.params.code}/tutorial`);
   res.render("join/verify", {
     study: req.study,
     code: req.params.code,
@@ -226,6 +216,17 @@ router.get("/:code/verify", (req, res) => {
 router.post("/:code/verify", async (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.respondentId || !s.contact) return res.redirect(`/join/${req.params.code}/profile`);
+
+  if (respondentOtpBypassed()) {
+    await store.update(
+      "respondents",
+      { id: s.respondentId },
+      { contact_verified_at: store.nowSql(), activation_status: "screened" }
+    );
+    if (s.accountId) await accounts.markVerified(s.accountId);
+    s.verified = true;
+    return res.redirect(`/join/${req.params.code}/tutorial`);
+  }
 
   const result = await otp.verifyCode({ contact: s.contact, code: req.body.code });
   if (!result.ok) {
@@ -255,13 +256,11 @@ router.post("/:code/verify", async (req, res) => {
 router.post("/:code/verify/resend", async (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.respondentId || !s.contact) return res.redirect(`/join/${req.params.code}/profile`);
+  if (respondentOtpBypassed()) return res.redirect(`/join/${req.params.code}/tutorial`);
   try {
     const sent = await otp.sendCode({ contact: s.contact, respondentId: s.respondentId, studyName: req.study.name });
     s.simulated = !!sent.simulated;
   } catch (e) {
-    // 429 only fits the cooldown. A delivery failure is the provider refusing
-    // the message, which is a 502 on our side -- and reporting it as "too many
-    // requests" would send someone off waiting instead of fixing the number.
     return res.status(e.code === "COOLDOWN" ? 429 : 502).render("join/verify", {
       study: req.study,
       code: req.params.code,
@@ -276,7 +275,6 @@ router.post("/:code/verify/resend", async (req, res) => {
   res.redirect(`/join/${req.params.code}/verify?resent=1`);
 });
 
-// ---- 4. Train: tutorial + optional practice entry ----
 router.get("/:code/tutorial", async (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.verified) return res.redirect(`/join/${req.params.code}/verify`);
@@ -285,7 +283,6 @@ router.get("/:code/tutorial", async (req, res) => {
   res.render("join/tutorial", { study: req.study, code: req.params.code, respondent, user: null });
 });
 
-// ---- 5. Activate ----
 router.post("/:code/finish", async (req, res) => {
   const s = slot(req, req.study.id);
   if (!s.verified) return res.redirect(`/join/${req.params.code}/verify`);
@@ -298,27 +295,17 @@ router.post("/:code/finish", async (req, res) => {
     { tutorial_completed_at: store.nowSql(), activation_status: "activated" }
   );
 
-  // Same recruitment identity QC as the F2F flow. Runs at the end, once the
-  // contact is verified and final -- a hold here flips them back out of
-  // 'activated', which the respondent gate in routes/respondent.js honours.
   const holds = await applyRecruitmentHolds(respondent.id, {
     studyId: req.study.id,
     contact: respondent.contact,
-    consentGiven: true, // they cannot reach this step without consenting
+    consentGiven: true,
   });
 
   logAudit("remote-onboarding", "remote_signup_completed", "respondents", respondent.id, {
     held: holds.length > 0,
   });
 
-  // They verified a code sent to their own contact moments ago, so signing
-  // them in here is no weaker than making them repeat the same code on the
-  // login page -- and it means an account holder lands on their study list
-  // rather than being asked to log in to something they just created.
   if (respondent.account_id) req.session.respondentAccountId = respondent.account_id;
-
-  // Sign-up is finished -- drop the session state so a shared/public device
-  // doesn't leave the next person inside someone else's flow.
   if (req.session.join) delete req.session.join[req.study.id];
 
   res.render("join/done", {
