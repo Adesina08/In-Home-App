@@ -13,7 +13,7 @@ const { logAudit } = require("../lib/audit");
 const router = express.Router();
 
 function apkUrl() {
-  return (process.env.ANDROID_APK_URL || "").trim() || null;
+  return (process.env.ANDROID_APK_URL || "").trim() || "/downloads/inicio-inhome.apk";
 }
 
 function whatsappReady() {
@@ -92,11 +92,12 @@ router.post("/:token/choose", async (req, res) => {
     });
   }
 
-  // Once ANDROID_APK_URL is configured this becomes the install/open handoff.
-  // Until then the existing respondent web diary remains a safe fallback while
-  // the EAS build is being prepared.
-  if (apkUrl()) return res.render("invite/apk", { respondent, apkUrl: apkUrl(), user: null });
-  res.redirect(`/r/${respondent.unique_token}`);
+  // Mobile App is the primary respondent path. Choosing it downloads the
+  // current Android APK immediately. After installation the respondent opens
+  // INICIO and signs in with the phone number used for this invitation.
+  const downloadUrl = apkUrl();
+  const separator = downloadUrl.includes("?") ? "&" : "?";
+  return res.redirect(`${downloadUrl}${separator}invite=${encodeURIComponent(respondent.unique_token)}`);
 });
 
 router.post("/:token/decline", async (req, res) => {

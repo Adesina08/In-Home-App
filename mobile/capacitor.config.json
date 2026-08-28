@@ -3,7 +3,7 @@
   "appName": "INICIO",
   "webDir": "www",
   "server": {
-    "url": "https://REPLACE-WITH-YOUR-DEPLOYED-URL.azurewebsites.net",
+    "url": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net",
     "cleartext": false
   },
   "android": {
