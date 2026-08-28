@@ -1,9 +1,9 @@
 {
-  "appId": "com.inicio.inhome",
-  "appName": "INICIO",
+  "appId": "com.inicio.diary",
+  "appName": "Inicio Diary",
   "webDir": "www",
   "server": {
-    "url": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net",
+    "url": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net/mobile/login",
     "cleartext": false
   },
   "android": {
