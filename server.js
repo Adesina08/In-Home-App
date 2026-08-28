@@ -27,6 +27,9 @@ app.use(express.json());
 const uploadsRoot = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
 app.use("/uploads", express.static(uploadsRoot));
 app.use("/public", express.static(path.join(__dirname, "public")));
+// Keep serving the retirement worker for browsers that installed the old PWA.
+// New pages no longer register it; existing registrations fetch this once and
+// unregister themselves.
 app.get("/sw.js", (req, res) => res.sendFile(path.join(__dirname, "public", "sw.js")));
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -122,8 +125,15 @@ app.use("/me", require("./routes/me"));
 app.use("/r", require("./routes/respondentLoggingModes"));
 app.use("/r", require("./routes/respondent"));
 
+function isPublicRespondentPath(req) {
+  return /^\/(join|invite|mobile|r)(\/|$)/.test(req.path || "");
+}
+
 app.use((req, res) => {
-  res.status(404).render("error", { message: "Page not found.", user: req.session.user || null });
+  res.status(404).render("error", {
+    message: "Page not found.",
+    user: isPublicRespondentPath(req) ? null : (req.session.user || null),
+  });
 });
 
 app.use((err, req, res, next) => {
@@ -131,7 +141,10 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   res.status(500).render("error", {
     message: "Something went wrong on our end. Please try again — your progress up to the last save/submit is safe.",
-    user: (req.session && req.session.user) || null,
+    // Never leak the staff portal chrome into respondent onboarding just
+    // because an Admin/Superadmin happens to preview the public link in the
+    // same browser session.
+    user: isPublicRespondentPath(req) ? null : ((req.session && req.session.user) || null),
   });
 });
 
