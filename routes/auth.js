@@ -4,11 +4,44 @@ const store = require("../lib/store");
 const { logAudit } = require("../lib/audit");
 const { qrDataUrl } = require("../lib/qrcode");
 const { appBaseUrl } = require("../lib/urls");
+const accounts = require("../lib/respondentAccounts");
+const mobileAuth = require("../lib/mobileAuth");
+const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
 const router = express.Router();
 
 router.use("/webhooks/twilio/whatsapp", require("./whatsappWebhook"));
 router.use("/api/mobile/profile", require("./mobileProfileApi"));
 router.use("/api/mobile/respondents/:id", require("./mobileProfileGate"));
+
+// Temporary pilot path while Twilio is not yet configured. The Expo app still
+// submits the respondent's contact, but when RESPONDENT_OTP_BYPASS is on we
+// issue the normal mobile bearer session immediately instead of sending or
+// asking for a one-time code. Set RESPONDENT_OTP_BYPASS=false to restore the
+// normal mobileApi OTP endpoints below.
+router.post("/api/mobile/auth/request-code", async (req, res, next) => {
+  if (!respondentOtpBypassed()) return next();
+  const contact = String(req.body.contact || "").trim();
+  if (!contact) return res.status(400).json({ error: "Enter your phone number or email." });
+
+  const account = await accounts.findByContact(contact);
+  if (!account) {
+    return res.status(400).json({ error: "We couldn't find an INICIO respondent account for that contact." });
+  }
+
+  await accounts.markVerified(account.id);
+  const session = await mobileAuth.issueSession({ accountId: account.id });
+  logAudit(`account:${account.contact}`, "mobile_login_otp_bypassed", "respondent_accounts", account.id, {});
+  res.json({
+    ok: true,
+    bypassed: true,
+    simulated: true,
+    ttlMinutes: 0,
+    token: session.token,
+    expiresAt: session.expiresAt,
+    account: { id: account.id, name: account.name || null, contact: account.contact },
+  });
+});
+
 router.use("/api/mobile", require("./mobileApi"));
 router.use("/join", require("./joinProfile"));
 router.use("/admin/panel", require("./panelAdmin"));
