@@ -13,6 +13,11 @@ router.use("/api/mobile/profile", require("./mobileProfileApi"));
 router.use("/api/mobile/respondents/:id", require("./mobileProfileGate"));
 router.use("/api/mobile", require("./mobileApi"));
 
+// This router is mounted at `/` before the main /join router in server.js.
+// It only handles the new About You step and intercepts /tutorial long enough
+// to make sure first-time respondents have completed the reusable profile.
+router.use("/join", require("./joinProfile"));
+
 router.get("/login", (req, res) => res.render("login", { error: null, user: null }));
 router.get("/get-app", async (req, res) => {
   const url = appBaseUrl(req) + "/login";
