@@ -1,24 +1,24 @@
-<%- include('../partials/header', { title: 'Log Consumption — INICIO', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+<%- include('../partials/header', { title: 'Log Consumption — Inicio Diary', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
 
 <div class="max-w-2xl mx-auto pb-10">
   <div class="flex items-center justify-between mb-5 px-1">
     <div>
-      <div class="text-brand-700 font-bold">INICIO</div>
+      <div class="text-brand-700 font-bold">Inicio Diary</div>
       <div class="text-slate-500 text-sm"><%= study.name %></div>
     </div>
     <a href="/r/<%= respondent.unique_token %>" class="text-sm text-slate-400 hover:text-slate-600 shrink-0">← Back</a>
   </div>
 
-  <h1 class="text-lg font-bold text-slate-900 mb-1 px-1">How would you like to log this?</h1>
-  <p class="text-sm text-slate-500 mb-5 px-1">Pick whichever is easiest right now — you can use a different way next time.</p>
+  <h1 class="text-lg font-bold text-slate-900 mb-1 px-1">How would you like to log this consumption?</h1>
+  <p class="text-sm text-slate-500 mb-5 px-1">Choose Standard to answer the diary questions directly, or Video to record first and then complete anything still needed.</p>
 
   <div class="space-y-3">
     <a href="/r/<%= respondent.unique_token %>/diary/new?mode=standard<%= practice ? '&practice=1' : '' %>"
        class="flex items-center gap-4 bg-white rounded-2xl border border-slate-200/70 shadow-card hover:shadow-card-hover hover:border-brand-300 transition p-5">
       <div class="w-12 h-12 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center shrink-0"><%- icon('clipboard', 'w-6 h-6') %></div>
       <div class="flex-1">
-        <div class="font-semibold text-slate-900">Standard Form</div>
-        <div class="text-sm text-slate-500 mt-0.5">Answer each question directly, at your own pace.</div>
+        <div class="font-semibold text-slate-900">Standard</div>
+        <div class="text-sm text-slate-500 mt-0.5">Answer the configured diary questions directly. Audio questions are recorded here and automatically sent for transcription.</div>
       </div>
       <%- icon('arrow-right', 'w-4 h-4 text-slate-300') %>
     </a>
@@ -28,17 +28,7 @@
       <div class="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center shrink-0"><%- icon('video', 'w-6 h-6') %></div>
       <div class="flex-1">
         <div class="font-semibold text-slate-900">Video <span class="text-xs font-medium text-violet-600 bg-violet-50 rounded-full px-2 py-0.5 ml-1">AI-assisted</span></div>
-        <div class="text-sm text-slate-500 mt-0.5">Record one video — we'll try to auto-fill what we can, you finish the rest.</div>
-      </div>
-      <%- icon('arrow-right', 'w-4 h-4 text-slate-300') %>
-    </a>
-
-    <a href="/r/<%= respondent.unique_token %>/diary/new?mode=audio<%= practice ? '&practice=1' : '' %>"
-       class="flex items-center gap-4 bg-white rounded-2xl border border-slate-200/70 shadow-card hover:shadow-card-hover hover:border-brand-300 transition p-5">
-      <div class="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0"><%- icon('mic', 'w-6 h-6') %></div>
-      <div class="flex-1">
-        <div class="font-semibold text-slate-900">Voice Note</div>
-        <div class="text-sm text-slate-500 mt-0.5">Answer the questions, then record a quick voice summary.</div>
+        <div class="text-sm text-slate-500 mt-0.5">Record using the front camera first. Inicio Diary will try to pre-fill what it can, then you complete the remaining questions.</div>
       </div>
       <%- icon('arrow-right', 'w-4 h-4 text-slate-300') %>
     </a>
