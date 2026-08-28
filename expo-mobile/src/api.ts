@@ -70,7 +70,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   health: () => request<{ ok: boolean }>("/api/mobile/health"),
-  requestCode: (contact: string) => request<{ ok: boolean; simulated: boolean; ttlMinutes: number }>("/api/mobile/auth/request-code", { method: "POST", body: JSON.stringify({ contact }) }),
+  requestCode: (contact: string) => request<{ ok: boolean; simulated: boolean; ttlMinutes: number; bypassed?: boolean; token?: string }>("/api/mobile/auth/request-code", { method: "POST", body: JSON.stringify({ contact }) }),
   verifyCode: (contact: string, code: string) => request<{ token: string }>("/api/mobile/auth/verify", { method: "POST", body: JSON.stringify({ contact, code }) }),
   diaryLinkLogin: (value: string) => request<{ token: string }>("/api/mobile/auth/diary-link", { method: "POST", body: JSON.stringify({ url: value }) }),
   logout: () => request<{ ok: boolean }>("/api/mobile/auth/logout", { method: "POST" }),
