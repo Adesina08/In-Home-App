@@ -5,19 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title><%= typeof title !== 'undefined' ? title : 'Inicio Diary' %></title>
   <link rel="stylesheet" href="/public/tailwind.css" />
-  <link rel="manifest" href="<%= typeof manifestUrl !== 'undefined' && manifestUrl ? manifestUrl : '/public/manifest.json' %>" />
   <link rel="icon" href="/public/icons/icon-192.png" />
-  <link rel="apple-touch-icon" href="/public/icons/apple-touch-icon.png" />
   <meta name="theme-color" content="#1F3864" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Inicio Diary" />
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
-    }
-  </script>
   <style>
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
     .badge-green { background:#E6F4EA; color:#1E7E34; }
