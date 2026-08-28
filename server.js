@@ -100,6 +100,14 @@ app.get("/help", requireLogin, (req, res) => {
   res.render("help", { content, user: req.session.user, currentPath: "/help" });
 });
 
+// Public study-code links are only study identifiers. Convert the first open
+// in a browser into an individual respondent invitation, then continue through
+// the same presurvey -> participation method -> account -> app handoff flow as
+// every other Inicio Diary invitation.
+app.use("/join", require("./routes/joinEntryBridge"));
+// Keep the older remote-onboarding router behind the bridge for its deeper
+// legacy endpoints while old in-flight sessions age out. New /join/:code
+// starts never enter that older browser/PWA journey.
 app.use("/join", require("./routes/join"));
 // Completed Mobile App invitations are intercepted here so a browser never
 // renders the installed-app login page. Unfinished invitations fall through
