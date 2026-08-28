@@ -7,6 +7,7 @@ const messaging = require("../lib/whatsapp");
 const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentInviteUrl } = require("../lib/urls");
 const { logAudit } = require("../lib/audit");
+const { requireLogin } = require("../lib/auth");
 
 const router = express.Router();
 
@@ -50,14 +51,14 @@ async function interviewerRespondent(req, res) {
 }
 
 // Admin/research invitation QR.
-router.get("/admin/studies/:id/respondents/:respondentId/qr.png", async (req, res) => {
+router.get("/admin/studies/:id/respondents/:respondentId/qr.png", requireLogin, async (req, res) => {
   const respondent = await adminRespondent(req, res);
   if (!respondent) return;
   await qrPngToResponse(res, respondentInviteUrl(req, respondent.unique_token));
 });
 
 // Admin/research invitation message.
-router.post("/admin/studies/:id/respondents/:respondentId/send-link", async (req, res) => {
+router.post("/admin/studies/:id/respondents/:respondentId/send-link", requireLogin, async (req, res) => {
   const respondent = await adminRespondent(req, res);
   if (!respondent) return;
   const study = await store.findOne("studies", { id: Number(req.params.id) });
@@ -87,14 +88,14 @@ router.post("/admin/studies/:id/respondents/:respondentId/send-link", async (req
 });
 
 // Interviewer handover QR.
-router.get("/interviewer/respondents/:id/qr.png", async (req, res) => {
+router.get("/interviewer/respondents/:id/qr.png", requireLogin, async (req, res) => {
   const respondent = await interviewerRespondent(req, res);
   if (!respondent) return;
   await qrPngToResponse(res, respondentInviteUrl(req, respondent.unique_token));
 });
 
 // Interviewer handover message.
-router.post("/interviewer/respondents/:id/send-link", async (req, res) => {
+router.post("/interviewer/respondents/:id/send-link", requireLogin, async (req, res) => {
   const respondent = await interviewerRespondent(req, res);
   if (!respondent) return;
   const back = (key, msg) => res.redirect(`/interviewer/respondents/${respondent.id}?${key}=${encodeURIComponent(msg)}`);

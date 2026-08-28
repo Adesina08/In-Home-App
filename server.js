@@ -88,7 +88,11 @@ app.get("/", (req, res) => {
 app.use("/", require("./routes/auth"));
 // These exact invitation-sharing endpoints are mounted before the older staff
 // routers so first-time links and QR codes always enter /invite/:token.
-app.use("/", requireLogin, require("./routes/invitationLinks"));
+// NOTE: no `requireLogin` on the mount itself. `app.use("/", mw, router)` runs
+// `mw` for every request under "/", which is every request in the app -- it
+// would push /join, /invite, /r, /me and /mobile behind the staff login page.
+// These four endpoints guard themselves individually inside the router.
+app.use("/", require("./routes/invitationLinks"));
 // Superadmin routes are mounted before the general Admin router so their
 // platform-only endpoints are resolved directly and never confused with a
 // normal Admin route.
