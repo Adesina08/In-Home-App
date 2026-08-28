@@ -99,6 +99,10 @@ app.use("/join", require("./routes/join"));
 app.use("/invite", require("./routes/invite"));
 app.use("/mobile", require("./routes/mobile"));
 app.use("/me", require("./routes/me"));
+// Product-level logging rules live in this small guard so legacy URLs cannot
+// re-enable the retired standalone Audio mode. Audio remains available as a
+// question type inside Standard and is transcribed by the respondent route.
+app.use("/r", require("./routes/respondentLoggingModes"));
 app.use("/r", require("./routes/respondent"));
 
 app.use((req, res) => {
