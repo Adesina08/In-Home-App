@@ -118,7 +118,7 @@ function Header({ title, subtitle, onBack, action }: any) {
 function AppShell({ children }: any) {
   return (
     <View style={styles.root}>
-      <StatusBar style="light" backgroundColor={colors.navy} />
+      <StatusBar style="light" />
       <View style={styles.brandBar}>
         <View style={styles.brandMark}><Text style={styles.brandMarkText}>I</Text></View>
         <View><Text style={styles.brandName}>INICIO</Text><Text style={styles.brandTag}>In-Home Consumption</Text></View>
