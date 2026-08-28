@@ -112,6 +112,9 @@ app.use("/join", require("./routes/joinEntryBridge"));
 // legacy endpoints while old in-flight sessions age out. New /join/:code
 // starts never enter that older browser/PWA journey.
 app.use("/join", require("./routes/join"));
+// The first invitation step is isolated from the full diary questionnaire so
+// unrelated diary configuration cannot take down public onboarding.
+app.use("/invite", require("./routes/invitePresurvey"));
 // Completed Mobile App invitations are intercepted here so a browser never
 // renders the installed-app login page. Unfinished invitations fall through
 // to the normal setup state machine below.
