@@ -239,6 +239,11 @@ export default function App() {
     setBusy(true);
     try {
       const result = await api.requestCode(contact.trim());
+      if (result.bypassed && result.token) {
+        await setToken(result.token);
+        await loadProfileGate();
+        return;
+      }
       setSimulated(result.simulated);
       setScreen("verify");
     } catch (e: any) { setError(e.message); }
@@ -414,7 +419,7 @@ export default function App() {
               <Text style={styles.fieldLabel}>Phone number or email</Text>
               <TextInput value={contact} onChangeText={setContact} autoCapitalize="none" keyboardType="email-address" placeholder="e.g. +234… or name@email.com" placeholderTextColor="#9AA8BA" style={styles.input} />
               {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Button title={busy ? "Sending…" : "Send verification code"} onPress={requestCode} disabled={busy} />
+              <Button title={busy ? "Continuing…" : "Continue"} onPress={requestCode} disabled={busy} />
             </> : <>
               <Text style={styles.fieldLabel}>Personal INICIO diary link</Text>
               <TextInput value={diaryLink} onChangeText={setDiaryLink} autoCapitalize="none" placeholder="https://…/r/your-token" placeholderTextColor="#9AA8BA" style={styles.input} />
