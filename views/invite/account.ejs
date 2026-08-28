@@ -1,30 +1,43 @@
-<%- include('../partials/header', { title: 'Create your Inicio Diary account', user: null }) %>
+<%- include('../partials/header', { title: existingAccount ? 'Your Inicio Diary account' : 'Create your Inicio Diary account', user: null }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="mb-6">
       <div class="text-xs font-bold uppercase tracking-wide text-brand-600">Step 3 of 3</div>
-      <h1 class="text-2xl font-bold text-slate-900 mt-1">Create your Inicio Diary login</h1>
-      <p class="text-sm text-slate-500 mt-2 leading-relaxed">You’ll use this username and password whenever you open Inicio Diary to complete your consumption diary.</p>
+      <% if (existingAccount) { %>
+        <h1 class="text-2xl font-bold text-slate-900 mt-1">Your Inicio Diary login is ready</h1>
+        <p class="text-sm text-slate-500 mt-2 leading-relaxed">You already have an Inicio Diary account. We’ll keep your existing username and password and add this study to the same account.</p>
+      <% } else { %>
+        <h1 class="text-2xl font-bold text-slate-900 mt-1">Create your Inicio Diary login</h1>
+        <p class="text-sm text-slate-500 mt-2 leading-relaxed">You’ll use this username and password whenever you open Inicio Diary to complete your consumption diary.</p>
+      <% } %>
     </div>
 
     <% if (error) { %><div class="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm p-3"><%= error %></div><% } %>
 
     <form method="POST" action="/invite/<%= respondent.unique_token %>/account" class="space-y-5">
-      <div>
-        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Username</label>
-        <input name="username" value="<%= username || '' %>" autocomplete="username" minlength="4" maxlength="40" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        <p class="text-xs text-slate-400 mt-1.5">4–40 characters. Letters, numbers, dots, dashes and underscores.</p>
-      </div>
-      <div>
-        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Password</label>
-        <input type="password" name="password" autocomplete="new-password" minlength="8" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
-      </div>
-      <div>
-        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Confirm password</label>
-        <input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
-      </div>
-      <button class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 hover:bg-brand-800 transition"><%= respondent.chosen_mode === 'whatsapp' ? 'Continue to WhatsApp' : 'Download Inicio Diary' %></button>
+      <% if (existingAccount) { %>
+        <div class="rounded-xl bg-brand-50 border border-brand-100 p-4">
+          <div class="text-xs font-semibold uppercase tracking-wide text-brand-600">Existing username</div>
+          <div class="text-base font-semibold text-slate-900 mt-1"><%= username %></div>
+          <p class="text-xs text-slate-500 mt-2">Your password is unchanged.</p>
+        </div>
+      <% } else { %>
+        <div>
+          <label class="block text-sm font-semibold text-slate-800 mb-1.5">Username</label>
+          <input name="username" value="<%= username || '' %>" autocomplete="username" minlength="4" maxlength="40" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <p class="text-xs text-slate-400 mt-1.5">4–40 characters. Letters, numbers, dots, dashes and underscores.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-800 mb-1.5">Password</label>
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-800 mb-1.5">Confirm password</label>
+          <input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+      <% } %>
+      <button class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 hover:bg-brand-800 transition"><%= respondent.chosen_mode === 'whatsapp' ? 'Continue to WhatsApp' : (existingAccount ? 'Continue to Inicio Diary' : 'Download Inicio Diary') %></button>
     </form>
   </div>
 </div>
