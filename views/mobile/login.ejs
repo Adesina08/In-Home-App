@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Inicio Diary</title>
+  <link rel="stylesheet" href="/public/tailwind.css" />
+  <meta name="theme-color" content="#1F3864" />
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900">
+  <main class="min-h-screen flex flex-col justify-between px-6 py-8">
+    <div class="max-w-sm w-full mx-auto pt-8">
+      <div class="mb-10">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-700 text-white text-2xl font-bold shadow-sm">ID</div>
+        <h1 class="text-3xl font-bold mt-5">Inicio Diary</h1>
+        <p class="text-slate-500 mt-2 text-base leading-relaxed">Sign in to your consumption diary.</p>
+      </div>
+
+      <% if (ready) { %>
+        <div class="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">Your account is ready. Sign in with the username and password you created from your invitation.</div>
+      <% } %>
+      <% if (error) { %>
+        <div class="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><%= error %></div>
+      <% } %>
+
+      <form method="POST" action="/mobile/login" class="space-y-5">
+        <div>
+          <label class="block text-sm font-semibold mb-1.5">Username</label>
+          <input name="username" value="<%= username || '' %>" autocomplete="username" autocapitalize="none" required class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your username" />
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1.5">Password</label>
+          <input type="password" name="password" autocomplete="current-password" required class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your password" />
+        </div>
+        <button class="w-full rounded-2xl bg-brand-700 text-white font-semibold py-4 text-base shadow-sm active:scale-[0.99] transition">Open my diary</button>
+      </form>
+
+      <div class="mt-7 rounded-2xl bg-white border border-slate-200 p-4">
+        <div class="text-sm font-semibold">First time here?</div>
+        <p class="text-xs text-slate-500 mt-1 leading-relaxed">Open the invitation link or scan the QR code you received. Complete the pre-survey, choose how you want to take part, then create your Inicio Diary login.</p>
+      </div>
+    </div>
+
+    <div class="max-w-sm w-full mx-auto pt-10 text-center text-xs text-slate-400">Inicio Diary · Secure respondent access</div>
+  </main>
+</body>
+</html>
