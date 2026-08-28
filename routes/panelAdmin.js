@@ -14,12 +14,16 @@ function selectedIds(value) {
 }
 
 router.get("/", async (req, res) => {
-  const [profiles, accounts, respondents, studies] = await Promise.all([
-    store.find("respondent_profiles", { completed_at: { $ne: null } }, { sort: { id: -1 } }),
+  const [allProfiles, accounts, respondents, studies] = await Promise.all([
+    store.find("respondent_profiles", {}, { sort: { id: -1 } }),
     store.find("respondent_accounts", {}),
     store.find("respondents", { is_practice: 0 }),
     store.find("studies", {}, { sort: { id: -1 } }),
   ]);
+  // Keep this check in application code rather than depending on a Mongo
+  // `$ne:null` distinction between null and a missing field. Older profiles
+  // created before this feature simply do not have completed_at at all.
+  const profiles = allProfiles.filter((p) => !!p.completed_at);
 
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const enrolmentsByProfile = new Map();
@@ -121,8 +125,6 @@ router.post("/invite", async (req, res) => {
         await store.update("respondents", { id: result.respondent.id }, { invite_sent_at: store.nowSql() });
         outcome.sent++;
       } else if (send.simulated) {
-        // The enrolment exists and can be copied/shared manually, but don't
-        // claim the person received a message when the provider is mocked.
         outcome.failed++;
       } else {
         outcome.failed++;
