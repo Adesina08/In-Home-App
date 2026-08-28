@@ -1,11 +1,12 @@
 // Cold-invite respondent onboarding for Inicio Diary.
 //
 // Target sequence:
-// invite link / QR -> pre-survey -> choose participation channel -> create
-// reusable username/password -> app download or WhatsApp handoff.
+// invite link / QR -> configurable pre-survey -> choose participation channel
+// -> create reusable username/password -> app download or WhatsApp handoff.
 const express = require("express");
 const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
+const { loadQuestionnaire } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
 
 const router = express.Router();
@@ -33,6 +34,20 @@ const CADENCE = {
   monthly: "once a month",
 };
 
+function isPresurveySection(section) {
+  return ["presurvey", "pre-survey", "pre survey", "screening", "screener"].includes(String(section || "").trim().toLowerCase());
+}
+
+async function presurveyQuestions(studyId) {
+  const { questions } = await loadQuestionnaire(studyId);
+  return questions.filter((q) => isPresurveySection(q.section));
+}
+
+function isEmptyAnswer(value) {
+  if (Array.isArray(value)) return value.length === 0;
+  return value === undefined || value === null || String(value).trim() === "";
+}
+
 async function loadInvite(req, res) {
   const respondent = await store.findOne("respondents", { unique_token: req.params.token });
   if (!respondent) {
@@ -51,10 +66,16 @@ router.get("/:token/presurvey", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  const questions = await presurveyQuestions(study.id);
   res.render("invite/presurvey", {
     respondent,
     study,
-    values: { name: respondent.name || "", contact: respondent.contact || "" },
+    questions,
+    values: {
+      name: respondent.name || "",
+      contact: respondent.contact || "",
+      answers: respondent.presurvey_answers || {},
+    },
     error: null,
     user: null,
   });
@@ -64,25 +85,50 @@ router.post("/:token/presurvey", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  const questions = await presurveyQuestions(study.id);
   const name = String(req.body.name || "").trim();
   const contact = String(req.body.contact || "").trim();
-  const values = { name, contact };
-  if (!name || !contact) {
-    return res.status(400).render("invite/presurvey", {
-      respondent,
-      study,
-      values,
-      error: "Please complete your name and phone number or email before continuing.",
-      user: null,
-    });
+  const answers = {};
+
+  for (const q of questions) {
+    let value = req.body[`pq_${q.id}`];
+    if (q.type === "multi" && value !== undefined && !Array.isArray(value)) value = [value];
+    if (q.type === "numeric" && !isEmptyAnswer(value)) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) {
+        return res.status(400).render("invite/presurvey", {
+          respondent, study, questions,
+          values: { name, contact, answers: { ...answers, [q.id]: value } },
+          error: `Please enter a valid number for “${q.text}”.`, user: null,
+        });
+      }
+      value = number;
+    }
+    answers[q.id] = value;
   }
+
+  const renderFail = (error) => res.status(400).render("invite/presurvey", {
+    respondent,
+    study,
+    questions,
+    values: { name, contact, answers },
+    error,
+    user: null,
+  });
+
+  if (!name || !contact) return renderFail("Please complete your name and phone number or email before continuing.");
+  const missing = questions.find((q) => q.required && isEmptyAnswer(answers[q.id]));
+  if (missing) return renderFail(`Please answer “${missing.text}” before continuing.`);
 
   await store.update("respondents", { id: respondent.id }, {
     name,
     contact,
+    presurvey_answers: answers,
     presurvey_completed_at: store.nowSql(),
   });
-  logAudit(`respondent:${respondent.respondent_code}`, "invite_presurvey_completed", "respondents", respondent.id, {});
+  logAudit(`respondent:${respondent.respondent_code}`, "invite_presurvey_completed", "respondents", respondent.id, {
+    configured_question_count: questions.length,
+  });
   return res.redirect(`/invite/${respondent.unique_token}`);
 });
 
@@ -169,8 +215,6 @@ router.get("/:token", async (req, res) => {
     return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   }
 
-  // Once credentials exist, the invitation is no longer the respondent's
-  // recurring authentication mechanism; Inicio Diary username/password is.
   if (respondent.account_id) {
     const account = await accounts.getById(respondent.account_id);
     if (account && account.password_hash) {
