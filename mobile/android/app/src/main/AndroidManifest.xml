@@ -18,6 +18,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Used only by the browser handoff after invitation setup. The
+                 invitation itself remains an https://.../invite/:token URL so
+                 first-time respondents always complete presurvey/channel/account
+                 setup in the browser before the app is opened. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="inicio-diary" android:host="login" />
+            </intent-filter>
         </activity>
 
         <provider
@@ -30,6 +41,5 @@
     </application>
 
     <!-- Permissions -->
-
     <uses-permission android:name="android.permission.INTERNET" />
 </manifest>
