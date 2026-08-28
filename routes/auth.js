@@ -6,6 +6,11 @@ const { qrDataUrl } = require("../lib/qrcode");
 const { appBaseUrl } = require("../lib/urls");
 const router = express.Router();
 
+// Twilio calls this public endpoint for inbound WhatsApp messages. It is mounted
+// before any login-only routes and validates Twilio's signature when an Auth
+// Token is configured.
+router.use("/webhooks/twilio/whatsapp", require("./whatsappWebhook"));
+
 // Person-level profile onboarding sits in front of the native study routes.
 // The gate only blocks questionnaire/diary calls; home and consent stay
 // reachable so respondents can understand the study before answering anything.
