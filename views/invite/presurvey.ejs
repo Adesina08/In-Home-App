@@ -4,22 +4,63 @@
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="mb-6">
       <div class="text-xs font-bold uppercase tracking-wide text-brand-600">Step 1 of 3</div>
-      <h1 class="text-2xl font-bold text-slate-900 mt-1">A few details before we begin</h1>
-      <p class="text-sm text-slate-500 mt-2 leading-relaxed">Please complete this short pre-survey for <strong><%= study.name %></strong>. Your answers help us set up your study participation correctly.</p>
+      <h1 class="text-2xl font-bold text-slate-900 mt-1">A few questions before we begin</h1>
+      <p class="text-sm text-slate-500 mt-2 leading-relaxed">Please complete this short pre-survey for <strong><%= study.name %></strong>. Then you’ll choose how you want to take part.</p>
     </div>
 
     <% if (error) { %><div class="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm p-3"><%= error %></div><% } %>
 
-    <form method="POST" action="/invite/<%= respondent.unique_token %>/presurvey" class="space-y-5">
+    <form method="POST" action="/invite/<%= respondent.unique_token %>/presurvey" class="space-y-6">
       <div>
-        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Your name</label>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Your name <span class="text-red-500">*</span></label>
         <input name="name" value="<%= values.name || '' %>" autocomplete="name" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
       </div>
       <div>
-        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Phone number or email</label>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Phone number or email <span class="text-red-500">*</span></label>
         <input name="contact" value="<%= values.contact || '' %>" autocomplete="email" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
         <p class="text-xs text-slate-400 mt-1.5">Use the contact detail linked to your invitation.</p>
       </div>
+
+      <% if (questions && questions.length) { %>
+        <div class="border-t border-slate-100 pt-5">
+          <div class="text-sm font-semibold text-slate-800 mb-4">Study questions</div>
+          <div class="space-y-5">
+            <% questions.forEach((q) => { const current = values.answers ? values.answers[q.id] : undefined; %>
+              <div>
+                <label class="block text-sm font-semibold text-slate-800 mb-2"><%= q.text %> <% if (q.required) { %><span class="text-red-500">*</span><% } %></label>
+
+                <% if (q.type === 'single') { %>
+                  <div class="space-y-2">
+                    <% (q.options || []).forEach((opt) => { %>
+                      <label class="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 cursor-pointer">
+                        <input type="radio" name="pq_<%= q.id %>" value="<%= opt %>" <%= String(current || '') === String(opt) ? 'checked' : '' %> <%= q.required ? 'required' : '' %> />
+                        <span class="text-sm text-slate-700"><%= opt %></span>
+                      </label>
+                    <% }) %>
+                  </div>
+                <% } else if (q.type === 'multi') { %>
+                  <div class="space-y-2">
+                    <% const selected = Array.isArray(current) ? current.map(String) : (current ? [String(current)] : []); %>
+                    <% (q.options || []).forEach((opt) => { %>
+                      <label class="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 cursor-pointer">
+                        <input type="checkbox" name="pq_<%= q.id %>" value="<%= opt %>" <%= selected.includes(String(opt)) ? 'checked' : '' %> />
+                        <span class="text-sm text-slate-700"><%= opt %></span>
+                      </label>
+                    <% }) %>
+                  </div>
+                <% } else if (q.type === 'numeric') { %>
+                  <input type="number" name="pq_<%= q.id %>" value="<%= current === undefined || current === null ? '' : current %>" <%= q.min_value !== null && q.min_value !== undefined ? `min="${q.min_value}"` : '' %> <%= q.max_value !== null && q.max_value !== undefined ? `max="${q.max_value}"` : '' %> <%= q.required ? 'required' : '' %> class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <% } else if (q.type === 'date-time') { %>
+                  <input type="datetime-local" name="pq_<%= q.id %>" value="<%= current || '' %>" <%= q.required ? 'required' : '' %> class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <% } else { %>
+                  <textarea name="pq_<%= q.id %>" rows="3" <%= q.required ? 'required' : '' %> class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500"><%= current || '' %></textarea>
+                <% } %>
+              </div>
+            <% }) %>
+          </div>
+        </div>
+      <% } %>
+
       <button class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 hover:bg-brand-800 transition">Continue</button>
     </form>
   </div>
