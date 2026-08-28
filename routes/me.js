@@ -1,20 +1,15 @@
 // Respondent account area: passwordless login and the list of studies a person
 // is enrolled on.
 //
-// Login is by one-time code to the contact on the account -- no passwords.
-// That reuses the OTP machinery already built for remote onboarding, avoids a
-// password-reset flow (which would need the same real SMS/email provider
-// anyway), and suits a phone-first audience who would otherwise be locked out
-// by a forgotten password with no easy way back in.
-//
-// The magic-link route (/r/:token) is untouched and still works: a
-// face-to-face recruit gets a usable diary in the field without anyone
-// creating a login. Accounts are an addition, not a replacement.
+// Login normally uses a one-time code. While Twilio is not yet configured the
+// temporary respondent OTP switch can bypass that step; Admin/staff login is
+// unaffected. Set RESPONDENT_OTP_BYPASS=false to restore normal verification.
 const express = require("express");
 const { logAudit } = require("../lib/audit");
 const otp = require("../lib/otp");
 const accounts = require("../lib/respondentAccounts");
 const messaging = require("../lib/whatsapp");
+const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
 
 const router = express.Router();
 
@@ -29,7 +24,6 @@ async function requireAccount(req, res, next) {
   next();
 }
 
-// ---- Login: step 1, who are you ----
 router.get("/login", async (req, res) => {
   if (await currentAccount(req)) return res.redirect("/me");
   res.render("me/login", { error: null, contact: "", user: null });
@@ -41,18 +35,22 @@ router.post("/login", async (req, res) => {
   if (!contact) return fail("Enter the phone number or email you signed up with.");
 
   const account = await accounts.findByContact(contact);
-  // Deliberately does NOT say whether the account exists. Otherwise this page
-  // becomes a way to test whether a given phone number is on a study, which
-  // leaks participation -- and participation in a consumption study is exactly
-  // the sort of thing a respondent expects to stay private.
+
+  if (respondentOtpBypassed()) {
+    if (!account) return fail("We couldn't find an INICIO respondent account for that contact.");
+    await accounts.markVerified(account.id);
+    req.session.respondentAccountId = account.id;
+    delete req.session.pendingLoginContact;
+    logAudit(`account:${account.contact}`, "respondent_login_otp_bypassed", "respondent_accounts", account.id, {});
+    return res.redirect("/me");
+  }
+
+  // Deliberately does NOT say whether the account exists when OTP is enabled.
   if (account) {
     try {
       await otp.sendCode({ contact, respondentId: null, purpose: "account_login" });
     } catch (e) {
       if (e.code !== "COOLDOWN") {
-        // The provider's own reason (bad number format, region not enabled)
-        // is shown: it's about the contact typed into this box, which the
-        // person already knows, so it reveals nothing about who has an account.
         return fail(e.message || "We couldn't send a code just now. Please try again in a moment.");
       }
     }
@@ -61,17 +59,14 @@ router.post("/login", async (req, res) => {
   res.redirect("/me/verify");
 });
 
-// ---- Login: step 2, the code ----
 router.get("/verify", async (req, res) => {
   if (await currentAccount(req)) return res.redirect("/me");
+  if (respondentOtpBypassed()) return res.redirect("/me/login");
   if (!req.session.pendingLoginContact) return res.redirect("/me/login");
   res.render("me/verify", {
     contact: req.session.pendingLoginContact,
     error: null,
     notice: req.query.resent ? "A new code is on its way." : null,
-    // A property of the deployment, not of any account -- shown the same way
-    // whether or not this contact has one, so it leaks nothing while still
-    // saving someone from watching a phone that will never ring.
     simulated: !messaging.isRealMessagingConfigured(),
     ttlMinutes: otp.TTL_MINUTES,
     user: null,
@@ -81,6 +76,17 @@ router.get("/verify", async (req, res) => {
 router.post("/verify", async (req, res) => {
   const contact = req.session.pendingLoginContact;
   if (!contact) return res.redirect("/me/login");
+
+  if (respondentOtpBypassed()) {
+    const account = await accounts.findByContact(contact);
+    if (!account) return res.redirect("/me/login");
+    await accounts.markVerified(account.id);
+    req.session.respondentAccountId = account.id;
+    delete req.session.pendingLoginContact;
+    logAudit(`account:${account.contact}`, "respondent_login_otp_bypassed", "respondent_accounts", account.id, {});
+    return res.redirect("/me");
+  }
+
   const render = (error) =>
     res.status(400).render("me/verify", {
       contact, error, notice: null,
@@ -91,9 +97,6 @@ router.post("/verify", async (req, res) => {
   const result = await otp.verifyCode({ contact, code: req.body.code, purpose: "account_login" });
   if (!result.ok) return render(result.reason);
 
-  // Only now look the account up. A correct code for a contact with no account
-  // is treated the same as a wrong one, so the earlier non-disclosure isn't
-  // undone at this step.
   const account = await accounts.findByContact(contact);
   if (!account) return render("That code isn't right.");
 
@@ -107,12 +110,11 @@ router.post("/verify", async (req, res) => {
 router.post("/verify/resend", async (req, res) => {
   const contact = req.session.pendingLoginContact;
   if (!contact) return res.redirect("/me/login");
+  if (respondentOtpBypassed()) return res.redirect("/me/login");
   if (await accounts.findByContact(contact)) {
     try {
       await otp.sendCode({ contact, respondentId: null, purpose: "account_login" });
     } catch (e) {
-      // 429 fits the cooldown; a provider refusal is a 502. Both show the
-      // reason rather than a cheerful "on its way" for a code that isn't.
       return res.status(e.code === "COOLDOWN" ? 429 : 502).render("me/verify", {
         contact, error: e.message, notice: null,
         simulated: !messaging.isRealMessagingConfigured(),
@@ -129,7 +131,6 @@ router.post("/logout", (req, res) => {
   res.redirect("/me/login");
 });
 
-// ---- My studies ----
 router.get("/", requireAccount, async (req, res) => {
   res.render("me/studies", {
     account: req.account,
