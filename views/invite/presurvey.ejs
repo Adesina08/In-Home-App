@@ -1,0 +1,28 @@
+<%- include('../partials/header', { title: 'Pre-survey — Inicio Diary', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="mb-6">
+      <div class="text-xs font-bold uppercase tracking-wide text-brand-600">Step 1 of 3</div>
+      <h1 class="text-2xl font-bold text-slate-900 mt-1">A few details before we begin</h1>
+      <p class="text-sm text-slate-500 mt-2 leading-relaxed">Please complete this short pre-survey for <strong><%= study.name %></strong>. Your answers help us set up your study participation correctly.</p>
+    </div>
+
+    <% if (error) { %><div class="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm p-3"><%= error %></div><% } %>
+
+    <form method="POST" action="/invite/<%= respondent.unique_token %>/presurvey" class="space-y-5">
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Your name</label>
+        <input name="name" value="<%= values.name || '' %>" autocomplete="name" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Phone number or email</label>
+        <input name="contact" value="<%= values.contact || '' %>" autocomplete="email" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        <p class="text-xs text-slate-400 mt-1.5">Use the contact detail linked to your invitation.</p>
+      </div>
+      <button class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 hover:bg-brand-800 transition">Continue</button>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>
