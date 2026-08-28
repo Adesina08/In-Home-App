@@ -13,7 +13,9 @@ const { logAudit } = require("../lib/audit");
 const router = express.Router();
 
 function apkUrl() {
-  return (process.env.ANDROID_APK_URL || "").trim() || "/downloads/inicio-inhome.apk";
+  // `public/` is mounted at `/public` in server.js, so the built APK that the
+  // deployment workflow places in public/downloads is available at this URL.
+  return (process.env.ANDROID_APK_URL || "").trim() || "/public/downloads/inicio-inhome.apk";
 }
 
 function whatsappReady() {
