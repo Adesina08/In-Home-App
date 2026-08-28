@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title><%= typeof title !== 'undefined' ? title : 'INICIO In-Home Consumption' %></title>
+  <title><%= typeof title !== 'undefined' ? title : 'Inicio Diary' %></title>
   <link rel="stylesheet" href="/public/tailwind.css" />
   <link rel="manifest" href="<%= typeof manifestUrl !== 'undefined' && manifestUrl ? manifestUrl : '/public/manifest.json' %>" />
   <link rel="icon" href="/public/icons/icon-192.png" />
@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="INICIO Diary" />
+  <meta name="apple-mobile-web-app-title" content="Inicio Diary" />
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
@@ -27,23 +27,25 @@
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800 antialiased">
 <% if (typeof user !== 'undefined' && user) {
+  const adminLinks = [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ];
   const navFor = {
-    admin: [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ],
+    superadmin: [ ['/admin/superadmin','Control Center','shield'], ...adminLinks ],
+    admin: adminLinks,
     interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'], ['/help','Help','help'] ],
     client: [ ['/client','Client Dashboard','chart-bar'], ['/help','Help','help'] ],
   };
   const links = navFor[user.role] || [];
   const path = typeof currentPath !== 'undefined' ? currentPath : '';
-  const roleColor = { admin: 'bg-violet-400/90', interviewer: 'bg-sky-400/90', client: 'bg-emerald-400/90' }[user.role] || 'bg-slate-400/90';
+  const roleColor = { superadmin: 'bg-red-400/90', admin: 'bg-violet-400/90', interviewer: 'bg-sky-400/90', client: 'bg-emerald-400/90' }[user.role] || 'bg-slate-400/90';
   const initials = (user.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
 %>
 <header class="bg-brand-700 text-white sticky top-0 z-30 shadow-md">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
     <div class="flex items-center gap-3 shrink-0">
-      <img src="/public/icons/logo-header.png" alt="INICIO" class="h-8 w-auto" />
+      <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-8 w-auto" />
       <div class="leading-tight">
-        <div class="font-bold tracking-wide text-base">INICIO</div>
-        <div class="text-brand-200 text-[11px] hidden lg:block -mt-0.5">In-Home Consumption — Pilot MVP</div>
+        <div class="font-bold tracking-wide text-base">Inicio Diary</div>
+        <div class="text-brand-200 text-[11px] hidden lg:block -mt-0.5">Research Operations Platform</div>
       </div>
     </div>
     <nav class="flex items-center gap-1 sm:gap-1.5 text-sm overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
