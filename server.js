@@ -14,6 +14,7 @@ const { renderPipeHtml } = require("./lib/piping");
 const { CATEGORIES, formatCategories } = require("./lib/categories");
 const { STUDY_TABS, studyTabHref, studyTabNeighbours } = require("./lib/studyTabs");
 const { getMediaUrl } = require("./lib/mediaStorage");
+const { ensureDemoSuperadmin } = require("./lib/demoSuperadmin");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -124,12 +125,18 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-store.connect().then(() => {
+store.connect().then(async () => {
   if (store.driverName === "local") {
     console.warn("WARNING: MONGODB_URI is not set, so this instance is running on the local JSON store. Set MONGODB_URI for any real deployment.");
   } else {
     console.log("Connected to MongoDB.");
   }
+
+  // The known demo Superadmin credential is only created when the database
+  // already contains the seeded demo Admin account. Real production databases
+  // without admin@inicio.demo are left untouched.
+  await ensureDemoSuperadmin();
+
   app.listen(PORT, () => {
     console.log(`Inicio Diary running on http://localhost:${PORT}`);
     require("./lib/scheduler").start();
