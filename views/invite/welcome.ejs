@@ -1,14 +1,12 @@
-<%- include('../partials/header', { title: "You're invited — " + study.name, user: null }) %>
+<%- include('../partials/header', { title: "How would you like to take part? — " + study.name, user: null }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="text-center mb-6">
-      <img src="/public/icons/logo-header.png" alt="INICIO" class="h-9 w-auto mx-auto mb-4" />
-      <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-1">You're invited to take part</div>
-      <h1 class="text-xl font-bold text-slate-900"><%= study.name %></h1>
-      <% if (study.market || study.category) { %>
-        <p class="text-xs text-slate-400 mt-1"><%= [study.market, formatCategories(study.category)].filter(Boolean).join(' · ') %></p>
-      <% } %>
+      <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-9 w-auto mx-auto mb-4" />
+      <div class="text-xs font-bold uppercase tracking-wide text-brand-600 mb-1">Step 2 of 3</div>
+      <h1 class="text-xl font-bold text-slate-900">How would you like to take part?</h1>
+      <p class="text-sm text-slate-500 mt-2"><%= study.name %></p>
     </div>
 
     <% if (declined) { %>
@@ -16,13 +14,6 @@
         You previously declined this study, so we've stopped contacting you about it. If that was a mistake, you can choose a participation option below.
       </div>
     <% } %>
-
-    <div class="bg-brand-50 border border-brand-100 rounded-xl p-4 mb-4">
-      <div class="text-sm font-semibold text-slate-800 mb-1">What this study is about</div>
-      <p class="text-sm text-slate-600 leading-relaxed whitespace-pre-line"><%= study.invite_brief && study.invite_brief.trim()
-        ? study.invite_brief.trim()
-        : 'We\'re researching how people use products like these at home. You\'ll keep a short diary and answer a few questions about each consumption occasion.' %></p>
-    </div>
 
     <div class="grid grid-cols-2 gap-3 mb-6">
       <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
@@ -35,8 +26,7 @@
       </div>
     </div>
 
-    <div class="text-sm font-semibold text-slate-800 mb-1">How would you like to take part?</div>
-    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Your one-time INICIO profile is shared across studies, whichever channel you choose. You won't have to answer the same background questions again on a future study.</p>
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Whichever option you choose, the next step is to create your reusable <strong>Inicio Diary</strong> username and password.</p>
 
     <div class="space-y-3">
       <form method="POST" action="/invite/<%= respondent.unique_token %>/choose">
@@ -44,9 +34,9 @@
         <button class="w-full text-left bg-white border-2 border-brand-600 rounded-xl p-4 hover:bg-brand-50 transition flex items-start gap-3">
           <span class="w-10 h-10 rounded-xl bg-brand-700 text-white flex items-center justify-center shrink-0"><%- icon('smartphone', 'w-5 h-5') %></span>
           <span class="min-w-0 flex-1">
-            <span class="block text-sm font-semibold text-slate-900">Use the INICIO App</span>
-            <span class="block text-xs text-slate-500 leading-relaxed mt-0.5"><%= apkUrl ? 'Install or open the Android app, then continue this same invitation.' : 'The Android build is not published on this deployment yet, so we will use the secure phone version as a temporary fallback.' %></span>
-            <span class="inline-flex mt-2 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-1 bg-brand-50 text-brand-700"><%= apkUrl ? 'Recommended' : 'App build pending' %></span>
+            <span class="block text-sm font-semibold text-slate-900">Use the Inicio Diary Mobile App</span>
+            <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Create your login next, then download and install Inicio Diary on Android.</span>
+            <span class="inline-flex mt-2 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-1 bg-brand-50 text-brand-700">Recommended</span>
           </span>
           <%- icon('arrow-right', 'w-4 h-4 text-brand-600 mt-1 shrink-0') %>
         </button>
@@ -59,7 +49,7 @@
             <span class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><%- icon('chat', 'w-5 h-5') %></span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-semibold text-slate-900">Use WhatsApp</span>
-              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Open a chat with INICIO. First-time profile questions and this study's consent happen in the conversation.</span>
+              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Create your Inicio Diary login next, then continue the study through WhatsApp.</span>
             </span>
             <%- icon('arrow-right', 'w-4 h-4 text-emerald-600 mt-1 shrink-0') %>
           </button>
