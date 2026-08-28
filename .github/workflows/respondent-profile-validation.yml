@@ -1,0 +1,46 @@
+name: Validate respondent profile feature
+
+on:
+  push:
+    branches:
+      - feature/respondent-panel-profile
+  workflow_dispatch:
+
+jobs:
+  backend-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check changed backend JavaScript
+        run: |
+          node --check lib/respondentProfiles.js
+          node --check lib/enrolment.js
+          node --check lib/store/index.js
+          node --check lib/store/schema.js
+          node --check routes/auth.js
+          node --check routes/invite.js
+          node --check routes/joinProfile.js
+          node --check routes/mobileProfileApi.js
+          node --check routes/mobileProfileGate.js
+          node --check routes/panelAdmin.js
+          node --check routes/whatsappWebhook.js
+
+  expo-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: expo-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: expo-mobile/package.json
+      - name: Install Expo dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck Expo app
+        run: npm run typecheck
