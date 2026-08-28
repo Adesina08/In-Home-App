@@ -101,6 +101,10 @@ app.get("/help", requireLogin, (req, res) => {
 });
 
 app.use("/join", require("./routes/join"));
+// Completed Mobile App invitations are intercepted here so a browser never
+// renders the installed-app login page. Unfinished invitations fall through
+// to the normal setup state machine below.
+app.use("/invite", require("./routes/inviteAppHandoff"));
 app.use("/invite", require("./routes/invite"));
 app.use("/mobile", require("./routes/mobile"));
 app.use("/me", require("./routes/me"));
