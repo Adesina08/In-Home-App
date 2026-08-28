@@ -5,7 +5,14 @@ const { logAudit } = require("../lib/audit");
 const { qrDataUrl } = require("../lib/qrcode");
 const { appBaseUrl } = require("../lib/urls");
 const router = express.Router();
+
+// Person-level profile onboarding sits in front of the native study routes.
+// The gate only blocks questionnaire/diary calls; home and consent stay
+// reachable so respondents can understand the study before answering anything.
+router.use("/api/mobile/profile", require("./mobileProfileApi"));
+router.use("/api/mobile/respondents/:id", require("./mobileProfileGate"));
 router.use("/api/mobile", require("./mobileApi"));
+
 router.get("/login", (req, res) => res.render("login", { error: null, user: null }));
 router.get("/get-app", async (req, res) => {
   const url = appBaseUrl(req) + "/login";
