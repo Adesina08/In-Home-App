@@ -9,6 +9,7 @@ const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
+const { splitPresurvey } = require("../lib/presurveySections");
 
 const router = express.Router();
 
@@ -35,13 +36,9 @@ const CADENCE = {
   monthly: "once a month",
 };
 
-function isPresurveySection(section) {
-  return ["presurvey", "pre-survey", "pre survey", "screening", "screener"].includes(String(section || "").trim().toLowerCase());
-}
-
 async function presurveyQuestions(studyId) {
   const { questions } = await loadQuestionnaire(studyId);
-  return questions.filter((q) => isPresurveySection(q.section));
+  return splitPresurvey(questions).presurvey;
 }
 
 function isEmptyAnswer(value) {

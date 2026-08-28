@@ -6,13 +6,9 @@ const express = require("express");
 const store = require("../lib/store");
 const { parseOptions } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
+const { splitPresurvey, sectionNames } = require("../lib/presurveySections");
 
 const router = express.Router();
-
-function isPresurveySection(section) {
-  return ["presurvey", "pre-survey", "pre survey", "screening", "screener"]
-    .includes(String(section || "").trim().toLowerCase());
-}
 
 async function loadInvite(req, res) {
   const respondent = await store.findOne("respondents", { unique_token: req.params.token });
@@ -37,12 +33,25 @@ async function presurveyQuestions(studyId) {
     { study_id: studyId, active: 1 },
     { sort: { order_index: 1, id: 1 } }
   );
-  return rows
-    .filter((q) => isPresurveySection(q.section))
-    .map((q) => ({
-      ...q,
-      options: parseOptions(q.options_json !== undefined ? q.options_json : q.options),
-    }));
+  const { presurvey } = splitPresurvey(rows);
+
+  // Sections present but none matching is almost always a naming mismatch, and
+  // is otherwise invisible: the page renders fine, just empty.
+  if (!presurvey.length) {
+    const names = sectionNames(rows);
+    if (names.length) {
+      console.warn(
+        `Study ${studyId}: no questions matched a pre-survey section. ` +
+        `Sections present: ${names.join(", ")}. ` +
+        `Name a section e.g. "Screening" for its questions to appear on the invitation.`
+      );
+    }
+  }
+
+  return presurvey.map((q) => ({
+    ...q,
+    options: parseOptions(q.options_json !== undefined ? q.options_json : q.options),
+  }));
 }
 
 function isEmptyAnswer(value) {
