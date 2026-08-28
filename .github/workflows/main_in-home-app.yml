@@ -7,6 +7,13 @@ on:
       - main
   workflow_dispatch:
 
+# Azure App Service OneDeploy rejects overlapping deployments with HTTP 409.
+# Keep only the newest main-branch release active so rapid commits do not race
+# each other into the Production slot.
+concurrency:
+  group: inicio-diary-production
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
