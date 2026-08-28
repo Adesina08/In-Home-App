@@ -1,7 +1,5 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy Node.js app to Azure Web App - In-Home-App
+# Build Inicio Diary and deploy the web/API application to Azure App Service.
+name: Build and deploy Inicio Diary
 
 on:
   push:
@@ -35,7 +33,7 @@ jobs:
       - name: Install web dependencies
         run: npm install
 
-      - name: Build production Android APK
+      - name: Build Inicio Diary Android APK
         run: |
           cd mobile
           npm install
@@ -47,25 +45,25 @@ jobs:
           mkdir -p public/downloads
           APK_PATH="$(find mobile/android/app/build/outputs/apk -type f -name '*.apk' | head -n 1)"
           test -n "$APK_PATH"
-          cp "$APK_PATH" public/downloads/inicio-inhome.apk
-          test -s public/downloads/inicio-inhome.apk
+          cp "$APK_PATH" public/downloads/inicio-diary.apk
+          test -s public/downloads/inicio-diary.apk
 
-      - name: Build and test web application
+      - name: Build and test Inicio Diary web application
         run: |
           npm run build --if-present
           npm run test --if-present
 
-      - name: Upload APK as workflow artifact
+      - name: Upload Inicio Diary APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: inicio-inhome-apk
-          path: public/downloads/inicio-inhome.apk
+          name: inicio-diary-apk
+          path: public/downloads/inicio-diary.apk
           if-no-files-found: error
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: node-app
+          name: inicio-diary-web
           path: .
 
   deploy:
@@ -79,7 +77,7 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: node-app
+          name: inicio-diary-web
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -88,7 +86,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_2F1EA5A5307B4917B42D53F6C76A3562 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_6D13A5DDBA754F02A2CBC89160C6FB01 }}
 
-      - name: Deploy to Azure Web App
+      - name: Deploy Inicio Diary to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
