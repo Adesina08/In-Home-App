@@ -1,21 +1,17 @@
-// The page a cold-invited respondent lands on.
+// Cold-invite respondent onboarding for Inicio Diary.
 //
-// Someone who received an unsolicited text needs three things before being
-// asked for anything: what the study is, what taking part actually involves,
-// and a way to decline that doesn't require doing anything. Opening straight
-// onto a consent form asks for a commitment from a person who has not yet been
-// told what they're committing to.
-
+// Target sequence:
+// invite link / QR -> pre-survey -> choose participation channel -> create
+// reusable username/password -> app download or WhatsApp handoff.
 const express = require("express");
 const store = require("../lib/store");
+const accounts = require("../lib/respondentAccounts");
 const { logAudit } = require("../lib/audit");
 
 const router = express.Router();
 
 function apkUrl() {
-  // `public/` is mounted at `/public` in server.js, so the built APK that the
-  // deployment workflow places in public/downloads is available at this URL.
-  return (process.env.ANDROID_APK_URL || "").trim() || "/public/downloads/inicio-inhome.apk";
+  return (process.env.ANDROID_APK_URL || "").trim() || "/public/downloads/inicio-diary.apk";
 }
 
 function whatsappReady() {
@@ -44,20 +40,146 @@ async function loadInvite(req, res) {
     return null;
   }
   const study = await store.findOne("studies", { id: respondent.study_id });
+  if (!study) {
+    res.status(404).render("error", { message: "This study is no longer available.", user: null });
+    return null;
+  }
   return { respondent, study };
 }
+
+router.get("/:token/presurvey", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  res.render("invite/presurvey", {
+    respondent,
+    study,
+    values: { name: respondent.name || "", contact: respondent.contact || "" },
+    error: null,
+    user: null,
+  });
+});
+
+router.post("/:token/presurvey", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  const name = String(req.body.name || "").trim();
+  const contact = String(req.body.contact || "").trim();
+  const values = { name, contact };
+  if (!name || !contact) {
+    return res.status(400).render("invite/presurvey", {
+      respondent,
+      study,
+      values,
+      error: "Please complete your name and phone number or email before continuing.",
+      user: null,
+    });
+  }
+
+  await store.update("respondents", { id: respondent.id }, {
+    name,
+    contact,
+    presurvey_completed_at: store.nowSql(),
+  });
+  logAudit(`respondent:${respondent.respondent_code}`, "invite_presurvey_completed", "respondents", respondent.id, {});
+  return res.redirect(`/invite/${respondent.unique_token}`);
+});
+
+router.get("/:token/account", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
+
+  const existing = respondent.account_id ? await accounts.getById(respondent.account_id) : null;
+  res.render("invite/account", {
+    respondent,
+    study,
+    username: existing && existing.username ? existing.username : "",
+    error: null,
+    user: null,
+  });
+});
+
+router.post("/:token/account", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
+
+  const username = String(req.body.username || "").trim().toLowerCase();
+  const password = String(req.body.password || "");
+  const confirmPassword = String(req.body.confirm_password || "");
+  const fail = (error) => res.status(400).render("invite/account", { respondent, study, username, error, user: null });
+  if (password !== confirmPassword) return fail("The passwords do not match.");
+
+  try {
+    const account = respondent.account_id
+      ? await accounts.getById(respondent.account_id)
+      : await accounts.findOrCreate({ contact: respondent.contact, name: respondent.name });
+    if (!account) return fail("We couldn't create your Inicio Diary account. Please try again.");
+    await accounts.setCredentials(account.id, { username, password });
+    await store.update("respondents", { id: respondent.id }, {
+      account_id: account.id,
+      account_created_at: store.nowSql(),
+    });
+    logAudit(`respondent:${respondent.respondent_code}`, "inicio_diary_account_created", "respondent_accounts", account.id, {
+      study_id: study.id,
+      channel: respondent.chosen_mode,
+    });
+  } catch (e) {
+    return fail(e.message || "We couldn't create your Inicio Diary account. Please try again.");
+  }
+
+  if (respondent.chosen_mode === "whatsapp") {
+    const wa = whatsappChatUrl(respondent.unique_token);
+    if (wa) return res.redirect(wa);
+    return res.status(503).render("error", {
+      message: "WhatsApp participation is not configured for this deployment yet. Please return to your invitation and choose the Inicio Diary mobile app.",
+      user: null,
+    });
+  }
+
+  const downloadUrl = apkUrl();
+  const separator = downloadUrl.includes("?") ? "&" : "?";
+  return res.redirect(`${downloadUrl}${separator}invite=${encodeURIComponent(respondent.unique_token)}`);
+});
 
 router.get("/:token", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
 
-  if (respondent.consent_status === "given" && respondent.chosen_mode) {
-    if (respondent.chosen_mode === "whatsapp") {
-      const wa = whatsappChatUrl(respondent.unique_token);
-      if (wa) return res.redirect(wa);
+  if (respondent.activation_status === "disqualified") {
+    return res.render("invite/welcome", {
+      respondent,
+      study,
+      cadence: CADENCE[study.diary_mode] || "from time to time",
+      apkUrl: apkUrl(),
+      whatsappNumber: whatsappReady(),
+      declined: true,
+      user: null,
+    });
+  }
+
+  if (!respondent.presurvey_completed_at) {
+    return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  }
+
+  // Once credentials exist, the invitation is no longer the respondent's
+  // recurring authentication mechanism; Inicio Diary username/password is.
+  if (respondent.account_id) {
+    const account = await accounts.getById(respondent.account_id);
+    if (account && account.password_hash) {
+      if (respondent.chosen_mode === "whatsapp") {
+        const wa = whatsappChatUrl(respondent.unique_token);
+        if (wa) return res.redirect(wa);
+      }
+      return res.redirect("/mobile/login?ready=1");
     }
-    return res.redirect(`/r/${respondent.unique_token}`);
   }
 
   res.render("invite/welcome", {
@@ -66,7 +188,7 @@ router.get("/:token", async (req, res) => {
     cadence: CADENCE[study.diary_mode] || "from time to time",
     apkUrl: apkUrl(),
     whatsappNumber: whatsappReady(),
-    declined: respondent.activation_status === "disqualified",
+    declined: false,
     user: null,
   });
 });
@@ -75,6 +197,8 @@ router.post("/:token/choose", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent } = loaded;
+  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+
   const requested = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
   const mode = requested === "apk" ? "app" : requested;
   const preferredChannel = mode === "whatsapp" ? "whatsapp" : "app";
@@ -84,37 +208,18 @@ router.post("/:token/choose", async (req, res) => {
     preferred_channel: preferredChannel,
   });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_mode_chosen", "respondents", respondent.id, { mode });
-
-  if (mode === "whatsapp") {
-    const wa = whatsappChatUrl(respondent.unique_token);
-    if (wa) return res.redirect(wa);
-    return res.status(503).render("error", {
-      message: "WhatsApp participation is not configured for this deployment yet. Please choose the INICIO app instead.",
-      user: null,
-    });
-  }
-
-  // Mobile App is the primary respondent path. Choosing it downloads the
-  // current Android APK immediately. After installation the respondent opens
-  // INICIO and signs in with the phone number used for this invitation.
-  const downloadUrl = apkUrl();
-  const separator = downloadUrl.includes("?") ? "&" : "?";
-  return res.redirect(`${downloadUrl}${separator}invite=${encodeURIComponent(respondent.unique_token)}`);
+  return res.redirect(`/invite/${respondent.unique_token}/account`);
 });
 
 router.post("/:token/decline", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent } = loaded;
-  await store.update(
-    "respondents",
-    { id: respondent.id },
-    {
-      activation_status: "disqualified",
-      disqualify_reason: "Declined the invitation",
-      disqualified_at: store.nowSql(),
-    }
-  );
+  await store.update("respondents", { id: respondent.id }, {
+    activation_status: "disqualified",
+    disqualify_reason: "Declined the invitation",
+    disqualified_at: store.nowSql(),
+  });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_declined", "respondents", respondent.id, {});
   res.render("invite/declined", { study: loaded.study, user: null });
 });
