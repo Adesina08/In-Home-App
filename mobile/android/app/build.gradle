@@ -16,10 +16,31 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing. The keystore never lives in this repository: CI writes it
+    // to a temporary file from the ANDROID_KEYSTORE_BASE64 secret, and a local
+    // build reads it from wherever ANDROID_KEYSTORE_FILE points.
+    //
+    // When those variables are absent -- an ordinary developer machine, or a PR
+    // build from a fork that cannot read secrets -- signingConfig stays null and
+    // Gradle produces an *unsigned* release APK rather than failing the build.
+    signingConfigs {
+        release {
+            def storePath = System.getenv("ANDROID_KEYSTORE_FILE")
+            if (storePath) {
+                storeFile file(storePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                // The key was created reusing the store password, so fall back
+                // to it when no separate key password is supplied.
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig System.getenv("ANDROID_KEYSTORE_FILE") ? signingConfigs.release : null
         }
     }
 }
