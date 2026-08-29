@@ -4,7 +4,15 @@ const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 
 const router = express.Router();
-router.use(requireRole("superadmin"));
+
+// Guard each route individually, NOT with router.use(requireRole(...)).
+//
+// This router is mounted at /admin ahead of routes/admin.js so its three paths
+// win. But a path-less router.use() runs for every request that *enters* the
+// router -- which is every /admin/* request -- and requireRole renders 403
+// instead of calling next(). A router-level guard here therefore 403s an Admin
+// on the whole admin section before routes/admin.js is ever reached.
+const onlySuperadmin = requireRole("superadmin");
 
 function toId(value) {
   const n = Number(value);
@@ -65,7 +73,7 @@ async function deleteRespondentCascade(respondentId) {
   return respondent;
 }
 
-router.get("/superadmin", async (req, res) => {
+router.get("/superadmin", onlySuperadmin, async (req, res) => {
   const studies = await store.find("studies", {}, { sort: { id: 1 } });
   const requestedStudyId = req.query.study ? toId(req.query.study) : null;
   const selectedStudy =
@@ -96,7 +104,7 @@ router.get("/superadmin", async (req, res) => {
   });
 });
 
-router.post("/superadmin/respondents/:id/delete", async (req, res) => {
+router.post("/superadmin/respondents/:id/delete", onlySuperadmin, async (req, res) => {
   if (String(req.body.confirm || "").trim().toUpperCase() !== "DELETE") {
     return res.status(400).render("error", {
       message: "Deletion cancelled. Type DELETE to permanently remove a respondent.",
@@ -130,7 +138,7 @@ router.post("/superadmin/respondents/:id/delete", async (req, res) => {
   res.redirect(`/admin/superadmin?study=${encodeURIComponent(studyId)}&deleted=respondent`);
 });
 
-router.post("/superadmin/studies/:id/delete", async (req, res) => {
+router.post("/superadmin/studies/:id/delete", onlySuperadmin, async (req, res) => {
   if (String(req.body.confirm || "").trim().toUpperCase() !== "DELETE") {
     return res.status(400).render("error", {
       message: "Deletion cancelled. Type DELETE to permanently remove a study.",
