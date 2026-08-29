@@ -308,13 +308,13 @@ router.post("/:code/finish", async (req, res) => {
   if (respondent.account_id) req.session.respondentAccountId = respondent.account_id;
   if (req.session.join) delete req.session.join[req.study.id];
 
-  res.render("join/done", {
-    study: req.study,
-    respondent,
-    diaryUrl: respondentDiaryUrl(req, respondent.unique_token),
-    held: holds.length > 0,
-    user: null,
-  });
+  // Last step of onboarding is choosing how to take part: Mobile App or
+  // WhatsApp, with a one-tap decline. That screen is GET /invite/:token, which
+  // then continues to account setup and the app handoff.
+  //
+  // join/done is no longer rendered here. It was the old browser-only ending,
+  // and it dead-ended respondents on a diary link instead of the app.
+  res.redirect(`/invite/${encodeURIComponent(respondent.unique_token)}`);
 });
 
 module.exports = router;

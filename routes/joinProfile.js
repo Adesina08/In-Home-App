@@ -85,6 +85,10 @@ router.post("/:code/about-you", async (req, res) => {
   await store.update("respondents", { id: ctx.respondent.id }, {
     profile_id: result.profile.id,
     name: result.profile.name,
+    // The "About you" step IS this flow's pre-survey. /invite/:token and
+    // /invite/:token/account both gate on presurvey_completed_at, so without
+    // this stamp the participation-choice screen bounces them straight back.
+    presurvey_completed_at: ctx.respondent.presurvey_completed_at || store.nowSql(),
   });
   await profiles.ensureStudySnapshot({ ...ctx.respondent, profile_id: result.profile.id, name: result.profile.name });
   logAudit(`respondent:${ctx.respondent.id}`, "profile_completed", "respondent_profiles", result.profile.id, {

@@ -31,14 +31,10 @@
                class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
         <p class="text-xs text-slate-400 mt-1.5">Used to verify it's you and to send diary reminders. Never shared outside the research team.</p>
       </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1.5">How should we remind you?</label>
-        <select name="preferred_channel"
-                class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
-          <option value="app" <%= values.preferred_channel === 'whatsapp' ? '' : 'selected' %>>Notifications on this device</option>
-          <option value="whatsapp" <%= values.preferred_channel === 'whatsapp' ? 'selected' : '' %>>WhatsApp</option>
-        </select>
-      </div>
+      <%# The reminder channel used to be a dropdown here, asked before the
+          respondent knew what the options meant. It is now chosen on the
+          participation screen at the end of onboarding, where each option is
+          explained and an unconfigured channel can say so. %>
       <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
         Send me a code <%- icon('arrow-right', 'w-4 h-4') %>
       </button>
