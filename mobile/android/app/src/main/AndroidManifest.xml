@@ -42,4 +42,22 @@
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Diary questions capture live photo/video evidence and voice notes
+         through getUserMedia in the WebView. Without these declared, Android
+         refuses the WebView's permission request outright: the respondent is
+         never prompted, no toggle appears under App info -> Permissions, and
+         the capture screen shows "Camera access is needed" with no way to
+         grant it. MODIFY_AUDIO_SETTINGS is needed alongside RECORD_AUDIO for
+         reliable capture on some Android builds.
+
+         The hardware is declared not-required so the app still installs on a
+         device missing one of them, rather than being filtered out. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>
