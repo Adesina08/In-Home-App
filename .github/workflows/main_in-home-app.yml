@@ -72,14 +72,20 @@ jobs:
         run: |
           rm -rf deploy-package
           mkdir deploy-package
+          # Every exclude is ANCHORED with a leading slash. An unanchored rsync
+          # pattern matches a directory of that name at ANY depth: "--exclude
+          # mobile" was meant to skip the Capacitor project at /mobile, but it
+          # also silently dropped views/mobile/login.ejs, so /mobile/login --
+          # the screen the Android app opens on -- 500'd in production with
+          # "Failed to lookup view" while working fine locally.
           rsync -a ./ deploy-package/ \
-            --exclude deploy-package \
-            --exclude .git \
-            --exclude .github \
-            --exclude mobile \
-            --exclude tests \
-            --exclude uploads \
-            --exclude data \
+            --exclude /deploy-package \
+            --exclude /.git \
+            --exclude /.github \
+            --exclude /mobile \
+            --exclude /tests \
+            --exclude /uploads \
+            --exclude /data \
             --exclude '*.log'
           cd deploy-package
           zip -qr ../inicio-diary-release.zip .
