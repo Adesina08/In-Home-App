@@ -63,14 +63,45 @@
 
       <div>
         <label class="block text-sm font-semibold text-slate-800 mb-1.5">Occupation</label>
-        <input name="occupation" value="<%= values.occupation || '' %>" placeholder="e.g. Teacher, student, trader, not currently working" class="w-full rounded-xl border <%= errors.occupation ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm" />
+        <select name="occupation" class="w-full rounded-xl border <%= errors.occupation ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+          <option value="">Choose…</option>
+          <% [
+            ['student', 'Student'],
+            ['trader_retail', 'Trader / retail'],
+            ['artisan_skilled_trade', 'Artisan / skilled trade'],
+            ['farmer', 'Farmer'],
+            ['civil_servant', 'Civil servant / public sector'],
+            ['private_sector_employee', 'Private sector employee'],
+            ['self_employed_business', 'Self-employed / business owner'],
+            ['professional', 'Professional (teacher, nurse, engineer, etc.)'],
+            ['homemaker', 'Homemaker'],
+            ['retired', 'Retired'],
+            ['not_currently_working', 'Not currently working'],
+            ['other', 'Other'],
+            ['prefer_not_to_say', 'Prefer not to say'],
+          ].forEach(([value, label]) => { %>
+            <option value="<%= value %>" <%= values.occupation === value ? 'selected' : '' %>><%= label %></option>
+          <% }) %>
+        </select>
         <% if (errors.occupation) { %><p class="text-xs text-red-600 mt-1"><%= errors.occupation %></p><% } %>
       </div>
 
       <div>
         <label class="block text-sm font-semibold text-slate-800 mb-1.5">Religion</label>
-        <input name="religion" value="<%= values.religion || '' %>" placeholder="Enter your religion, or 'Prefer not to say'" class="w-full rounded-xl border <%= errors.religion ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm" />
-        <p class="text-[11px] text-slate-400 mt-1">You can enter “Prefer not to say”.</p>
+        <select name="religion" class="w-full rounded-xl border <%= errors.religion ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+          <option value="">Choose…</option>
+          <% [
+            ['christianity', 'Christianity'],
+            ['islam', 'Islam'],
+            ['traditional', 'Traditional / indigenous belief'],
+            ['other', 'Other'],
+            ['none', 'No religion'],
+            ['prefer_not_to_say', 'Prefer not to say'],
+          ].forEach(([value, label]) => { %>
+            <option value="<%= value %>" <%= values.religion === value ? 'selected' : '' %>><%= label %></option>
+          <% }) %>
+        </select>
+        <p class="text-[11px] text-slate-400 mt-1">“Prefer not to say” is a valid answer.</p>
         <% if (errors.religion) { %><p class="text-xs text-red-600 mt-1"><%= errors.religion %></p><% } %>
       </div>
 
