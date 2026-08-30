@@ -7,6 +7,8 @@ const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { logAudit } = require("../lib/audit");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
+const { buildVideoPrompts } = require("../lib/videoPrompts");
+const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
 const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
 const { persistUpload } = require("../lib/mediaStorage");
 const { loadQuestionnaire } = require("../lib/questionnaire");
@@ -255,7 +257,19 @@ router.get("/:token/diary/new", async (req, res) => {
   // Video mode has its own capture-first screen (see POST /diary/analyze-video below);
   // standard and audio modes go straight to the question form.
   if (mode === "video") {
-    return res.render("respondent/diary_video_capture", { respondent, study, practice });
+    // The teleprompter script is derived from this study's own questionnaire,
+    // so adding a question in the Builder puts it on screen with no extra
+    // configuration -- and changing it to a numeric type takes it off, because
+    // the extractor would never have filled it.
+    const { questions: allQuestions } = await loadQuestionnaire(study.id);
+    const script = buildVideoPrompts(allQuestions);
+    return res.render("respondent/diary_video_capture", {
+      respondent, study, practice,
+      prompts: script.prompts,
+      secondsEach: script.secondsEach,
+      truncated: script.truncated,
+      totalFillable: script.totalFillable,
+    });
   }
 
   const { questions, rules } = await loadQuestionnaire(study.id);
@@ -281,52 +295,59 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   const practice = req.body.practice === "1";
 
   if (!req.file) {
+    // Re-rendering the capture screen has to rebuild the teleprompter too,
+    // otherwise the retry shows a blank prompt list.
+    const { questions: allQuestions } = await loadQuestionnaire(study.id);
+    const script = buildVideoPrompts(allQuestions);
     return res.render("respondent/diary_video_capture", {
       respondent, study, practice, error: "Please record or choose a video before continuing.",
+      prompts: script.prompts,
+      secondsEach: script.secondsEach,
+      truncated: script.truncated,
+      totalFillable: script.totalFillable,
     });
   }
 
-  // Everything below can fail on a live provider call (a misconfigured Azure
-  // resource, a network blip, a corrupt upload) — this whole block is wrapped
-  // so any of that degrades to the standard-form experience with the video
-  // still attached as evidence, instead of taking the whole app down. Express
-  // 4 does NOT automatically catch a rejected promise from an async route
-  // handler, so an uncaught throw here would crash the entire Node process
-  // for every concurrent respondent, not just this one request.
-  try {
-    // Construct the provider (can throw synchronously — e.g. missing Azure
-    // credentials — hence inside this try, not above it).
-    const provider = getVideoFieldExtractionProvider();
-    // Analyze the video while it's still a fresh local temp file (real bytes on
-    // this machine — ffmpeg needs a path, not a storage-abstracted pointer),
-    // THEN hand it off to permanent storage (local or Azure Blob, depending on
-    // STORAGE_PROVIDER) so the analysis step never has to care where the file
-    // ends up living.
-    const result = await provider
-      .analyze(req.file, questions, brands)
-      .catch(() => ({ status: "error", prefill: {}, note: "AI video review failed — please answer the questions below." }));
-    const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
+  // Submit ends the respondent's involvement. The entry is saved immediately
+  // and the analysis runs behind them -- they no longer wait through frame
+  // extraction, five Vision calls and a Speech call only to be handed a form
+  // to fill in anyway.
+  //
+  // Everything the provider does can fail (misconfigured Azure, network blip,
+  // corrupt upload). None of it may take the entry down with it: the video is
+  // already saved as evidence, and a failed analysis just means no AI answers.
+  const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
+  const now = store.nowSql();
 
-    res.render("respondent/diary_form", {
-      respondent, study, questions, rules, practice,
-      mode: "video",
-      prefill: result.prefill || {},
-      pendingMedia: { path: storedPath, mimetype: req.file.mimetype },
-      aiNote: result.note || null,
-    });
-  } catch (e) {
-    // Provider construction itself failed (e.g. VIDEO_FIELD_EXTRACTION_PROVIDER=azure_vision
-    // with no credentials set). Still let the respondent continue with a plain
-    // form rather than dead-ending them — the video was uploaded, just not analyzed.
-    const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
-    res.render("respondent/diary_form", {
-      respondent, study, questions, rules, practice,
-      mode: "video",
-      prefill: {},
-      pendingMedia: { path: storedPath, mimetype: req.file.mimetype },
-      aiNote: "AI video review is unavailable right now — please answer the questions below; your video is still attached as evidence.",
-    });
-  }
+  const { id: recordId } = await store.insert("diary_records", {
+    respondent_id: respondent.id,
+    study_id: study.id,
+    period_label: now.slice(0, 10),
+    occurrence_time: now,
+    submit_time: now,
+    channel: "app",
+    status: "submitted",
+    is_practice: practice ? 1 : 0,
+    entry_mode: "video",
+  });
+  const { id: mediaId } = await store.insert("media", {
+    record_id: recordId,
+    media_type: "video",
+    file_path: storedPath,
+  });
+
+  // Fire-and-forget. The response below must not wait on it, and a rejection
+  // here must never become an unhandled rejection that takes down the process
+  // for every other respondent.
+  analyzeSubmittedVideo({
+    recordId,
+    videoFile: req.file,
+    questions,
+    brands,
+    studyVersion: study.version,
+  }).catch((e) => console.warn(`Background video analysis failed for record ${recordId}: ${e.message}`));
+
+  res.render("respondent/diary_video_done", { respondent, study, practice, recordId, mediaId });
 });
 
 router.post("/:token/diary", upload.any(), async (req, res) => {

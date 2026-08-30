@@ -155,6 +155,55 @@
   const unansweredCount = answers.length - answeredCount;
   const collapseByDefault = unansweredCount > answeredCount;
 %>
+<% if (typeof unverifiedCount !== 'undefined' && unverifiedCount) { %>
+  <%# Video mode ends at submit, so nothing here was checked by the respondent.
+      Confirming is per-question on purpose: "the AI got four of six right" is
+      the normal case, and one blanket Approve would put the two wrong ones
+      into the client's data. %>
+  <div class="bg-white rounded-2xl border border-amber-300 shadow-card mb-5">
+    <div class="px-5 pt-5 pb-3">
+      <div class="font-semibold text-slate-800 flex items-center gap-2">
+        <%- icon('alert', 'w-4 h-4 text-amber-500') %> Confirm the AI's answers
+      </div>
+      <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">
+        This entry was submitted as a video, so the respondent never reviewed these.
+        Watch the video above and decide on each one. Until you do, they stay out of
+        verified reporting and this entry keeps an open QC flag.
+      </p>
+    </div>
+    <form method="POST" action="/admin/studies/<%= study.id %>/records/<%= record.id %>/verify">
+      <div class="divide-y divide-slate-100">
+        <% answers.filter(a => a.source === 'ai_video' && !a.verified).forEach(a => { %>
+          <div class="px-5 py-4">
+            <div class="text-sm text-slate-700 mb-1"><%= a.text %></div>
+            <div class="text-sm font-semibold text-slate-900 mb-2.5">AI said: <%= a.value %></div>
+            <div class="flex flex-wrap gap-4 text-xs">
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="decision_<%= a.response_id %>" value="confirm" class="accent-emerald-600" />
+                <span class="font-medium text-slate-700">Correct</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="decision_<%= a.response_id %>" value="correct" class="accent-sky-600" />
+                <span class="font-medium text-slate-700">Change to</span>
+              </label>
+              <input type="text" name="value_<%= a.response_id %>" placeholder="the right answer"
+                     class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs flex-1 min-w-[10rem]" />
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="decision_<%= a.response_id %>" value="reject" class="accent-red-600" />
+                <span class="font-medium text-slate-700">Wrong — remove it</span>
+              </label>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <div class="px-5 py-4 bg-slate-50 rounded-b-2xl">
+        <button class="bg-brand text-white rounded-lg px-5 py-2.5 text-sm font-semibold">Save decisions</button>
+        <p class="text-[11px] text-slate-400 mt-2">Anything you leave blank stays unconfirmed and can be decided later.</p>
+      </div>
+    </form>
+  </div>
+<% } %>
+
 <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card" id="answersCard">
   <div class="px-5 pt-5 pb-3 flex flex-wrap items-center justify-between gap-3">
     <div class="font-semibold text-slate-800 flex items-center gap-2">
@@ -193,6 +242,13 @@
             <span class="text-xs text-slate-400 italic">Not answered<%= a.required ? ' (required)' : '' %></span>
           <% } else { %>
             <div class="text-sm text-slate-900 font-medium break-words whitespace-pre-line"><%= a.value %></div>
+            <% if (a.source === 'ai_video') { %>
+              <span class="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold rounded-full px-2 py-0.5 <%= a.verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800' %>">
+                <%= a.verified ? 'AI answer — confirmed' : 'AI answer — not confirmed' %>
+              </span>
+            <% } else if (a.source === 'researcher') { %>
+              <span class="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold rounded-full px-2 py-0.5 bg-sky-50 text-sky-700">Corrected by research</span>
+            <% } %>
           <% } %>
         </div>
       </div>

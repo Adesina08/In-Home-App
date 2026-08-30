@@ -1223,9 +1223,19 @@ router.get("/studies/:id/records/:recordId", async (req, res) => {
         order_index: q.order_index, required: q.required, active: q.active,
         value: r ? r.value : null,
         study_version: r ? r.study_version : null,
+        // Provenance. A video-mode entry is submitted with no respondent
+        // review, so some answers here were written by the extractor, not
+        // chosen by a person. Marking which is which is the whole reason the
+        // fields exist -- an unverified machine guess must never read as
+        // something the respondent said.
+        response_id: r ? r.id : null,
+        source: r ? (r.source || "respondent") : null,
+        verified: r ? (r.verified === undefined ? 1 : r.verified) : null,
       };
     })
     .filter((a) => a.active === 1 || (a.value !== null && a.value !== undefined));
+
+  const unverified = answers.filter((a) => a.source === "ai_video" && !a.verified);
 
   const media = await store.find("media", { record_id: record.id }, { sort: { id: 1 } });
   const flags = await store.find("qc_flags", { record_id: record.id }, { sort: { created_time: -1 } });
@@ -1235,8 +1245,68 @@ router.get("/studies/:id/records/:recordId", async (req, res) => {
   const answeredVersion = (answers.find((a) => a.study_version) || {}).study_version || null;
 
   res.render("admin/record_detail", {
-    study, record, respondent, answers, media, flags, answeredVersion, tab: "respondents",
+    study, record, respondent, answers, media, flags, answeredVersion,
+    unverifiedCount: unverified.length,
+    tab: "respondents",
   });
+});
+
+// Confirm or correct the answers a video review produced.
+//
+// Video mode ends at submit, so nobody checked these at the point of entry.
+// Confirming here is what turns a machine's guess into an answer of record --
+// and it is deliberately a per-question decision, because "the AI got four of
+// six right" is the normal case and blanket-approving all six would put two
+// wrong answers into the client's data.
+router.post("/studies/:id/records/:recordId/verify", async (req, res) => {
+  const studyId = Number(req.params.id);
+  const record = await store.findOne("diary_records", { id: Number(req.params.recordId), study_id: studyId });
+  if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
+
+  const rows = await store.find("responses", { record_id: record.id });
+  const confirmed = [];
+  const corrected = [];
+  const rejected = [];
+
+  for (const r of rows) {
+    if ((r.source || "respondent") !== "ai_video" || r.verified) continue;
+    const decision = req.body[`decision_${r.id}`];
+    if (!decision) continue;
+
+    if (decision === "reject") {
+      // The AI was wrong and the reviewer has nothing to replace it with.
+      // The row is removed rather than kept as a wrong answer -- a missing
+      // answer is honest, an incorrect one is not.
+      await store.remove("responses", { id: r.id });
+      rejected.push(r.question_id);
+    } else if (decision === "correct") {
+      const value = req.body[`value_${r.id}`];
+      await store.update("responses", { id: r.id }, {
+        value: Array.isArray(value) ? value.join("|") : String(value || ""),
+        source: "researcher",
+        verified: 1,
+      });
+      corrected.push(r.question_id);
+    } else {
+      await store.update("responses", { id: r.id }, { verified: 1 });
+      confirmed.push(r.question_id);
+    }
+  }
+
+  // The flag closes only once nothing on this entry is still unverified.
+  const stillOpen = (await store.find("responses", { record_id: record.id }))
+    .filter((r) => (r.source || "respondent") === "ai_video" && !r.verified);
+  if (!stillOpen.length) {
+    const openFlags = await store.find("qc_flags", { record_id: record.id, flag_type: "ai_answers_unverified", status: "open" });
+    for (const f of openFlags) {
+      await store.update("qc_flags", { id: f.id }, { status: "resolved", resolved_time: store.nowSql() });
+    }
+  }
+
+  logAudit(req.session.user.email, "verify_ai_answers", "diary_records", record.id, {
+    confirmed: confirmed.length, corrected: corrected.length, rejected: rejected.length,
+  });
+  res.redirect(`/admin/studies/${studyId}/records/${record.id}`);
 });
 
 // Per-respondent and per-entry exports, alongside the existing study-level ones.

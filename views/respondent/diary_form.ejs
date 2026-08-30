@@ -351,6 +351,50 @@
   const validationNotice = document.getElementById('diaryValidationNotice');
   const validationText = document.getElementById('diaryValidationText');
 
+  // ---- One press, one entry ----
+  //
+  // A diary submit uploads photos, video and voice notes, so on a slow phone
+  // connection it can take several seconds with nothing visibly happening.
+  // Respondents reasonably conclude the button did not work and press again --
+  // and every press was posting a whole new entry, so one occasion was landing
+  // in the dataset three times.
+  //
+  // Disabling the button alone is not enough: a disabled submitter is not sent
+  // with the form, so the server would lose _action and could not tell a draft
+  // from a submit. The value is copied into a hidden field first, and the
+  // button is left enabled-but-inert for the same reason.
+  let submitLocked = false;
+  function lockSubmit(submitter) {
+    submitLocked = true;
+    const action = (submitter && submitter.value) || 'submit';
+    let hidden = form.querySelector('input[type="hidden"][name="_action"]');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = '_action';
+      form.appendChild(hidden);
+    }
+    hidden.value = action;
+
+    form.querySelectorAll('button[type="submit"]').forEach((b) => {
+      b.setAttribute('aria-disabled', 'true');
+      b.style.opacity = '0.6';
+      b.style.pointerEvents = 'none';
+      if (b.value === action && action !== 'draft') b.textContent = 'Saving\u2026';
+    });
+  }
+  function unlockSubmit() {
+    submitLocked = false;
+    form.querySelectorAll('button[type="submit"]').forEach((b) => {
+      b.removeAttribute('aria-disabled');
+      b.style.opacity = '';
+      b.style.pointerEvents = '';
+    });
+  }
+  // Coming back via the back button restores the page from cache with the
+  // buttons still locked, which would strand the respondent.
+  window.addEventListener('pageshow', unlockSubmit);
+
   function questionLabelFor(el) {
     // A diary question carries its label inside .q-wrap; the entry-level
     // fields (when it happened, and so on) sit in their own block with a
@@ -365,10 +409,12 @@
   }
 
   form.addEventListener('submit', function (e) {
+    if (submitLocked) { e.preventDefault(); return; }
     // A draft save deliberately accepts a half-finished entry -- that's the
     // whole point of it -- so it must never be blocked by required fields.
     if (e.submitter && e.submitter.value === 'draft') {
       setRequiredEnabled(form, false);
+      lockSubmit(e.submitter);
       return;
     }
     // Only what the respondent can actually see counts. A question hidden by
@@ -401,9 +447,11 @@
     if (!invalid) {
       validationNotice.classList.add('hidden');
       validationNotice.classList.remove('flex');
+      lockSubmit(e.submitter);
       return; // let it through -- the server has the final say
     }
     e.preventDefault();
+    unlockSubmit();
 
     const label = questionLabelFor(invalid);
     validationText.textContent =

@@ -10,7 +10,14 @@
 (function () {
   "use strict";
 
-  var MAX_VIDEO_SECONDS = 45;
+  // Video mode walks the respondent through a teleprompter, so it needs room
+  // for several prompts at a speakable pace. Photos are unaffected.
+  var MAX_VIDEO_SECONDS = 90;
+
+  // Teleprompter state. Populated from window.INICIO_VIDEO_PROMPTS, which the
+  // video capture screen sets from the study's own questionnaire. Absent on
+  // ordinary photo questions, in which case none of this renders.
+  var prompts = [];
 
   var stream = null;
   var mediaRecorder = null;
@@ -23,7 +30,23 @@
   var current = null;
 
   var modal, videoPreview, photoPreview, videoPlayback, permissionMsg, timerEl,
-    shutterBtn, retakeBtn, useBtn, closeBtn, retryPermBtn, titleEl, canvas;
+    shutterBtn, retakeBtn, useBtn, closeBtn, retryPermBtn, titleEl, canvas,
+    prompterEl, prompterListEl;
+
+  // The whole list stays on screen for the length of the recording. Stepping
+  // through prompts one at a time meant the respondent had to keep tapping
+  // mid-sentence; they would rather see everything and talk through it.
+  function renderPrompts() {
+    if (!prompts.length) return;
+    prompterListEl.innerHTML = "";
+    prompts.forEach(function (p, i) {
+      var li = document.createElement("li");
+      li.className = "flex gap-2";
+      li.innerHTML = '<span class="text-white/50 tabular-nums">' + (i + 1) + '.</span><span></span>';
+      li.lastChild.textContent = p.text;
+      prompterListEl.appendChild(li);
+    });
+  }
 
   function buildModalOnce() {
     if (modal) return;
@@ -44,6 +67,12 @@
       '    <button type="button" id="camRetryPermBtn" class="border border-white/40 rounded-lg px-4 py-2 text-sm text-white">Try again</button>' +
       "  </div>" +
       '  <div id="camTimer" class="hidden absolute top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs font-semibold rounded-full px-3 py-1">0:00</div>' +
+      // Sits over the preview rather than beside it: on a phone there is no
+      // room beside, and the respondent is looking at the camera anyway.
+      '  <div id="camPrompter" class="hidden absolute left-0 right-0 bottom-0 p-4 bg-gradient-to-t from-black/85 to-transparent">' +
+      '    <div class="text-white/60 text-[11px] font-semibold uppercase tracking-wide mb-1.5">Talk through these</div>' +
+      '    <ol id="camPrompterList" class="space-y-1 text-white text-sm font-medium leading-snug max-h-52 overflow-y-auto"></ol>' +
+      "  </div>" +
       "</div>" +
       '<div class="px-6 py-6 flex items-center justify-center gap-5 bg-black">' +
       '  <button type="button" id="camShutterBtn" class="w-16 h-16 rounded-full bg-white ring-4 ring-white/30 active:scale-95 transition"></button>' +
@@ -63,6 +92,8 @@
     closeBtn = modal.querySelector("#camCloseBtn");
     retryPermBtn = modal.querySelector("#camRetryPermBtn");
     titleEl = modal.querySelector("#camCaptureTitle");
+    prompterEl = modal.querySelector("#camPrompter");
+    prompterListEl = modal.querySelector("#camPrompterList");
     canvas = document.createElement("canvas");
 
     closeBtn.addEventListener("click", closeModal);
@@ -122,6 +153,10 @@
   function openModal(kind, targetInput, labelEl) {
     buildModalOnce();
     current = { kind: kind, targetInput: targetInput, labelEl: labelEl };
+    // Only video mode has a script; a photo question never shows the prompter.
+    prompts = kind === "video" && Array.isArray(window.INICIO_VIDEO_PROMPTS)
+      ? window.INICIO_VIDEO_PROMPTS
+      : [];
     titleEl.textContent = kind === "video" ? "Record with front camera" : "Take a photo";
     resetVisualState();
     modal.classList.remove("hidden");
@@ -184,6 +219,13 @@
       permissionMsg.classList.remove("hidden");
       return;
     }
+    // The prompter appears only once recording is actually running, so the
+    // respondent reads the first question and speaks -- rather than reading it
+    // before the camera is live and repeating themselves.
+    if (prompts.length) {
+      renderPrompts();
+      prompterEl.classList.remove("hidden");
+    }
     recordedChunks = [];
     mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = function () {
@@ -213,6 +255,7 @@
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     timerEl.classList.add("hidden");
     shutterBtn.classList.add("hidden");
+    if (prompterEl) prompterEl.classList.add("hidden");
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
   }
 
