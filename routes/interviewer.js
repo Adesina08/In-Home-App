@@ -1,6 +1,7 @@
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const store = require("../lib/store");
+const { canonical: canonicalContact } = require("../lib/contact");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { qrDataUrl, qrPngToResponse } = require("../lib/qrcode");
@@ -56,11 +57,17 @@ router.post("/register", async (req, res) => {
   }
   const token = uuidv4();
   const code = await nextRespondentCode(studyId);
+  // Face-to-face registration is the route most likely to receive a number
+  // typed as "08012345678" -- an interviewer entering it the way the
+  // respondent said it aloud. Canonicalised here against the study's market so
+  // it is stored in the one shape Twilio accepts and sign-in searches for.
+  const study = await store.findOne("studies", { id: studyId });
+  const canonicalisedContact = canonicalContact(contact, { market: study && study.market });
   const { id } = await store.insert("respondents", {
     study_id: studyId,
     respondent_code: code,
     name,
-    contact,
+    contact: canonicalisedContact,
     recruitment_mode: "f2f",
     preferred_channel: preferred_channel || "app",
     consent_status: consent_given ? "given" : "declined",

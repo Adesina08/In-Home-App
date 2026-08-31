@@ -11,7 +11,8 @@
     "start": "node server.js",
     "seed": "node lib/seed.js",
     "build": "npm run build:css",
-    "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./public/tailwind.css --minify"
+    "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./public/tailwind.css --minify",
+    "migrate:contacts": "node lib/migrateContacts.js"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.33.0",

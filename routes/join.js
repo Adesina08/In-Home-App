@@ -27,6 +27,7 @@ const { logAudit } = require("../lib/audit");
 const { findStudyByJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const { applyRecruitmentHolds } = require("../lib/qc");
 const otp = require("../lib/otp");
+const { canonical: canonicalContact } = require("../lib/contact");
 const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
 const { respondentDiaryUrl } = require("../lib/urls");
 const { nextRespondentCode } = require("../lib/respondentCode");
@@ -124,8 +125,15 @@ router.post("/:code/profile", async (req, res) => {
   if (!name) return fail("Please enter your name.");
   if (!contact) return fail("Please enter a phone number or email so we can identify your INICIO account.");
 
+  // Canonicalised ONCE, here, and used for every write below. Doing it only on
+  // the session (as a first pass of this fix did) left both respondent writes
+  // storing the raw typed string -- the row went in as "0803 444 5566" while
+  // the session held "+2348034445566", which is precisely the write-one-shape,
+  // read-another split this whole change exists to remove.
+  const storedContact = canonicalContact(contact, { market: req.study.market });
+
   const account = accounts.accountsAllowedFor(req.study)
-    ? await accounts.findOrCreate({ contact, name })
+    ? await accounts.findOrCreate({ contact: storedContact, name })
     : null;
 
   let respondentId = s.respondentId;
@@ -141,7 +149,7 @@ router.post("/:code/profile", async (req, res) => {
       { id: respondentId },
       {
         name,
-        contact,
+        contact: storedContact,
         preferred_channel: preferredChannel,
         account_id: current && current.account_id != null ? current.account_id : (account ? account.id : null),
       }
@@ -151,7 +159,7 @@ router.post("/:code/profile", async (req, res) => {
       study_id: req.study.id,
       respondent_code: await nextRespondentCode(req.study.id),
       name,
-      contact,
+      contact: storedContact,
       recruitment_mode: "remote",
       preferred_channel: preferredChannel,
       consent_status: "given",
@@ -169,7 +177,12 @@ router.post("/:code/profile", async (req, res) => {
   }
   s.respondentId = respondentId;
   s.accountId = account ? account.id : null;
-  s.contact = contact;
+  // Canonicalise at the point of capture, against this study's market, so the
+  // stored form is the one Twilio accepts and the one every lookup searches
+  // for. Storing what was typed is what broke self-signup: the number went in
+  // as "0801..." and neither the messaging adapter nor account sign-in could
+  // resolve it.
+  s.contact = storedContact;
   s.simulated = false;
 
   if (respondentOtpBypassed()) {
