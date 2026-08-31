@@ -69,4 +69,95 @@
   </table>
   </div>
 </div>
+
+<%# ---- Field recruitment layout (approved comps) ---- %>
+<div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-5 mt-5">
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-1">F2F onboarding steps</div>
+    <p class="text-xs text-slate-500 dark:text-night-muted mb-4">The order to work through with someone.</p>
+    <% steps.forEach(function (st, i) { %>
+      <div class="relative flex gap-3 pb-4 last:pb-0">
+        <% if (i < steps.length - 1) { %>
+          <span class="absolute left-[15px] top-8 bottom-0 w-px bg-slate-200 dark:bg-night-line"></span>
+        <% } %>
+        <span class="w-8 h-8 rounded-full bg-signal text-white text-sm font-semibold flex items-center justify-center shrink-0 relative z-10"><%= st.n %></span>
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-slate-900 dark:text-night-ink"><%= st.title %></span>
+          <span class="block text-xs text-slate-500 dark:text-night-muted leading-snug"><%= st.detail %></span>
+        </span>
+      </div>
+    <% }) %>
+    <div class="mt-5 pt-4 border-t border-slate-100 dark:border-night-line">
+      <div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted mb-2.5">Today</div>
+      <% var rows = [['Registered', counts.registered, 'bg-signal'], ['Activated', counts.activated, 'bg-verified'], ['Pending', counts.pending, 'bg-unverified']]; %>
+      <% rows.forEach(function (r) { %>
+        <div class="flex items-center gap-2.5 text-sm py-1">
+          <span class="w-1 h-4 rounded-full <%= r[2] %> shrink-0"></span>
+          <span class="flex-1 text-slate-600 dark:text-night-muted"><%= r[0] %></span>
+          <span class="font-mono text-slate-900 dark:text-night-ink"><%= r[1] %></span>
+        </div>
+      <% }) %>
+      <a href="/interviewer/register" class="mt-4 flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-signal text-white font-semibold text-sm">
+        Register respondent
+      </a>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card overflow-hidden">
+    <div class="px-5 pt-5 pb-3">
+      <div class="font-display font-bold text-slate-900 dark:text-night-ink">My respondents</div>
+      <p class="text-xs text-slate-500 dark:text-night-muted mt-0.5">Everyone you have recruited, newest first.</p>
+    </div>
+    <% if (!mine.length) { %>
+      <p class="px-5 pb-6 text-sm text-slate-500 dark:text-night-muted">You have not recruited anyone yet.</p>
+    <% } else { %>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left">
+              <th class="px-5 py-2.5 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted font-medium border-b border-slate-200 dark:border-night-line">Respondent</th>
+              <th class="py-2.5 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted font-medium border-b border-slate-200 dark:border-night-line">Status</th>
+              <th class="py-2.5 pr-5 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted font-medium border-b border-slate-200 dark:border-night-line text-right">Handover</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% mine.forEach(function (r) { %>
+              <% var live = ['active','activated'].indexOf(r.activation_status) > -1; %>
+              <tr class="border-b border-slate-100 dark:border-night-line last:border-0">
+                <td class="px-5 py-3">
+                  <div class="flex items-center gap-3">
+                    <span class="w-9 h-9 rounded-full bg-slate-100 dark:bg-night-sunken text-slate-600 dark:text-night-muted text-xs font-semibold flex items-center justify-center shrink-0">
+                      <%= (r.name || '?').split(' ').map(function(w){return w[0]}).slice(0,2).join('').toUpperCase() %>
+                    </span>
+                    <span class="min-w-0">
+                      <span class="block font-medium text-slate-900 dark:text-night-ink truncate"><%= r.name || 'Unnamed' %></span>
+                      <span class="block font-mono text-xs text-slate-500 dark:text-night-muted"><%= r.contact || r.respondent_code %></span>
+                    </span>
+                  </div>
+                </td>
+                <td class="py-3">
+                  <span class="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                    <%= live ? 'bg-verified-soft dark:bg-verified/15 text-verified' : 'bg-signal-soft dark:bg-signal/15 text-signal' %>">
+                    <%= r.activation_status %>
+                  </span>
+                </td>
+                <td class="py-3 pr-5 text-right">
+                  <%# The action that matters: someone registered but never handed
+                      over has a diary they cannot open, and only the interviewer
+                      standing next to them can fix it. %>
+                  <% if (!live) { %>
+                    <a href="/interviewer/respondents/<%= r.id %>" class="text-sm font-medium text-signal">Hand over →</a>
+                  <% } else { %>
+                    <span class="text-xs text-slate-400 dark:text-night-muted">Done</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</div>
+
 <%- include('../partials/footer') %>

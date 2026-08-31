@@ -27,7 +27,24 @@ router.get("/", async (req, res) => {
   const mine = mineRows
     .filter((r) => studyById.has(r.study_id))
     .map((r) => ({ ...r, study_name: studyById.get(r.study_id).name }));
-  res.render("interviewer/dashboard", { studies, mine });
+  // Today's counts and the unfinished handovers, which are the two things an
+  // interviewer standing in a doorway actually needs. A respondent who was
+  // registered but never handed over cannot start, and nothing surfaced that.
+  const today = store.nowSql().slice(0, 10);
+  const isToday = (t) => String(t || "").slice(0, 10) === today;
+  const counts = {
+    registered: mine.filter((r) => isToday(r.created_at)).length,
+    activated: mine.filter((r) => ["active", "activated"].includes(r.activation_status)).length,
+    pending: mine.filter((r) => !["active", "activated", "disqualified"].includes(r.activation_status)).length,
+  };
+  const steps = [
+    { n: 1, title: "Prescreen", detail: "Confirm eligibility and study fit" },
+    { n: 2, title: "Consent", detail: "Explain the study and capture consent" },
+    { n: 3, title: "Register", detail: "Capture respondent information" },
+    { n: 4, title: "Verify", detail: "Verify identity and contact details" },
+    { n: 5, title: "Activate", detail: "Hand over and open the diary" },
+  ];
+  res.render("interviewer/dashboard", { studies, mine, counts, steps });
 });
 
 router.get("/register", async (req, res) => {

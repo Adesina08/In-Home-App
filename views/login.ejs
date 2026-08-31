@@ -24,6 +24,24 @@
         <div class="font-display text-[26px] font-extrabold leading-[1.15] tracking-tight">Inicio Diary</div>
         <div class="font-mono text-[11px] uppercase tracking-[0.09em] text-brand-200 mt-1.5">Research operations</div>
       </div>
+      <div class="relative mt-8 space-y-3.5">
+        <% var feats = [
+            ['clipboard', 'Study setup', 'Design studies and configure workflows'],
+            ['users', 'Respondent management', 'Recruit, assign, and track respondents'],
+            ['shield', 'QC monitoring', 'Monitor quality and ensure compliance'],
+            ['chart', 'Client reporting', 'Real-time insights and performance']
+           ]; %>
+        <% feats.forEach(function (f) { %>
+          <div class="flex items-start gap-3 pb-3.5 border-b border-white/10 last:border-0">
+            <span class="w-10 h-10 rounded-xl border border-white/20 flex items-center justify-center shrink-0"><%- icon(f[0], 'w-5 h-5') %></span>
+            <span class="min-w-0">
+              <span class="block font-semibold text-sm"><%= f[1] %></span>
+              <span class="block text-xs text-brand-200 leading-snug"><%= f[2] %></span>
+            </span>
+          </div>
+        <% }) %>
+      </div>
+
       <div class="relative text-sm">
         <div class="font-mono text-[10px] uppercase tracking-[0.09em] text-brand-300">Environment</div>
         <div class="font-semibold mb-5"><%= process.env.NODE_ENV === 'production' ? 'Production' : 'Development' %> &middot; France Central</div>
@@ -78,12 +96,16 @@
       <% if (typeof showDemoAccounts !== 'undefined' && showDemoAccounts) { %>
         <div class="mt-7 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
           <div class="font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5"><%- icon('users', 'w-3.5 h-3.5') %> Demo accounts &mdash; development only</div>
-          <div class="space-y-0.5 font-mono text-[11px] leading-relaxed text-slate-500">
-            <div>superadmin@inicio.demo</div>
-            <div>admin@inicio.demo</div>
-            <div>interviewer@inicio.demo</div>
-            <div>client@inicio.demo</div>
-          </div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+          <% var demos = [['shield','Superadmin','superadmin@inicio.demo'],['users','Admin','admin@inicio.demo'],['user','Interviewer','interviewer@inicio.demo'],['chart','Client','client@inicio.demo']]; %>
+          <% demos.forEach(function (d) { %>
+            <div class="rounded-lg border border-slate-200 p-2 text-center">
+              <span class="text-signal inline-flex justify-center mb-1"><%- icon(d[0], 'w-4 h-4') %></span>
+              <div class="text-[11px] font-semibold text-slate-700"><%= d[1] %></div>
+              <div class="font-mono text-[10px] text-slate-500 truncate"><%= d[2] %></div>
+            </div>
+          <% }) %>
+        </div>
           <div class="mt-1.5">Password for all: <span class="font-mono font-semibold text-slate-700">Demo1234!</span></div>
           <div class="mt-2 pt-2 border-t border-slate-200 text-[11px] text-slate-400">Hidden when NODE_ENV=production.</div>
         </div>

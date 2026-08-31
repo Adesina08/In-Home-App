@@ -96,10 +96,18 @@ router.get("/superadmin", onlySuperadmin, async (req, res) => {
       )
     : [];
 
+  // Platform-wide totals for the header cards in the comps.
+  const platform = {
+    studies: await store.count("studies", {}),
+    respondents: await store.count("respondents", {}),
+    records: await store.count("diary_records", { status: "submitted" }),
+    openFlags: await store.count("qc_flags", { status: "open" }),
+  };
   res.render("admin/superadmin", {
     studies: studyCards,
     selectedStudy,
     respondents,
+    platform,
     deleted: req.query.deleted || null,
   });
 });

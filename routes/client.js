@@ -136,7 +136,35 @@ router.get("/", async (req, res) => {
     brandConsumption,
     occasionMix,
     trend,
+    // Answer provenance. Video mode means some answers were produced by the
+    // extractor rather than chosen by a respondent, and a client seeing
+    // "42% chose Maltina" is entitled to know how many of those a person
+    // checked. No competing diary tool can show this, because none of them
+    // tracked it.
+    provenance: await answerProvenance(study),
   });
 });
+
+/** Split the reported answers by who produced them. */
+async function answerProvenance(study) {
+  if (!study) return { total: 0, respondent: 0, aiConfirmed: 0, excluded: 0 };
+  const records = await store.find("diary_records", { study_id: study.id, status: "submitted", is_practice: 0 });
+  const ids = records.map((r) => r.id);
+  if (!ids.length) return { total: 0, respondent: 0, aiConfirmed: 0, excluded: 0 };
+
+  const responses = await store.find("responses", { record_id: { $in: ids } });
+  const openFlags = await store.find("qc_flags", { status: "open" });
+  const blocked = new Set(openFlags.filter((f) => ids.includes(f.record_id)).map((f) => f.record_id));
+
+  const usable = responses.filter((r) => !blocked.has(r.record_id));
+  return {
+    total: usable.length,
+    respondent: usable.filter((r) => (r.source || "respondent") !== "ai_video").length,
+    aiConfirmed: usable.filter((r) => r.source === "ai_video" && r.verified).length,
+    // Excluded, not counted: an unresolved flag or an unconfirmed AI answer is
+    // not something to report as fact.
+    excluded: responses.length - usable.length + usable.filter((r) => r.source === "ai_video" && !r.verified).length,
+  };
+}
 
 module.exports = router;
