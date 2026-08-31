@@ -285,6 +285,61 @@
     } catch (e) {}
     if (labelEl) labelEl.textContent = statusText;
     closeModal();
+
+    // Send it now, in the background, while the respondent carries on
+    // answering. By the time they press Submit the bytes are already on the
+    // server and the submit carries only the answers. Failure here is not
+    // fatal: the file stays on the form input and goes the old, slow way.
+    stageInBackground(file, input, labelEl, statusText);
+  }
+
+  /**
+   * Upload one captured file straight away.
+   *
+   * XHR rather than fetch because fetch still has no upload-progress event,
+   * and a progress number is the entire point -- a respondent staring at a
+   * silent screen is the reason entries got logged three times.
+   */
+  function stageInBackground(file, input, labelEl, doneText) {
+    var form = input && input.form;
+    var token = window.INICIO_RESPONDENT_TOKEN;
+    if (!form || !token) return;
+
+    var qid = (input.name || "").replace(/^\w+_q_/, "");
+    var fd = new FormData();
+    fd.append("file", file);
+    if (qid) fd.append("question_id", qid);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/r/" + token + "/media/stage");
+    xhr.upload.onprogress = function (e) {
+      if (!labelEl || !e.lengthComputable) return;
+      labelEl.textContent = "Uploading… " + Math.round((e.loaded / e.total) * 100) + "%";
+    };
+    xhr.onload = function () {
+      if (xhr.status < 200 || xhr.status >= 300) return;
+      var data;
+      try { data = JSON.parse(xhr.responseText); } catch (e) { return; }
+      if (!data.staged_id) return;
+
+      // The staged id replaces the file on submit. The input is cleared so the
+      // same bytes are not uploaded a second time.
+      var hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "_staged_media";
+      hidden.value = data.staged_id;
+      hidden.setAttribute("data-staged-for", input.name || "");
+      var prior = form.querySelector('input[name="_staged_media"][data-staged-for="' + (input.name || "") + '"]');
+      if (prior) prior.remove();
+      form.appendChild(hidden);
+      try { input.value = ""; } catch (e) {}
+      if (labelEl) labelEl.textContent = doneText;
+    };
+    xhr.onerror = function () {
+      // Leave the file on the input; the submit will carry it the slow way.
+      if (labelEl) labelEl.textContent = doneText;
+    };
+    xhr.send(fd);
   }
 
   window.openCameraCapture = function (kind, targetInputId, labelElId) {

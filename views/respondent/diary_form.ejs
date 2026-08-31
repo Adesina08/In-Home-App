@@ -199,6 +199,7 @@
   questions.reduce((acc, q) => { if (q.code) acc[q.code] = q.id; return acc; }, {})
 ).replace(/</g, "\\u003c") %></script>
 <script src="/public/js/piping.js"></script>
+<script>window.INICIO_RESPONDENT_TOKEN = "<%= respondent.unique_token %>";</script>
 <script src="/public/js/camera-capture.js"></script>
 <script>
   const RULES = <%- JSON.stringify(rules) %>;
@@ -382,7 +383,62 @@
       b.style.pointerEvents = 'none';
       if (b.value === action && action !== 'draft') b.textContent = 'Saving\u2026';
     });
+    showProgress();
   }
+
+  // A determinate bar, not a spinner. Most media now uploads in the background
+  // as it is captured, so a submit is usually fast -- but when something did
+  // not stage (offline at capture, JS error) the respondent is waiting on real
+  // bytes, and "37%" is the difference between waiting and pressing again.
+  let progressWrap, progressBar;
+  function showProgress() {
+    if (progressWrap) return;
+    progressWrap = document.createElement('div');
+    progressWrap.className = 'fixed left-0 right-0 bottom-0 z-50 bg-white border-t border-slate-200 px-4 py-3';
+    progressWrap.innerHTML =
+      '<div class="max-w-2xl mx-auto">' +
+      '  <div class="flex items-center justify-between text-xs font-medium text-slate-600 mb-1.5">' +
+      '    <span>Sending your entry\u2026</span><span id="diaryPct" class="font-mono">0%</span>' +
+      '  </div>' +
+      '  <div class="h-1.5 rounded-full bg-slate-200 overflow-hidden">' +
+      '    <div id="diaryBar" class="h-full bg-signal rounded-full transition-[width] duration-150" style="width:0%"></div>' +
+      '  </div>' +
+      '  <div class="text-[11px] text-slate-400 mt-1.5">Keep this screen open until it finishes.</div>' +
+      '</div>';
+    document.body.appendChild(progressWrap);
+    progressBar = progressWrap.querySelector('#diaryBar');
+  }
+  function setProgress(pct) {
+    if (!progressWrap) return;
+    progressWrap.querySelector('#diaryPct').textContent = pct + '%';
+    progressBar.style.width = pct + '%';
+  }
+
+  // Submitting through XHR rather than a plain form post, purely so there is an
+  // upload-progress event to read. On any failure the page falls back to a
+  // normal submit, so a browser quirk can never strand a finished entry.
+  form.addEventListener('submit', function (e) {
+    if (!window.XMLHttpRequest || !window.FormData || form.dataset.fallback) return;
+    e.preventDefault();
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action || window.location.href);
+    xhr.upload.onprogress = function (ev) {
+      if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100));
+    };
+    xhr.onload = function () {
+      setProgress(100);
+      // The server answers with a redirect the browser has already followed;
+      // responseURL is where it landed.
+      window.location.href = xhr.responseURL || '/r/' + window.INICIO_RESPONDENT_TOKEN;
+    };
+    xhr.onerror = function () {
+      if (progressWrap) { progressWrap.remove(); progressWrap = null; }
+      unlockSubmit();
+      form.dataset.fallback = '1';
+      form.submit();
+    };
+    xhr.send(new FormData(form, e.submitter));
+  });
   function unlockSubmit() {
     submitLocked = false;
     form.querySelectorAll('button[type="submit"]').forEach((b) => {

@@ -381,6 +381,63 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   res.render("respondent/diary_video_done", { respondent, study, practice, recordId, mediaId });
 });
 
+// Stage a single media file while the respondent is still answering.
+//
+// A submit used to carry the answers AND every photo, video and voice note in
+// one multipart request. With six media items in a questionnaire that is
+// minutes of upload on mobile data with nothing visibly happening, which is
+// why respondents pressed Submit repeatedly and logged the same occasion three
+// times. Each file now uploads in the background the moment it is captured, so
+// pressing Submit sends only the answers.
+//
+// The response returns an opaque id, never a file path. An earlier mechanism
+// posted the server-side path back in a hidden field, which would let anyone
+// attach an arbitrary file on the server to their own entry.
+router.post("/:token/media/stage", upload.single("file"), async (req, res) => {
+  const respondent = await store.findOne("respondents", { unique_token: req.params.token });
+  if (!respondent) return res.status(404).json({ error: "Not found." });
+  if (!req.file) return res.status(400).json({ error: "No file received." });
+
+  const mime = req.file.mimetype || "";
+  const mediaType = mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "photo";
+  const filePath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
+
+  const { id } = await store.insert("staged_media", {
+    respondent_id: respondent.id,
+    question_id: req.body.question_id ? Number(req.body.question_id) : null,
+    media_type: mediaType,
+    file_path: filePath,
+    created_at: store.nowSql(),
+    consumed_at: null,
+  });
+  res.json({ staged_id: id, media_type: mediaType });
+});
+
+/**
+ * Claim staged uploads for a submitted entry.
+ *
+ * Ownership is checked against the respondent rather than trusted from the
+ * form, and a row already consumed is skipped -- otherwise a replayed submit
+ * would attach the same file to two records.
+ */
+async function attachStagedMedia(recordId, respondentId, stagedIds) {
+  const attached = [];
+  for (const raw of stagedIds) {
+    const id = Number(raw);
+    if (!id) continue;
+    const row = await store.findOne("staged_media", { id });
+    if (!row || row.respondent_id !== respondentId || row.consumed_at) continue;
+    const { id: mediaId } = await store.insert("media", {
+      record_id: recordId,
+      media_type: row.media_type,
+      file_path: row.file_path,
+    });
+    await store.update("staged_media", { id }, { consumed_at: store.nowSql() });
+    attached.push({ id: mediaId, record_id: recordId, media_type: row.media_type, file_path: row.file_path });
+  }
+  return attached;
+}
+
 router.post("/:token/diary", upload.any(), async (req, res) => {
   const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
@@ -530,6 +587,21 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
   }
 
+  // Media staged during the entry. These uploaded in the background as they
+  // were captured, so there is nothing to transfer here -- only rows to claim.
+  const stagedIds = [].concat(req.body._staged_media || []);
+  const stagedRows = await attachStagedMedia(recordId, respondent.id, stagedIds);
+  for (const mediaRow of stagedRows) {
+    if (mediaRow.media_type === "audio") {
+      if (audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
+    } else if (brandProvider) {
+      brandProvider.detect(mediaRow, brands).catch(() => {});
+    }
+  }
+
+  // Anything not staged still arrives inline -- an older client, a browser
+  // where the background upload failed, or JavaScript switched off. The slow
+  // path has to keep working.
   for (const f of req.files || []) {
     // Hand each upload off to permanent storage (local disk or Azure Blob,
     // depending on STORAGE_PROVIDER) before recording its path — falls back
