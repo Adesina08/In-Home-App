@@ -41,8 +41,16 @@
     background: var(--qb-paper);
     border-radius: 1.5rem;
     padding: 1.75rem;
-    margin: 0 -0.25rem;
+    /* The negative margin used to pull the panel 4px wider than the page
+       container on each side, which put its edge outside <main> and produced a
+       horizontal scrollbar at some widths. min-width:0 stops any wide child
+       (a long question row, a table) from stretching the panel past the page
+       and "poking out of the grey". */
+    min-width: 0;
   }
+  .qb-canvas .section-group,
+  .qb-canvas .q-row-header,
+  .qb-canvas #sectionAccordions { min-width: 0; }
   .qb-canvas .qb-display { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
   .qb-canvas .qb-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
   .qb-canvas .qb-flag {
@@ -123,7 +131,12 @@
 
   <p class="text-xs text-slate-500 mb-4">Every field auto-saves as you edit. Click a question row to open its editor, or a section header to collapse it. Drag a row's grip handle to reorder it within its section — move it to a different section using the Section dropdown inside its editor.</p>
 
-  <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+  <%# minmax(0,1fr), not 1fr. A grid child defaults to min-width:auto, so a
+      plain 1fr refuses to shrink below its content -- long question text and
+      the right-hand type badges then push the whole column past the container
+      and out of the page. min-w-0 on the column itself is the same guard one
+      level down, for the flex rows inside it. %>
+  <div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-6">
     <!-- Section Index: pure navigation -- click scrolls to and expands a section in the main column. Renaming/deleting/conditions live on the section header itself. -->
     <aside class="lg:sticky lg:top-20 lg:self-start space-y-3">
       <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-3">
@@ -142,8 +155,8 @@
     </aside>
 
     <!-- Main column: accordion sections, each holding collapsed-by-default question rows -->
-    <div>
-      <div id="sectionAccordions" class="space-y-3"></div>
+    <div class="min-w-0">
+      <div id="sectionAccordions" class="space-y-3 min-w-0"></div>
       <button type="button" id="addQuestionBtn" class="mt-3 w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-3 text-sm font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition">
         <%- icon('plus', 'w-4 h-4') %> Add question
       </button>
