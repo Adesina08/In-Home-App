@@ -61,11 +61,28 @@ router.get("/:token/manifest.json", async (req, res) => {
 // route -- so this is "required everywhere it's technically possible," not a
 // feature that can silently brick the pilot for someone's older phone.
 
+// The native shell appends ?app=1 on the way in. Recorded on the session so
+// every later request in the same launch is recognised, not just the first.
+router.use("/:token", (req, res, next) => {
+  if (req.query.app === "1") req.session.isNativeApp = true;
+  next();
+});
+
 router.get("/:token/lock", async (req, res) => {
   const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "This link is not valid. Please contact your interviewer.", user: null });
   const next = typeof req.query.next === "string" ? req.query.next : `/r/${req.params.token}`;
   if (respondent.biometric_exempt) return res.redirect(next);
+
+  // No device lock inside the native app.
+  //
+  // The Capacitor WebView does not expose the WebAuthn credentials API, so
+  // browserSupportsWebAuthn() returns false and the setup screen could only
+  // ever flash up and exempt the respondent anyway. Skipping it outright is
+  // the honest version of what was already happening -- and it no longer
+  // writes a permanent exemption that would also disable the lock for the same
+  // person in a real browser.
+  if (req.session.isNativeApp) return res.redirect(next);
   const hasCredential = (await webauthn.getCredentialsForRespondent(respondent.id)).length > 0;
   return res.redirect(`/r/${req.params.token}/lock/${hasCredential ? "unlock" : "setup"}?next=${encodeURIComponent(next)}`);
 });
@@ -198,6 +215,9 @@ router.use("/:token", async (req, res, next) => {
     return res.render("respondent/pending_activation", { respondent });
   }
   if (respondent.biometric_exempt) return next();
+  // Same skip as the /lock gate. Without it the two bounce off each other --
+  // the gate sends the app to the diary, this sends it back to the gate.
+  if (req.session.isNativeApp) return next();
   if (req.session.bioVerified && req.session.bioVerified[req.params.token]) return next();
   const next_ = encodeURIComponent(req.originalUrl);
   return res.redirect(`/r/${req.params.token}/lock?next=${next_}`);
