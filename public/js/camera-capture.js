@@ -40,9 +40,12 @@
     if (!prompts.length) return;
     prompterListEl.innerHTML = "";
     prompts.forEach(function (p, i) {
+      // Inline styles throughout, for the same reason as the container: these
+      // class names exist only inside this JS string and are not reliably
+      // picked up by the Tailwind scanner.
       var li = document.createElement("li");
-      li.className = "flex gap-2";
-      li.innerHTML = '<span class="text-white/50 tabular-nums">' + (i + 1) + '.</span><span></span>';
+      li.setAttribute("style", "display:flex;gap:8px;padding:3px 0");
+      li.innerHTML = '<span style="color:rgba(255,255,255,.55);font-variant-numeric:tabular-nums">' + (i + 1) + '.</span><span></span>';
       li.lastChild.textContent = p.text;
       prompterListEl.appendChild(li);
     });
@@ -69,9 +72,9 @@
       '  <div id="camTimer" class="hidden absolute top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs font-semibold rounded-full px-3 py-1">0:00</div>' +
       // Sits over the preview rather than beside it: on a phone there is no
       // room beside, and the respondent is looking at the camera anyway.
-      '  <div id="camPrompter" class="hidden absolute left-0 right-0 bottom-0 p-4 bg-gradient-to-t from-black/85 to-transparent">' +
-      '    <div class="text-white/60 text-[11px] font-semibold uppercase tracking-wide mb-1.5">Talk through these</div>' +
-      '    <ol id="camPrompterList" class="space-y-1 text-white text-sm font-medium leading-snug max-h-52 overflow-y-auto"></ol>' +
+      '  <div id="camPrompter" class="hidden absolute left-0 right-0 bottom-0 p-4" style="background:linear-gradient(to top,rgba(0,0,0,.92) 55%,rgba(0,0,0,0));text-shadow:0 1px 3px rgba(0,0,0,.9)">' +
+      '    <div style="color:rgba(255,255,255,.65);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Talk through these</div>' +
+      '    <ol id="camPrompterList" style="max-height:13rem;overflow-y:auto;color:#fff;font-size:14px;font-weight:500;line-height:1.5"></ol>' +
       "  </div>" +
       "</div>" +
       '<div class="px-6 py-6 flex items-center justify-center gap-5 bg-black">' +
@@ -157,6 +160,13 @@
     prompts = kind === "video" && Array.isArray(window.INICIO_VIDEO_PROMPTS)
       ? window.INICIO_VIDEO_PROMPTS
       : [];
+    // Shown as soon as the camera opens, not on record. Revealing it only once
+    // recording starts meant the respondent had nothing to read at the exact
+    // moment they were deciding what to say.
+    if (prompterEl) {
+      if (prompts.length) { renderPrompts(); prompterEl.classList.remove("hidden"); }
+      else prompterEl.classList.add("hidden");
+    }
     titleEl.textContent = kind === "video" ? "Record with front camera" : "Take a photo";
     resetVisualState();
     modal.classList.remove("hidden");
@@ -218,13 +228,6 @@
       permissionMsg.querySelector("span").textContent = "Video recording isn't supported on this device.";
       permissionMsg.classList.remove("hidden");
       return;
-    }
-    // The prompter appears only once recording is actually running, so the
-    // respondent reads the first question and speaks -- rather than reading it
-    // before the camera is live and repeating themselves.
-    if (prompts.length) {
-      renderPrompts();
-      prompterEl.classList.remove("hidden");
     }
     recordedChunks = [];
     mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
