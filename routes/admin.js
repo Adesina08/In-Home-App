@@ -1,5 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 const store = require("../lib/store");
@@ -275,8 +276,17 @@ router.get("/studies/:id/questionnaire", async (req, res) => {
       condition_text: questionsById.get(sr.condition_question_id).text,
     }));
   const brands = await store.find("brands", { study_id: studyId }, { sort: { name: 1 } });
-  res.render("admin/study_questionnaire", {
+  // The rebuilt three-pane builder. Mounted behind ?v=2 rather than replacing
+  // the old view outright: this is the most complex interactive screen in the
+  // app, and being able to switch back mid-pilot is worth more than a clean
+  // deletion. Both read the same data and call the same endpoints.
+  const builderView = req.query.v === "2"
+    ? "admin/study_questionnaire_v2"
+    : "admin/study_questionnaire";
+
+  res.render(builderView, {
     study, questions, activeQuestions, sections, rules, brands, tab: "questionnaire",
+    user: req.session.user,
     imported: req.query.imported,
     rulesCreated: req.query.rulesCreated,
     rulesSkipped: req.query.rulesSkipped,
@@ -806,7 +816,12 @@ router.get("/users", async (req, res) => {
     ...u,
     study_name: studiesById.has(u.study_id) ? studiesById.get(u.study_id).name : null,
   }));
-  res.render("admin/users", { users, studies });
+  res.render("admin/users", {
+    users, studies,
+    // Shown once, immediately after a reset, then gone on the next load.
+    resetEmail: req.query.reset || null,
+    resetTemp: req.query.temp || null,
+  });
 });
 
 router.post("/users", async (req, res) => {
@@ -825,6 +840,49 @@ router.post("/users", async (req, res) => {
     return res.render("error", { message: "Could not create user (email may already exist).", user: req.session.user });
   }
   res.redirect("/admin/users");
+});
+
+// ---------- Password reset ----------
+//
+// Staff and client passwords are reset here rather than by email, because no
+// mail provider is configured -- a self-serve "check your inbox" flow would
+// promise something the app cannot deliver. /forgot-password tells people to
+// ask a research manager; this is what the manager does.
+//
+// The temporary password is generated, never chosen by the admin: an admin who
+// picks it knows it, and a password two people know is not a password. It is
+// shown exactly once, on the redirect, and stored only as a bcrypt hash.
+router.post("/users/:id/reset-password", async (req, res) => {
+  const id = Number(req.params.id);
+  const target = await store.findOne("users", { id });
+  if (!target) return res.status(404).render("error", { message: "User not found.", user: req.session.user });
+
+  // Superadmin is the only role that can reset another superadmin, so an admin
+  // cannot take over the account that can delete studies.
+  if (target.role === "superadmin" && req.session.user.role !== "superadmin") {
+    return res.status(403).render("error", {
+      message: "Only a superadmin can reset another superadmin's password.",
+      user: req.session.user,
+    });
+  }
+
+  // Ambiguous characters left out (0/O, 1/l/I): this gets read aloud down a
+  // phone line or copied off a sticky note.
+  const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let temp = "";
+  for (let i = 0; i < 12; i++) temp += ALPHABET[crypto.randomInt(ALPHABET.length)];
+
+  await store.update("users", { id }, {
+    password_hash: bcrypt.hashSync(temp, 10),
+    must_change_password: 1,
+  });
+  logAudit(req.session.user.email, "reset_user_password", "users", id, { email: target.email });
+
+  // Passed through the URL so it survives the redirect. It is single-use and
+  // useless without the account's email, and the alternative -- rendering the
+  // list inline -- loses the redirect-after-POST that stops a refresh issuing
+  // a second password.
+  res.redirect(`/admin/users?reset=${encodeURIComponent(target.email)}&temp=${encodeURIComponent(temp)}`);
 });
 
 // ---------- AI summary (spec 4.3, P1) ----------

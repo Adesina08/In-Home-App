@@ -8,11 +8,36 @@
   </div>
 </div>
 
+<%# Shown once, on the redirect after a reset. The password is never stored in
+    readable form, so if it is lost here the only way forward is another reset
+    -- which is the correct trade. %>
+<% if (typeof resetTemp !== 'undefined' && resetTemp) { %>
+  <div class="bg-white border-2 border-verified/40 rounded-2xl p-5 mb-6">
+    <div class="flex items-start gap-2.5">
+      <span class="text-verified mt-0.5"><%- icon('check-circle', 'w-5 h-5') %></span>
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-900">Temporary password for <%= resetEmail %></div>
+        <p class="text-sm text-slate-600 mt-0.5 mb-3">Give this to them now. It is shown only on this screen and cannot be looked up again. They will be asked to set their own the moment they sign in.</p>
+        <div class="flex items-center gap-2 flex-wrap">
+          <code id="tempPw" class="font-mono text-lg font-semibold bg-slate-900 text-white rounded-lg px-4 py-2 tracking-wide"><%= resetTemp %></code>
+          <button type="button" id="copyTemp" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 transition">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    document.getElementById('copyTemp').addEventListener('click', function () {
+      navigator.clipboard.writeText(document.getElementById('tempPw').textContent.trim());
+      this.textContent = 'Copied';
+    });
+  </script>
+<% } %>
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
   <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card">
     <div class="overflow-x-auto">
     <table class="w-full text-sm">
-      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Email</th><th class="py-2.5">Role</th><th class="py-2.5">Study Scope</th></tr></thead>
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Email</th><th class="py-2.5">Role</th><th class="py-2.5">Study Scope</th><th class="py-2.5 pr-5 text-right">Password</th></tr></thead>
       <tbody>
       <% users.forEach(u => { %>
         <tr class="border-t border-slate-100 hover:bg-slate-50/70">
@@ -20,9 +45,19 @@
           <td class="py-2.5 text-slate-500"><%= u.email %></td>
           <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full font-medium bg-slate-100 text-slate-600 uppercase tracking-wide"><%= u.role %></span></td>
           <td class="py-2.5 text-slate-500 text-xs"><%= u.study_name || 'All studies' %></td>
+          <td class="py-2.5 pr-5 text-right">
+            <% if (u.must_change_password) { %>
+              <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-unverified-soft text-unverified">Temporary — not yet changed</span>
+            <% } else { %>
+              <form method="POST" action="/admin/users/<%= u.id %>/reset-password"
+                    onsubmit="return confirm('Issue a new temporary password for <%= u.email %>? Their current password stops working immediately.')">
+                <button class="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">Reset</button>
+              </form>
+            <% } %>
+          </td>
         </tr>
       <% }) %>
-      <% if (!users.length) { %><tr><td colspan="4" class="px-5 py-8 text-center text-slate-400">No users yet — create one on the right.</td></tr><% } %>
+      <% if (!users.length) { %><tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">No users yet — create one on the right.</td></tr><% } %>
       </tbody>
     </table>
     </div>

@@ -86,6 +86,17 @@ app.get("/", (req, res) => {
 });
 
 app.use("/", require("./routes/auth"));
+
+// A temporary password grants access to exactly one screen: the one that
+// replaces it. Checked on every request rather than only at sign-in, because
+// redirecting once at login leaves the admin-known password fully usable to
+// anyone who then types a URL directly.
+app.use((req, res, next) => {
+  if (!req.session.mustChangePassword) return next();
+  if (req.path === "/change-password" || req.path === "/logout") return next();
+  if (req.path.startsWith("/public")) return next();
+  return res.redirect("/change-password");
+});
 // These exact invitation-sharing endpoints are mounted before the older staff
 // routers so first-time links and QR codes always enter /invite/:token.
 // NOTE: no `requireLogin` on the mount itself. `app.use("/", mw, router)` runs

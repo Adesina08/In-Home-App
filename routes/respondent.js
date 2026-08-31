@@ -200,8 +200,39 @@ router.get("/:token", async (req, res) => {
   // entry_time is stored as 'YYYY-MM-DD HH:MM:SS', so sorting the string
   // descending is the same ordering datetime(entry_time) DESC gave.
   const records = await store.find("diary_records", { respondent_id: respondent.id }, { sort: { entry_time: -1 } });
+  // Field-mode home needs three things the old stat-card layout did not:
+  // whether anything is due today, how much evidence each entry carries (so a
+  // stub can show a thumbnail), and whether any entry still has unconfirmed AI
+  // answers. All computed here rather than in the view.
+  const recordIds = records.map((r) => r.id);
+  const allMedia = recordIds.length
+    ? await store.find("media", { record_id: { $in: recordIds } })
+    : [];
+  const allResponses = recordIds.length
+    ? await store.find("responses", { record_id: { $in: recordIds } })
+    : [];
+  const today = store.nowSql().slice(0, 10);
+  const stubs = records.map((r) => {
+    const mine = allMedia.filter((m) => m.record_id === r.id);
+    return {
+      ...r,
+      media_type: (mine[0] || {}).media_type || null,
+      media_count: mine.length,
+      // An entry the AI answered that nobody has confirmed carries an amber
+      // edge -- the respondent should see that it is still being checked
+      // rather than believing it is finished and filed.
+      awaiting_check: allResponses.some(
+        (x) => x.record_id === r.id && x.source === "ai_video" && !x.verified
+      ),
+    };
+  });
+  const loggedToday = records.some(
+    (r) => r.status === "submitted" && String(r.occurrence_time || "").slice(0, 10) === today
+  );
+
   res.render("respondent/home", {
     respondent, study, consent, records,
+    stubs, loggedToday,
     // Pre-existing gap: the post-submit redirect (see POST /:token/diary below)
     // has always appended ?saved=submitted|draft|screened_out, but this render
     // never forwarded it to the view, so home.ejs's confirmation banner never

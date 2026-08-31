@@ -3,6 +3,11 @@ module.exports = {
   content: ["./views/**/*.ejs", "./public/js/**/*.js"],
   safelist: [
     { pattern: /^(bg|text|border|from|to|ring)-(brand|slate|emerald|amber|red|violet|sky)(-\d+)?(\/\d+)?$/ },
+    // New design tokens. Safelisted because they appear inside EJS ternaries,
+    // which the JIT scanner cannot always resolve to a literal class name.
+    { pattern: /^(bg|text|border|outline|ring)-(signal|unverified|verified)(-(soft|deep))?(\/\d+)?$/ },
+    { pattern: /^(bg|text)-paper$/ },
+    { pattern: /^font-(display|mono|sans)$/ },
   ],
   theme: {
     extend: {
@@ -21,9 +26,32 @@ module.exports = {
           800: "#182A4B",
           900: "#101C33",
         },
+        // Field mode: respondent + interviewer screens. Deep teal, used ONLY for
+        // the single primary action on a screen. Never on the staff console --
+        // there navy is the action colour and a second accent would compete.
+        signal: {
+          DEFAULT: "#0B7285",
+          soft: "#E6F4F6",
+          deep: "#083F4A",
+        },
+        // Answer provenance. Semantic, not decorative: `unverified` marks a value
+        // the video AI produced that no person has confirmed, and it is meant to
+        // be slightly uncomfortable to look at.
+        unverified: { DEFAULT: "#B45309", soft: "#FEF6E7" },
+        verified: { DEFAULT: "#047857", soft: "#ECFDF5" },
+        // Field background. Warm off-white -- less glare than pure white on a
+        // phone held outdoors.
+        paper: "#FAF9F7",
       },
       fontFamily: {
-        sans: ["Segoe UI", "system-ui", "-apple-system", "sans-serif"],
+        // Body/UI. Chosen for legibility at 14px on low-end Android.
+        sans: ["Inter", "Segoe UI", "system-ui", "-apple-system", "sans-serif"],
+        // Page titles and field-screen questions.
+        display: ["Bricolage Grotesque", "Segoe UI", "system-ui", "sans-serif"],
+        // Respondent codes, IDs, timestamps, counts. R01-0007 and R01-0001 are
+        // hard to tell apart in a proportional face and staff scan columns of
+        // them all day.
+        mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
       },
       borderRadius: {
         xl: "0.875rem",

@@ -2,7 +2,7 @@
   "name": "inicio-diary",
   "version": "0.1.0",
   "private": true,
-  "description": "Inicio Diary — in-home consumption research and respondent diary platform",
+  "description": "Inicio Diary \u2014 in-home consumption research and respondent diary platform",
   "main": "server.js",
   "engines": {
     "node": ">=20"
@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "seed": "node lib/seed.js",
+    "build": "npm run build:css",
     "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./public/tailwind.css --minify"
   },
   "dependencies": {

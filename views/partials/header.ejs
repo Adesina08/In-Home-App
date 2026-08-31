@@ -24,14 +24,20 @@
       });
     }
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    /* display=swap so a slow connection shows Segoe UI immediately rather than
+       invisible text -- these screens are used on mobile data in the field. */
+    body[data-field="1"] { background: #FAF9F7; }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; }
     .badge-green { background:#E6F4EA; color:#1E7E34; }
     .badge-amber { background:#FFF4E5; color:#B8860B; }
     .badge-red { background:#FCE8E6; color:#C0392B; }
   </style>
 </head>
-<body class="bg-slate-50 min-h-screen text-slate-800 antialiased">
+<body data-field="<%= typeof fieldMode !== 'undefined' && fieldMode ? '1' : '' %>" class="bg-slate-50 min-h-screen text-slate-800 antialiased">
 <% if (typeof user !== 'undefined' && user) {
   const adminLinks = [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ];
   const navFor = {
