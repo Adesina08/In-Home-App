@@ -100,5 +100,79 @@
     </main>
   </div>
 </div>
+
+<%# ---- Fieldwork progress, risk donut, activity feed (approved comps) ---- %>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-4">Fieldwork Progress</div>
+    <% if (!weekly.length) { %>
+      <%# An unconfigured study has no calendar. Drawing an empty one would make
+          it look like a failing study rather than an unstarted one. %>
+      <p class="text-sm text-slate-500 dark:text-night-muted">Set the study start and end dates to see weekly progress.</p>
+    <% } else { %>
+      <% weekly.forEach(w => { %>
+        <div class="mb-3.5 last:mb-0">
+          <div class="flex items-baseline justify-between text-sm mb-1">
+            <span class="font-medium text-slate-700 dark:text-night-ink"><%= w.label %></span>
+            <span class="font-mono text-slate-500 dark:text-night-muted"><%= w.future ? '—' : w.pct + '%' %></span>
+          </div>
+          <div class="text-[11px] font-mono text-slate-400 dark:text-night-muted mb-1.5"><%= w.range %></div>
+          <div class="h-2 rounded-full bg-slate-100 dark:bg-night-sunken overflow-hidden">
+            <div class="h-full rounded-full bg-signal" style="width: <%= w.future ? 0 : w.pct %>%"></div>
+          </div>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-4">Respondent Risk</div>
+    <div class="relative"><canvas id="riskDonut" height="180"></canvas></div>
+    <div class="mt-4 space-y-2">
+      <% const bands = [['green','Low risk','#047857'],['amber','Medium risk','#B45309'],['red','High risk','#B91C1C']]; %>
+      <% bands.forEach(function (b) { %>
+        <div class="flex items-center gap-2.5 text-sm">
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background: <%= b[2] %>"></span>
+          <span class="flex-1 text-slate-600 dark:text-night-muted"><%= b[1] %></span>
+          <span class="font-mono text-slate-900 dark:text-night-ink"><%= riskCounts[b[0]] || 0 %></span>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-4">Recent Activity</div>
+    <% if (!recentActivity.length) { %>
+      <p class="text-sm text-slate-500 dark:text-night-muted">Nothing has happened on this study yet.</p>
+    <% } else { %>
+      <% recentActivity.forEach(function (a) { %>
+        <div class="flex items-start gap-3 py-2.5 border-b border-slate-100 dark:border-night-line last:border-0">
+          <span class="w-2 h-2 rounded-full mt-1.5 shrink-0 <%= a.kind === 'flag' ? 'bg-unverified' : a.kind === 'draft' ? 'bg-slate-300' : 'bg-signal' %>"></span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm text-slate-700 dark:text-night-ink leading-snug"><%= a.text %></span>
+            <span class="block font-mono text-[11px] text-slate-400 dark:text-night-muted mt-0.5"><%= String(a.at).replace('T',' ').slice(0,16) %></span>
+          </span>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+</div>
+
+<script src="/public/vendor/chart.umd.js"></script>
+<script>
+  (function () {
+    var el = document.getElementById('riskDonut');
+    if (!el || !window.Chart) return;
+    var counts = [<%= riskCounts.green || 0 %>, <%= riskCounts.amber || 0 %>, <%= riskCounts.red || 0 %>];
+    if (!counts.some(Boolean)) { el.parentElement.innerHTML =
+      '<p class="text-sm text-slate-500 py-8 text-center">No respondents classified yet.</p>'; return; }
+    new Chart(el, {
+      type: 'doughnut',
+      data: { labels: ['Low', 'Medium', 'High'],
+              datasets: [{ data: counts, backgroundColor: ['#047857', '#B45309', '#B91C1C'], borderWidth: 0 }] },
+      options: { cutout: '68%', plugins: { legend: { display: false } } },
+    });
+  })();
+</script>
 </body>
 </html>

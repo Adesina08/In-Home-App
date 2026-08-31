@@ -1,0 +1,20 @@
+<%#
+  The numbered step rail from the comps.
+
+  Four steps, named honestly: the old copy said "Step 1 of 3" on one screen and
+  "Step 2 of 3" on another while the real sequence was six long. Understating
+  the count does not reduce drop-off; discovering there are more than promised
+  does.
+%>
+<div class="flex items-center justify-center gap-0 mb-2">
+  <% for (let i = 1; i <= total; i++) { %>
+    <% if (i > 1) { %>
+      <span class="w-10 sm:w-14 h-px <%= i <= step ? 'bg-signal' : 'border-t border-dashed border-slate-300 dark:border-night-line' %>"></span>
+    <% } %>
+    <span class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0
+      <%= i < step ? 'bg-signal/20 text-signal border border-signal'
+        : i === step ? 'bg-signal text-white'
+        : 'border border-slate-300 dark:border-night-line text-slate-400 dark:text-night-muted' %>"><%= i %></span>
+  <% } %>
+</div>
+<p class="text-center text-sm font-medium text-signal mb-6">Step <%= step %> of <%= total %></p>

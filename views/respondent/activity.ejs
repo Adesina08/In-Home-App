@@ -1,0 +1,87 @@
+<%- include('../partials/header', { title: 'Activity — Inicio Diary', user: null, fieldMode: true, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<%#
+  The respondent's own progress. Deliberately NOT the compliance view a
+  researcher sees: no risk band, no QC flags, no "you are behind" scolding.
+  Someone who feels monitored logs less, and every number here is a fact about
+  their own effort rather than a judgement of it.
+%>
+<div class="max-w-2xl mx-auto pb-28">
+  <div class="flex items-center justify-between gap-3 pt-1 pb-5">
+    <div class="flex items-center gap-2.5">
+      <img src="/public/icons/logo-header.png" alt="" class="h-8 w-auto" />
+      <span class="font-display text-xl font-bold tracking-tight text-slate-900 dark:text-night-ink">Activity</span>
+    </div>
+    <button type="button" data-theme-toggle aria-pressed="false"
+            class="w-10 h-10 rounded-full border border-slate-200 dark:border-night-line flex items-center justify-center text-slate-500 dark:text-night-muted">
+      <%- icon('sun', 'w-5 h-5') %>
+    </button>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 mb-4">
+    <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised p-4">
+      <span class="w-10 h-10 rounded-full bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center mb-3"><%- icon('send', 'w-5 h-5') %></span>
+      <div class="font-mono text-3xl font-semibold text-slate-900 dark:text-night-ink leading-none"><%= totals.submitted %></div>
+      <div class="text-xs text-slate-500 dark:text-night-muted mt-1.5">Entries submitted</div>
+    </div>
+    <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised p-4">
+      <span class="w-10 h-10 rounded-full bg-verified-soft dark:bg-verified/15 text-verified flex items-center justify-center mb-3"><%- icon('flame', 'w-5 h-5') %></span>
+      <div class="font-mono text-3xl font-semibold text-slate-900 dark:text-night-ink leading-none"><%= totals.activeDays %></div>
+      <div class="text-xs text-slate-500 dark:text-night-muted mt-1.5">Days you logged</div>
+    </div>
+  </div>
+
+  <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised p-4 mb-4">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-0.5">Your last 14 days</div>
+    <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Each bar is one day. Taller means more occasions logged.</p>
+    <canvas id="activityChart" height="150"></canvas>
+  </div>
+
+  <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised p-4">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-3">How you log</div>
+    <% const modes = [['standard','Form'],['video','Video'],['audio','Voice note']]; %>
+    <% modes.forEach(([k, label]) => { %>
+      <% const n = totals.byMode[k] || 0; const pct = totals.submitted ? Math.round((n / totals.submitted) * 100) : 0; %>
+      <div class="flex items-center gap-3 mb-2.5 last:mb-0">
+        <span class="w-20 text-sm text-slate-600 dark:text-night-muted shrink-0"><%= label %></span>
+        <span class="flex-1 h-2.5 rounded-full bg-slate-100 dark:bg-night-sunken overflow-hidden">
+          <span class="block h-full rounded-full bg-signal" style="width: <%= pct %>%"></span>
+        </span>
+        <span class="font-mono text-sm text-slate-900 dark:text-night-ink w-10 text-right shrink-0"><%= n %></span>
+      </div>
+    <% }) %>
+  </div>
+</div>
+
+<script src="/public/vendor/chart.umd.js"></script>
+<script>
+  (function () {
+    var el = document.getElementById('activityChart');
+    if (!el || !window.Chart) return;
+    var dark = document.documentElement.classList.contains('dark');
+    new Chart(el, {
+      type: 'bar',
+      data: {
+        labels: <%- JSON.stringify(daily.map(d => d.label)) %>,
+        datasets: [{
+          data: <%- JSON.stringify(daily.map(d => d.count)) %>,
+          backgroundColor: '#1D4ED8',
+          borderRadius: 4,
+          barPercentage: 0.65,
+        }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: dark ? '#94A3B8' : '#64748B', font: { size: 10 } } },
+          // A diary count is a whole number; a "1.5 occasions" gridline is noise.
+          y: { beginAtZero: true, ticks: { precision: 0, color: dark ? '#94A3B8' : '#64748B', font: { size: 10 } },
+               grid: { color: dark ? '#1B3556' : '#E2E8F0' } },
+        },
+      },
+    });
+  })();
+</script>
+
+<%- include('../partials/respondent_tabs', { respondent: respondent, tab: 'activity' }) %>
+<%- include('../partials/footer') %>

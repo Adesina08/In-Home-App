@@ -6,11 +6,8 @@ const { logAudit } = require("../lib/audit");
 const router = express.Router();
 
 router.get("/login", async (req, res) => {
-  if (req.session.respondentAccountId) {
-    const enrolments = await accounts.enrolmentsFor(req.session.respondentAccountId);
-    const target = enrolments.find((r) => ["activated", "active", "screened"].includes(r.activation_status)) || enrolments[0];
-    if (target && target.unique_token) return res.redirect(`/r/${target.unique_token}`);
-  }
+  // Already signed in: go to the studies list, not straight into a diary.
+  if (req.session.respondentAccountId) return res.redirect("/me");
   res.render("mobile/login", {
     error: null,
     username: "",
@@ -37,8 +34,7 @@ router.post("/login", async (req, res) => {
   logAudit(`account:${account.username || account.id}`, "inicio_diary_login", "respondent_accounts", account.id, {});
 
   const enrolments = await accounts.enrolmentsFor(account.id);
-  const target = enrolments.find((r) => ["activated", "active", "screened"].includes(r.activation_status)) || enrolments[0];
-  if (!target || !target.unique_token) {
+  if (!enrolments.length) {
     req.session.respondentAccountId = null;
     return res.status(403).render("mobile/login", {
       error: "Your account is not linked to an active diary yet. Please use your invitation link first.",
@@ -47,7 +43,12 @@ router.post("/login", async (req, res) => {
       user: null,
     });
   }
-  return res.redirect(`/r/${target.unique_token}`);
+
+  // Land on the studies list rather than jumping into whichever diary happened
+  // to sort first. Dropping someone straight into a study is wrong even with
+  // one enrolment -- they have no idea which diary they are in, and on a second
+  // study the app would silently pick for them.
+  return res.redirect("/me");
 });
 
 router.post("/logout", (req, res) => {

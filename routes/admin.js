@@ -160,8 +160,75 @@ router.get("/", async (req, res) => {
     openFlags,
     interviewers,
     riskCounts,
+    // Weekly fieldwork progress and the recent-activity feed the comps show.
+    // Computed here rather than in the view so the dashboard stays a
+    // presentation layer -- and so the same numbers can be reused by the
+    // client dashboard later without being derived twice.
+    weekly: await weeklyProgress(study),
+    recentActivity: await recentActivity(study),
   });
 });
+
+/**
+ * Completion per study week. Weeks come from the study's own dates; a study
+ * without dates gets nothing rather than a guessed calendar, because inventing
+ * a timeline makes an unconfigured study look like a failing one.
+ */
+async function weeklyProgress(study) {
+  if (!study || !study.start_date) return [];
+  const start = new Date(study.start_date);
+  const end = study.end_date ? new Date(study.end_date) : new Date();
+  const weeks = Math.min(8, Math.max(1, Math.ceil((end - start) / (7 * 86400000))));
+  const records = await store.find("diary_records", { study_id: study.id, status: "submitted", is_practice: 0 });
+  const active = await store.count("respondents", { study_id: study.id, activation_status: { $in: ["active", "activated"] } });
+
+  const out = [];
+  for (let w = 0; w < weeks; w++) {
+    const from = new Date(start.getTime() + w * 7 * 86400000);
+    const to = new Date(from.getTime() + 7 * 86400000);
+    const inWeek = records.filter((r) => {
+      const t = new Date(String(r.occurrence_time || r.entry_time || "").replace(" ", "T"));
+      return t >= from && t < to;
+    }).length;
+    // One expected entry per active respondent per day of the week.
+    const target = active * 7;
+    out.push({
+      label: `Week ${w + 1}`,
+      range: `${from.toISOString().slice(5, 10)} – ${new Date(to - 86400000).toISOString().slice(5, 10)}`,
+      pct: target ? Math.min(100, Math.round((inWeek / target) * 100)) : 0,
+      future: from > new Date(),
+    });
+  }
+  return out;
+}
+
+/** The last handful of things that happened, newest first. */
+async function recentActivity(study) {
+  if (!study) return [];
+  const [records, flags] = await Promise.all([
+    store.find("diary_records", { study_id: study.id }, { sort: { entry_time: -1 } }),
+    store.find("qc_flags", {}, { sort: { created_time: -1 } }),
+  ]);
+  const respondents = await store.find("respondents", { study_id: study.id });
+  const byId = new Map(respondents.map((r) => [r.id, r.respondent_code]));
+
+  const items = [];
+  records.slice(0, 6).forEach((r) => items.push({
+    kind: r.status === "draft" ? "draft" : "entry",
+    text: `${byId.get(r.respondent_id) || "A respondent"} ${r.status === "draft" ? "saved a draft" : "submitted an entry"}`,
+    at: r.entry_time || r.occurrence_time,
+  }));
+  flags.filter((f) => byId.has(f.respondent_id) || f.record_id).slice(0, 4).forEach((f) => items.push({
+    kind: "flag",
+    text: `QC flag ${f.status === "open" ? "raised" : f.status} — ${String(f.flag_type || "").replace(/_/g, " ")}`,
+    at: f.created_time,
+  }));
+
+  return items
+    .filter((i) => i.at)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, 6);
+}
 
 // ---------- Studies ----------
 router.get("/studies", async (req, res) => {
@@ -195,8 +262,46 @@ router.get("/studies/:id", async (req, res) => {
   res.render("admin/study_settings", {
     study, tab: "settings",
     CATEGORIES, selectedCategories: parseCategories(study.category),
+    readiness: await pilotReadiness(study),
   });
 });
+
+/**
+ * Pilot readiness. Every item is derived from the database, never ticked by
+ * hand -- a checklist an admin can mark complete without doing the work tells
+ * you nothing on the morning of launch.
+ */
+async function pilotReadiness(study) {
+  const [questions, consent, brands, kpis, respondents] = await Promise.all([
+    store.find("questions", { study_id: study.id, active: 1 }),
+    store.findOne("consent_versions", { study_id: study.id, status: "approved" }),
+    store.count("brands", { study_id: study.id }),
+    // kpi_config, not study_kpis -- the wrong name returns zero silently and
+    // the checklist would report "no KPIs" forever.
+    store.count("kpi_config", { study_id: study.id }),
+    store.count("respondents", { study_id: study.id }),
+  ]);
+  const rules = await store.count("skip_rules", { study_id: study.id });
+
+  const items = [
+    { label: "Study settings configured", done: !!(study.market && study.diary_mode && study.recruitment_mode) },
+    { label: "Questionnaire drafted", done: questions.length > 0, detail: `${questions.length} question${questions.length === 1 ? "" : "s"}` },
+    { label: "Skip logic reviewed", done: rules > 0, detail: rules ? `${rules} rule${rules === 1 ? "" : "s"}` : "none yet", optional: true },
+    { label: "Brands / SKUs configured", done: brands > 0, detail: `${brands}` },
+    { label: "Consent wording approved", done: !!consent },
+    { label: "QC thresholds defined", done: !!(study.back_entry_hours || study.require_photo !== undefined) },
+    { label: "Client KPIs selected", done: kpis > 0, detail: `${kpis}` },
+    { label: "Study dates confirmed", done: !!(study.start_date && study.end_date) },
+    { label: "Questionnaire published", done: !study.has_unpublished_changes && questions.length > 0 },
+    { label: "A respondent has been recruited", done: respondents > 0, detail: `${respondents}` },
+  ];
+  const required = items.filter((i) => !i.optional);
+  return {
+    items,
+    pct: Math.round((required.filter((i) => i.done).length / required.length) * 100),
+    counts: { questions: questions.length, rules, brands, kpis },
+  };
+}
 
 router.post("/studies/:id/settings", async (req, res) => {
   const b = req.body;

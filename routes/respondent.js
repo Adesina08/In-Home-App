@@ -147,7 +147,18 @@ router.post("/:token/lock/auth-verify", async (req, res) => {
 router.post("/:token/lock/exempt", async (req, res) => {
   const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).json({ error: "Invalid link." });
-  await store.update("respondents", { id: respondent.id }, { biometric_exempt: 1 });
+  // Recorded as a dated, reasoned exemption rather than a permanent flag.
+  //
+  // In the Capacitor WebView browserSupportsWebAuthn() returns false, so every
+  // respondent using the Android app was silently and permanently exempted on
+  // first launch -- the device lock was effectively off for all app users, and
+  // nothing said so. Stamping when and why means the exemption can be reviewed,
+  // and re-checked once the app gains a native credential bridge.
+  await store.update("respondents", { id: respondent.id }, {
+    biometric_exempt: 1,
+    biometric_exempt_at: store.nowSql(),
+    biometric_exempt_reason: (req.body && req.body.reason) || "no_platform_authenticator",
+  });
   logAudit(respondent.respondent_code, "biometric_lock_exempted", "respondents", respondent.id, {
     reason: "no platform authenticator available on this device",
   });
@@ -190,6 +201,85 @@ router.use("/:token", async (req, res, next) => {
   if (req.session.bioVerified && req.session.bioVerified[req.params.token]) return next();
   const next_ = encodeURIComponent(req.originalUrl);
   return res.redirect(`/r/${req.params.token}/lock?next=${next_}`);
+});
+
+
+/**
+ * Everything the respondent tab screens need: their entries, with how much
+ * evidence each carries and whether anything on it is still unconfirmed.
+ *
+ * Shared rather than repeated per route -- the three tabs are views of one set
+ * of facts, and computing them separately is how "4 entries" on one tab and
+ * "3 entries" on another creeps in.
+ */
+async function respondentOverview(respondent) {
+  const records = await store.find("diary_records", { respondent_id: respondent.id }, { sort: { entry_time: -1 } });
+  const ids = records.map((r) => r.id);
+  const media = ids.length ? await store.find("media", { record_id: { $in: ids } }) : [];
+  const responses = ids.length ? await store.find("responses", { record_id: { $in: ids } }) : [];
+  const entries = records.map((r) => ({
+    ...r,
+    media_count: media.filter((m) => m.record_id === r.id).length,
+    awaiting_check: responses.some((x) => x.record_id === r.id && x.source === "ai_video" && !x.verified),
+  }));
+
+  const submitted = entries.filter((e) => e.status === "submitted");
+  const dayKey = (e) => String(e.occurrence_time || e.entry_time || "").slice(0, 10);
+  const byMode = {};
+  submitted.forEach((e) => { const k = e.entry_mode || "standard"; byMode[k] = (byMode[k] || 0) + 1; });
+
+  // Fourteen dated buckets, including the empty ones. Charting only the days
+  // with entries would compress gaps and make a patchy fortnight look steady.
+  const daily = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = d.toISOString().slice(0, 10);
+    daily.push({
+      label: String(d.getDate()),
+      count: submitted.filter((e) => dayKey(e) === key).length,
+    });
+  }
+
+  return {
+    entries,
+    totals: {
+      submitted: submitted.length,
+      drafts: entries.filter((e) => e.status === "draft").length,
+      activeDays: new Set(submitted.map(dayKey).filter(Boolean)).size,
+      byMode,
+    },
+    daily,
+  };
+}
+
+router.get("/:token/entries", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid.", user: null });
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const { entries } = await respondentOverview(respondent);
+  res.render("respondent/entries", {
+    respondent, study, entries,
+    filter: req.query.status || "all",
+    signedIn: req.session.respondentAccountId && req.session.respondentAccountId === respondent.account_id,
+  });
+});
+
+router.get("/:token/activity", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid.", user: null });
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const { totals, daily } = await respondentOverview(respondent);
+  res.render("respondent/activity", { respondent, study, totals, daily });
+});
+
+router.get("/:token/profile", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid.", user: null });
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  res.render("respondent/profile", {
+    respondent, study,
+    signedIn: req.session.respondentAccountId && req.session.respondentAccountId === respondent.account_id,
+  });
 });
 
 router.get("/:token", async (req, res) => {

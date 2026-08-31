@@ -1,5 +1,16 @@
 <%- include('../partials/header', { title: "How would you like to take part? — " + study.name, user: null }) %>
 
+<div class="max-w-lg mx-auto px-1">
+  <div class="flex items-center gap-2.5 pt-2 pb-7">
+    <img src="/public/icons/logo-header.png" alt="" class="h-9 w-auto" />
+    <span>
+      <span class="block font-display text-lg font-bold tracking-tight text-slate-900 dark:text-night-ink">Inicio Diary</span>
+      <span class="block text-xs text-signal">Research Operations Portal</span>
+    </span>
+  </div>
+  <%- include('../partials/onboarding_steps', { step: 3, total: 4 }) %>
+</div>
+
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="text-center mb-6">

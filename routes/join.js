@@ -72,7 +72,32 @@ router.use("/:code", async (req, res, next) => {
 
 router.get("/:code", async (req, res) => {
   const consent = await approvedConsent(req.study.id);
-  res.render("join/welcome", { study: req.study, code: req.params.code, hasConsent: !!consent, user: null });
+  // Duration and cadence shown before consent, from the study's own config.
+  // Previously neither appeared anywhere in onboarding, so someone learned on
+  // day three that this runs for weeks -- an avoidable drop-out.
+  const days = req.study.start_date && req.study.end_date
+    ? Math.max(1, Math.round((new Date(req.study.end_date) - new Date(req.study.start_date)) / 86400000))
+    : null;
+  const cadence = {
+    realtime: "Each time you consume something, as it happens",
+    daily: "Once a day",
+    weekly: "Once a week",
+    monthly: "Once a month",
+  }[req.study.diary_mode] || "As it happens";
+
+  res.render("join/welcome", {
+    study: req.study, code: req.params.code, hasConsent: !!consent, user: null,
+    durationLabel: days ? (days >= 14 ? `${Math.round(days / 7)} weeks` : `${days} days`) : "The study period",
+    cadenceLabel: cadence,
+  });
+});
+
+// Declining before consent. Nothing is stored about the person -- there is no
+// respondent row yet, and creating one to record a refusal would collect data
+// from someone who just said no.
+router.get("/:code/decline", (req, res) => {
+  if (req.session.join) delete req.session.join[req.study.id];
+  res.render("join/declined_early", { study: req.study, user: null });
 });
 
 router.get("/:code/consent", async (req, res) => {

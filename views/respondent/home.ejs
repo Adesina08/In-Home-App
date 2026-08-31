@@ -1,42 +1,88 @@
 <%- include('../partials/header', { title: 'My Diary — INICIO', user: null, fieldMode: true, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
 
 <div class="max-w-2xl mx-auto pb-28">
-  <%# Field screens pass user: null, so the staff header never renders and the
-      respondent saw no branding at all. A diary someone opens daily for three
-      weeks should be recognisably from somewhere. %>
-  <div class="flex items-center justify-between gap-3 pt-1 pb-4">
-    <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-7 w-auto" />
-    <div class="flex items-center gap-3 shrink-0">
-      <% if (typeof signedIn !== 'undefined' && signedIn) { %>
-        <a href="/me" class="inline-flex items-center gap-1 text-xs font-medium text-slate-500"><%- icon('clipboard', 'w-4 h-4') %> My studies</a>
+  <%# Masthead: wordmark, and the notification bell from the comps. The dot is
+      shown only when something actually needs attention -- a permanently lit
+      badge teaches people to ignore it. %>
+  <div class="flex items-center justify-between gap-3 pt-1 pb-5">
+    <div class="flex items-center gap-2.5">
+      <img src="/public/icons/logo-header.png" alt="" class="h-8 w-auto" />
+      <span class="font-display text-xl font-bold tracking-tight text-slate-900 dark:text-night-ink">Inicio Diary</span>
+    </div>
+    <a href="/r/<%= respondent.unique_token %>/help" aria-label="Help and notifications"
+       class="relative w-10 h-10 rounded-full border border-slate-200 dark:border-night-line flex items-center justify-center text-slate-500 dark:text-night-muted">
+      <%- icon('bell', 'w-5 h-5') %>
+      <% if (!loggedToday) { %>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-signal-bright"></span>
       <% } %>
-      <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-500"><%- icon('help', 'w-4 h-4') %> Help</a>
-    </div>
+    </a>
   </div>
 
-  <div class="flex items-start justify-between gap-3 mb-1">
-    <div>
-      <div class="font-mono text-[11px] uppercase tracking-[0.09em] text-slate-500"><%= study.name %></div>
-      <div class="font-mono text-sm text-slate-500 mt-0.5">
-        <%= respondent.respondent_code %>
-      </div>
-    </div>
-  </div>
+  <h1 class="font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-night-ink">
+    Hi <%= (respondent.name || '').split(' ')[0] || 'there' %> 👋
+  </h1>
+  <p class="text-sm text-slate-500 dark:text-night-muted mt-1 mb-5">Thanks for being part of this study.</p>
 
-  <div>
-    <%# The single compliance signal. Stat cards ("3 submitted, 1 draft") are
-        operations language on a screen belonging to someone who only wants to
-        know whether they are up to date. %>
-    <% if (respondent.consent_status === 'given') { %>
-      <div class="rounded-2xl px-4 py-4 mt-3 mb-6 border-2 <%= loggedToday ? 'border-verified/30 bg-verified-soft' : 'border-signal bg-signal-soft' %>">
-        <div class="font-display font-bold text-lg leading-tight <%= loggedToday ? 'text-verified' : 'text-signal-deep' %>">
-          <%= loggedToday ? "You're up to date today" : 'Nothing logged today' %>
-        </div>
-        <div class="text-sm mt-0.5 <%= loggedToday ? 'text-verified' : 'text-signal-deep/80' %>">
-          <%= loggedToday ? 'Log again any time you consume something else.' : 'Log an occasion when you next consume something.' %>
-        </div>
-      </div>
+  <%# Study selector. Rendered as a live control only when the respondent is
+      actually on more than one study; otherwise it is a label, because a
+      dropdown with one option invites a tap that does nothing. %>
+  <a href="<%= (typeof signedIn !== 'undefined' && signedIn) ? '/me' : '#' %>"
+     class="flex items-center gap-3 rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised px-4 py-3.5 mb-5">
+    <span class="w-10 h-10 rounded-xl bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center shrink-0"><%- icon('clipboard', 'w-5 h-5') %></span>
+    <span class="min-w-0 flex-1">
+      <span class="block font-semibold text-slate-900 dark:text-night-ink truncate"><%= study.name %></span>
+      <span class="block text-xs text-signal">Study selected</span>
+    </span>
+    <% if (typeof signedIn !== 'undefined' && signedIn) { %>
+      <span class="text-slate-400 shrink-0"><%- icon('chevron-down', 'w-5 h-5') %></span>
     <% } %>
+  </a>
+
+  <%# Today's diary: the hero. Everything above is orientation; this is the
+      only thing on the screen the respondent came to do. %>
+  <div class="rounded-2xl bg-signal dark:bg-signal-deep text-white p-5 mb-4 relative overflow-hidden">
+    <div class="absolute -right-10 -bottom-16 w-56 h-56 rounded-full border-[24px] border-white/[0.06]"></div>
+    <div class="relative">
+      <span class="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center mb-3"><%- icon('calendar', 'w-5 h-5') %></span>
+      <div class="font-display text-2xl font-bold tracking-tight">Today’s diary</div>
+      <p class="text-white/80 text-sm mt-1 mb-4">
+        <%= loggedToday ? 'You’re up to date. Log again any time.' : 'Log everything you consume today.' %>
+      </p>
+      <a href="/r/<%= respondent.unique_token %>/diary/new"
+         class="flex items-center justify-between gap-2 w-full h-14 rounded-2xl bg-white text-signal-deep px-5 font-semibold text-base">
+        Log consumption <%- icon('arrow-right', 'w-5 h-5') %>
+      </a>
+      <div class="grid grid-cols-2 gap-4 mt-5 pt-4 border-t border-white/15">
+        <div class="flex items-center gap-3">
+          <span class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center shrink-0"><%- icon('send', 'w-4 h-4') %></span>
+          <span>
+            <span class="block font-mono text-2xl font-semibold leading-none"><%= stubs.filter(s => s.status === 'submitted').length %></span>
+            <span class="block text-xs text-white/80 mt-1">Submitted entries</span>
+          </span>
+        </div>
+        <div class="flex items-center gap-3 pl-4 border-l border-white/15">
+          <span class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center shrink-0"><%- icon('clipboard', 'w-4 h-4') %></span>
+          <span>
+            <span class="block font-mono text-2xl font-semibold leading-none"><%= stubs.filter(s => s.status === 'draft').length %></span>
+            <span class="block text-xs text-white/80 mt-1">Drafts</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <a href="/r/<%= respondent.unique_token %>/help"
+     class="flex items-center gap-3.5 rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised px-4 py-4 mb-6">
+    <span class="w-11 h-11 rounded-full border border-slate-200 dark:border-night-line text-signal flex items-center justify-center shrink-0"><%- icon('book', 'w-5 h-5') %></span>
+    <span class="min-w-0 flex-1">
+      <span class="block font-semibold text-slate-900 dark:text-night-ink">Study guide</span>
+      <span class="block text-sm text-slate-500 dark:text-night-muted leading-snug">Learn how to record entries accurately and help us with quality data.</span>
+    </span>
+    <span class="text-slate-400 shrink-0"><%- icon('chevron-right', 'w-5 h-5') %></span>
+  </a>
+
+    <%# The old due-state card lived here. It said the same thing as the hero
+        above and produced two competing calls to action on one screen. %>
 
     <% if (typeof saved !== 'undefined') { %>
       <% if (saved === 'screened_out') { %>
@@ -110,9 +156,43 @@
   <script src="/public/js/push-subscribe.js"></script>
   <% } %>
 
+  <%# Recent activity. A timeline rather than a table: this is a record of what
+      the respondent did, and the vertical rule connecting the dots is what
+      makes it read as a sequence rather than a list of rows. %>
   <div class="flex items-baseline justify-between mb-2.5">
-    <div class="font-mono text-[11px] uppercase tracking-[0.09em] text-slate-500">Your occasions</div>
-    <div class="font-mono text-lg font-semibold text-slate-900"><%= stubs.filter(s => s.status === 'submitted').length %></div>
+    <h2 class="font-display text-lg font-bold tracking-tight text-slate-900 dark:text-night-ink">Recent activity</h2>
+    <a href="/r/<%= respondent.unique_token %>/entries" class="text-sm font-medium text-signal">View all</a>
+  </div>
+  <% const recent = stubs.slice(0, 3); %>
+  <% if (recent.length) { %>
+    <div class="mb-7">
+      <% recent.forEach((r, i) => { %>
+        <div class="relative flex items-center gap-3.5 py-3 <%= i < recent.length - 1 ? 'border-b border-slate-100 dark:border-night-line' : '' %>">
+          <% if (i < recent.length - 1) { %>
+            <span class="absolute left-[19px] top-[46px] bottom-0 w-px bg-slate-200 dark:bg-night-line"></span>
+          <% } %>
+          <span class="w-10 h-10 rounded-full flex items-center justify-center shrink-0
+            <%= r.status === 'draft' ? 'bg-signal-soft dark:bg-signal/15 text-signal' : 'bg-verified-soft dark:bg-verified/15 text-verified' %>">
+            <%- icon(r.status === 'draft' ? 'pencil' : 'check-circle', 'w-5 h-5') %>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-semibold text-slate-900 dark:text-night-ink"><%= r.status === 'draft' ? 'Draft saved' : 'Diary submitted' %></span>
+            <span class="block text-sm text-slate-500 dark:text-night-muted"><%= String(r.occurrence_time || r.entry_time || '').replace('T',' ').slice(0,16) || '—' %></span>
+          </span>
+          <span class="text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0
+            <%= r.status === 'draft' ? 'bg-signal-soft dark:bg-signal/15 text-signal' : 'bg-verified-soft dark:bg-verified/15 text-verified' %>">
+            <%= r.status === 'draft' ? 'Draft' : 'Submitted' %>
+          </span>
+          <span class="text-slate-300 dark:text-night-muted shrink-0"><%- icon('chevron-right', 'w-5 h-5') %></span>
+        </div>
+      <% }) %>
+      <p class="text-xs text-slate-400 dark:text-night-muted mt-2">All times in your local time</p>
+    </div>
+  <% } %>
+
+  <div class="flex items-baseline justify-between mb-2.5">
+    <div class="font-mono text-[11px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted">Your occasions</div>
+    <div class="font-mono text-lg font-semibold text-slate-900 dark:text-night-ink"><%= stubs.filter(s => s.status === 'submitted').length %></div>
   </div>
 
   <%# The stub. A consumption diary is a collection of receipts for moments,
@@ -122,14 +202,14 @@
     <div class="grid grid-cols-2 gap-2.5">
       <% const stubIcon = { standard: 'clipboard', video: 'video', audio: 'mic' }; %>
       <% stubs.forEach(r => { %>
-        <div class="relative bg-white rounded-xl overflow-hidden border <%= r.status === 'draft' ? 'border-dashed border-slate-300 bg-slate-50/60' : (r.awaiting_check ? 'border-unverified/40' : 'border-slate-200') %>">
+        <div class="relative bg-white dark:bg-night-raised rounded-xl overflow-hidden border <%= r.status === 'draft' ? 'border-dashed border-slate-300 dark:border-night-line bg-slate-50/60 dark:bg-night-sunken' : (r.awaiting_check ? 'border-unverified/40' : 'border-slate-200 dark:border-night-line') %>">
           <% if (r.awaiting_check) { %><span class="absolute left-0 top-0 bottom-0 w-[3px] bg-unverified"></span><% } %>
-          <div class="h-14 flex items-center justify-center text-slate-500 <%= r.status === 'draft' ? 'bg-slate-100' : 'bg-gradient-to-br from-slate-200 to-slate-300' %>">
+          <div class="h-14 flex items-center justify-center text-slate-500 <%= r.status === 'draft' ? 'bg-slate-100 dark:bg-night-sunken' : 'bg-gradient-to-br from-slate-200 to-slate-300 dark:from-night-sunken dark:to-night-line' %>">
             <%- icon(stubIcon[r.entry_mode] || 'clipboard', 'w-5 h-5') %>
           </div>
           <div class="px-2.5 pt-1.5 pb-3.5">
-            <div class="font-mono text-[13px] font-semibold text-slate-900"><%= String(r.occurrence_time || r.entry_time || '').slice(11, 16) || '—' %></div>
-            <div class="text-[11px] text-slate-500 leading-tight mt-0.5">
+            <div class="font-mono text-[13px] font-semibold text-slate-900 dark:text-night-ink"><%= String(r.occurrence_time || r.entry_time || '').slice(11, 16) || '—' %></div>
+            <div class="text-[11px] text-slate-500 dark:text-night-muted leading-tight mt-0.5">
               <% if (r.status === 'draft') { %>Not finished<% } else if (r.awaiting_check) { %>Being checked<% } else if (r.status === 'screened_out') { %>Ended early<% } else { %><%= String(r.occurrence_time || '').slice(0, 10) %><% } %>
               <% if (r.is_practice) { %> · practice<% } %>
             </div>
@@ -141,22 +221,12 @@
     </div>
   <% } else { %>
     <%# An empty screen is an invitation to act, not a shrug. %>
-    <div class="rounded-2xl border border-dashed border-slate-300 px-5 py-10 text-center">
-      <div class="font-display font-bold text-slate-800">Nothing logged yet</div>
-      <div class="text-sm text-slate-500 mt-1">Your occasions will appear here as you log them.</div>
+    <div class="rounded-2xl border border-dashed border-slate-300 dark:border-night-line px-5 py-10 text-center">
+      <div class="font-display font-bold text-slate-800 dark:text-night-ink">Nothing logged yet</div>
+      <div class="text-sm text-slate-500 dark:text-night-muted mt-1">Your occasions will appear here as you log them.</div>
     </div>
   <% } %>
 
-  <%# Thumb-zone action. Fixed, full width, 56px -- the one thing this screen
-      exists to make easy. %>
-  <div class="fixed left-0 right-0 bottom-0 px-4 pb-5 pt-6 pointer-events-none"
-       style="background:linear-gradient(to top,#FAF9F7 72%,rgba(250,249,247,0))">
-    <div class="max-w-2xl mx-auto pointer-events-auto">
-      <a href="/r/<%= respondent.unique_token %>/diary/new"
-         class="flex items-center justify-center gap-2 w-full h-14 rounded-2xl bg-signal text-white font-semibold text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal-deep">
-        Log an occasion <%- icon('arrow-right', 'w-5 h-5') %>
-      </a>
-    </div>
-  </div>
 </div>
+<%- include('../partials/respondent_tabs', { respondent: respondent, tab: 'home' }) %>
 <%- include('../partials/footer') %>

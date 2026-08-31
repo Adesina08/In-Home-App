@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-default-theme="<%= typeof fieldMode !== 'undefined' && fieldMode ? 'dark' : 'light' %>">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -27,10 +27,30 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    // Applied before first paint, deliberately inline and render-blocking.
+    // Loading this with the rest of the JS produces a white flash on a dark
+    // screen every single time -- which on a diary opened daily for three
+    // weeks is the most-seen bug in the product.
+    (function () {
+      try {
+        var saved = localStorage.getItem('inicio-theme');
+        var wantsDark = saved
+          ? saved === 'dark'
+          : (document.documentElement.dataset.defaultTheme === 'dark');
+        if (wantsDark) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    })();
+  </script>
   <style>
     /* display=swap so a slow connection shows Segoe UI immediately rather than
        invisible text -- these screens are used on mobile data in the field. */
-    body[data-field="1"] { background: #FAF9F7; }
+    /* Theme-aware, not a fixed colour. Hardcoding the paper background here is
+       what made the dark theme apply to every element EXCEPT the page itself --
+       white text on a white page. */
+    body[data-field="1"] { background: #FAF9F7; color: #0F172A; }
+    html.dark body[data-field="1"] { background: #0A1628; color: #F8FAFC; }
+    html.dark body { background: #0A1628; color: #F8FAFC; }
     body { font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; }
     .badge-green { background:#E6F4EA; color:#1E7E34; }
     .badge-amber { background:#FFF4E5; color:#B8860B; }

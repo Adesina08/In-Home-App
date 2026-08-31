@@ -224,4 +224,44 @@
 
 <%- include('../partials/study_nav', { study, tab }) %>
 
+
+<%# ---- Pilot readiness (approved comps) ---- %>
+<div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5 mt-5">
+  <div class="flex items-center justify-between gap-3 mb-1">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink">Pilot Readiness Checklist</div>
+    <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-signal-soft dark:bg-signal/15 text-signal"><%= readiness.pct %>% complete</span>
+  </div>
+  <%# Every item is derived from the database. A checklist an admin can tick
+      without doing the work tells you nothing on the morning of launch. %>
+  <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Ticks are worked out from your setup &mdash; nothing here is marked by hand.</p>
+  <div class="h-2 rounded-full bg-slate-100 dark:bg-night-sunken overflow-hidden mb-5">
+    <div class="h-full rounded-full bg-signal" style="width: <%= readiness.pct %>%"></div>
+  </div>
+  <% readiness.items.forEach(function (i) { %>
+    <div class="flex items-center gap-3 py-2 border-b border-slate-100 dark:border-night-line last:border-0">
+      <span class="shrink-0 <%= i.done ? 'text-verified' : 'text-slate-300 dark:text-night-muted' %>">
+        <%- icon(i.done ? 'check-circle' : 'circle', 'w-5 h-5') %>
+      </span>
+      <span class="flex-1 text-sm <%= i.done ? 'text-slate-700 dark:text-night-ink' : 'text-slate-500 dark:text-night-muted' %>">
+        <%= i.label %><% if (i.optional) { %> <span class="text-[11px] text-slate-400">optional</span><% } %>
+      </span>
+      <% if (i.detail) { %><span class="font-mono text-xs text-slate-400 dark:text-night-muted shrink-0"><%= i.detail %></span><% } %>
+    </div>
+  <% }) %>
+</div>
+
+<div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5 mt-5">
+  <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-1">Configuration Overview</div>
+  <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Questionnaire and skip logic at a glance.</p>
+  <div class="grid grid-cols-4 gap-3 text-center">
+    <% var ov = [['Questions', readiness.counts.questions], ['Rules', readiness.counts.rules], ['Brands', readiness.counts.brands], ['KPIs', readiness.counts.kpis]]; %>
+    <% ov.forEach(function (o) { %>
+      <div class="rounded-xl border border-slate-200 dark:border-night-line py-3">
+        <div class="font-mono text-2xl font-semibold text-slate-900 dark:text-night-ink leading-none"><%= o[1] %></div>
+        <div class="text-[11px] text-slate-500 dark:text-night-muted mt-1.5"><%= o[0] %></div>
+      </div>
+    <% }) %>
+  </div>
+</div>
+
 <%- include('../partials/footer') %>
