@@ -8,6 +8,7 @@ const { logAudit } = require("../lib/audit");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
+const closeOut = require("../lib/closeOutQuestionnaire");
 const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
 const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
 const { persistUpload } = require("../lib/mediaStorage");
@@ -214,13 +215,26 @@ router.use("/:token", async (req, res, next) => {
   if (respondent.activation_status === "registered") {
     return res.render("respondent/pending_activation", { respondent });
   }
-  if (respondent.biometric_exempt) return next();
-  // Same skip as the /lock gate. Without it the two bounce off each other --
-  // the gate sends the app to the diary, this sends it back to the gate.
-  if (req.session.isNativeApp) return next();
-  if (req.session.bioVerified && req.session.bioVerified[req.params.token]) return next();
-  const next_ = encodeURIComponent(req.originalUrl);
-  return res.redirect(`/r/${req.params.token}/lock?next=${next_}`);
+  const pastLockGate =
+    respondent.biometric_exempt ||
+    req.session.isNativeApp ||
+    (req.session.bioVerified && req.session.bioVerified[req.params.token]);
+  if (!pastLockGate) {
+    // Checked before end-of-diary validation deliberately: the close-out form
+    // is still respondent data behind the same device lock as everything
+    // else, so a lost or shared phone can't be used to complete it either.
+    const next_ = encodeURIComponent(req.originalUrl);
+    return res.redirect(`/r/${req.params.token}/lock?next=${next_}`);
+  }
+  // End-of-diary validation. Set to "pending" either automatically (the
+  // study's end_date has passed) or by an admin from the respondent's page.
+  // Everything routes to the close-out form until it is answered; the diary
+  // is genuinely "locked for new entries" as the spec puts it, not just
+  // nudged towards it.
+  if (respondent.end_validation_status === "pending" && !req.path.startsWith("/close-out")) {
+    return res.redirect(`/r/${req.params.token}/close-out`);
+  }
+  next();
 });
 
 
@@ -300,6 +314,50 @@ router.get("/:token/profile", async (req, res) => {
     respondent, study,
     signedIn: req.session.respondentAccountId && req.session.respondentAccountId === respondent.account_id,
   });
+});
+
+// End-of-diary validation. Fixed set of questions (lib/closeOutQuestionnaire),
+// not the dynamic engine -- see that file for why. This screen is reachable
+// exactly when the respondent is gated to it above, and stays reachable
+// afterwards too (harmless to revisit; the form simply shows as completed).
+router.get("/:token/close-out", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid.", user: null });
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const existing = respondent.end_validation_status === "completed"
+    ? await store.findOne("end_validations", { respondent_id: respondent.id }, { sort: { id: -1 } })
+    : null;
+  res.render("respondent/close_out", {
+    respondent, study, questions: closeOut.QUESTIONS, existing, errors: {}, values: existing ? existing.answers : {},
+  });
+});
+
+router.post("/:token/close-out", async (req, res) => {
+  const respondent = await getRespondentByToken(req.params.token);
+  if (!respondent) return res.status(404).render("error", { message: "This link is not valid.", user: null });
+  const study = await store.findOne("studies", { id: respondent.study_id });
+
+  const answers = {};
+  for (const q of closeOut.QUESTIONS) answers[q.code] = (req.body[q.code] || "").trim();
+  const errors = closeOut.validate(answers);
+  if (Object.keys(errors).length) {
+    return res.status(400).render("respondent/close_out", {
+      respondent, study, questions: closeOut.QUESTIONS, existing: null, errors, values: answers,
+    });
+  }
+
+  await store.insert("end_validations", {
+    respondent_id: respondent.id,
+    study_id: study.id,
+    answers,
+    completed_at: store.nowSql(),
+  });
+  await store.update("respondents", { id: respondent.id }, { end_validation_status: "completed" });
+  logAudit(respondent.respondent_code, "end_validation_completed", "respondents", respondent.id, {
+    missed_occasions: answers.missed_occasions,
+  });
+
+  res.render("respondent/close_out_done", { respondent, study });
 });
 
 router.get("/:token", async (req, res) => {

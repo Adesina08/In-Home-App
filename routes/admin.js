@@ -6,7 +6,7 @@ const path = require("path");
 const store = require("../lib/store");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
-const { classifyRisk, unresolvedBlockingFlags } = require("../lib/qc");
+const { classifyRisk, unresolvedBlockingFlags, computeQualityScore, BAND_LABELS, exceptionFollowUpQueue } = require("../lib/qc");
 const { runReminderEngine } = require("../lib/reminders");
 const { parseUpload, parseConditionText } = require("../lib/questionnaireParser");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
@@ -21,7 +21,7 @@ const { nextRespondentCode } = require("../lib/respondentCode");
 const messaging = require("../lib/whatsapp");
 const kpiEngine = require("../lib/kpi");
 const { v4: uuidv4 } = require("uuid");
-const { loadQuestionnaire } = require("../lib/questionnaire");
+const { loadQuestionnaire, CADENCES } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 
 const router = express.Router();
@@ -504,6 +504,16 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     min_value: b.min_value !== undefined ? (b.min_value === "" || b.min_value === null ? null : parseFloat(b.min_value)) : q.min_value,
     max_value: b.max_value !== undefined ? (b.max_value === "" || b.max_value === null ? null : parseFloat(b.max_value)) : q.max_value,
     section: b.section !== undefined ? (String(b.section).trim() || null) : q.section,
+    // Stored as a JSON array; an empty array is stored as null so it reads the
+    // same as "never configured" -- both mean "every cadence" (lib/questionnaire.js).
+    applicable_cadences:
+      b.applicable_cadences !== undefined
+        ? (() => {
+            const cleaned = (Array.isArray(b.applicable_cadences) ? b.applicable_cadences : [])
+              .filter((c) => CADENCES.includes(c));
+            return cleaned.length ? JSON.stringify(cleaned) : null;
+          })()
+        : q.applicable_cadences,
   };
   await store.update("questions", { id: q.id }, {
     code: next.code,
@@ -514,6 +524,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     min_value: next.min_value,
     max_value: next.max_value,
     section: next.section,
+    applicable_cadences: next.applicable_cadences,
   });
   logAudit(req.session.user.email, "update_question_inline", "questions", q.id, b);
   res.json(await store.findOne("questions", { id: q.id }));
@@ -626,6 +637,8 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);
+    const orig = originalRows[i];
+    const cadences = Array.isArray(orig && orig.applicable_cadences) ? orig.applicable_cadences : [];
     const { id } = await store.insert("questions", {
       study_id: study.id,
       order_index: maxOrder + inserted + 1,
@@ -637,9 +650,9 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
       min_value: r.min !== undefined && r.min !== "" ? parseFloat(r.min) : null,
       max_value: r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null,
       section: r.section && r.section.trim() ? r.section.trim() : null,
+      applicable_cadences: cadences.length ? JSON.stringify(cadences) : null,
     });
     inserted++;
-    const orig = originalRows[i];
     if (orig && orig.row !== undefined) questionIdByTemplateRow.set(orig.row, id);
   }
 
@@ -1052,6 +1065,34 @@ router.get("/qc", async (req, res) => {
   res.render("admin/qc_worklist", { study, studies, flags, statusFilter });
 });
 
+router.get("/qc/follow-up", async (req, res) => {
+  const { study, studies } = await getStudyOrFirst(req);
+  if (!study) return res.redirect("/admin/studies");
+  const queue = await exceptionFollowUpQueue(study.id);
+  res.render("admin/qc_followup", { study, studies, queue });
+});
+
+// Logging a call does NOT resolve the flags that put the respondent in the
+// queue -- that stays a QC decision made on the flag itself, from the QC
+// Worklist or here via the flag's own action. This only records that contact
+// happened and what was found, which is what keeps the same person from
+// being called twice in one day.
+router.post("/studies/:id/respondents/:respondentId/follow-up", async (req, res) => {
+  const respondent = await store.findOne("respondents", { id: toId(req.params.respondentId), study_id: toId(req.params.id) });
+  if (!respondent) return res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
+  const { outcome, notes } = req.body;
+  await store.insert("follow_up_log", {
+    respondent_id: respondent.id,
+    study_id: respondent.study_id,
+    staff_email: req.session.user.email,
+    outcome: outcome || "could_not_reach",
+    notes: (notes || "").trim() || null,
+    created_at: store.nowSql(),
+  });
+  logAudit(req.session.user.email, "exception_follow_up_logged", "respondents", respondent.id, { outcome });
+  res.redirect(req.get("Referrer") || "/admin/qc/follow-up");
+});
+
 router.post("/qc/:id/action", async (req, res) => {
   const { status, action_note } = req.body;
   const patch = { status, reviewer: req.session.user.name, action_note };
@@ -1197,6 +1238,19 @@ async function loadRespondentOr404(req, res) {
   return respondent;
 }
 
+// Manual send, for a study with no end_date (or before it's reached) --
+// e.g. someone completed their assigned diary period early. Idempotent: only
+// moves respondents who haven't already been sent or completed one.
+router.post("/studies/:id/respondents/:respondentId/send-end-validation", async (req, res) => {
+  const respondent = await store.findOne("respondents", { id: toId(req.params.respondentId), study_id: toId(req.params.id) });
+  if (!respondent) return res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
+  if (!respondent.end_validation_status) {
+    await store.update("respondents", { id: respondent.id }, { end_validation_status: "pending" });
+    logAudit(req.session.user.email, "send_end_validation", "respondents", respondent.id, {});
+  }
+  res.redirect(`/admin/studies/${req.params.id}/respondents/${req.params.respondentId}`);
+});
+
 router.get("/studies/:id/respondents/:respondentId", async (req, res) => {
   const study = await store.findOne("studies", { id: toId(req.params.id) });
   const respondent = await loadRespondentOr404(req, res);
@@ -1255,6 +1309,7 @@ router.get("/studies/:id/respondents/:respondentId", async (req, res) => {
     !account && respondent.contact ? await accounts.findByContact(respondent.contact) : null;
 
   const risk = await classifyRisk(respondent.id);
+  const quality = await computeQualityScore(respondent.id);
 
   res.render("admin/respondent_detail", {
     study,
@@ -1268,6 +1323,8 @@ router.get("/studies/:id/respondents/:respondentId", async (req, res) => {
     linkCandidate,
     accountsAllowed: accounts.accountsAllowedFor(study),
     linked: req.query.linked,
+    quality,
+    BAND_LABELS,
     linkError: req.query.linkError,
     risk,
     respondentLink: respondentDiaryUrl(req, respondent.unique_token),

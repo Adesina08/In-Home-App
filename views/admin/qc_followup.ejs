@@ -1,0 +1,75 @@
+<%- include('../partials/header', { title: 'Exception Follow-up — INICIO', user }) %>
+
+<%#
+  Spec 10.5 step 4: "Exception-based telephonic follow-up: project teams call
+  only respondents with persistent late, incomplete, inconsistent or unclear
+  diaries." Deliberately smaller and slower-moving than the general QC
+  Worklist -- this is the short list someone actually needs to phone, not
+  every open flag.
+%>
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Quality Control</div>
+    <h1 class="text-2xl font-bold text-slate-900">Exception Follow-up</h1>
+    <p class="text-slate-500 text-sm mt-1">Respondents whose late, incomplete, inconsistent or unclear diaries have gone unresolved for 48+ hours.</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <select onchange="window.location='/admin/qc/follow-up?study='+this.value" class="border border-slate-300 rounded-xl px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-400">
+      <% studies.forEach(s => { %><option value="<%= s.id %>" <%= s.id===study.id?'selected':'' %>><%= s.name %></option><% }) %>
+    </select>
+    <a href="/admin/qc?study=<%= study.id %>" class="text-sm font-medium text-brand-600 hover:underline">Full QC worklist &rarr;</a>
+  </div>
+</div>
+
+<% if (!queue.length) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-10 text-center">
+    <div class="font-semibold text-slate-700">Nothing needs a call right now</div>
+    <p class="text-sm text-slate-500 mt-1">Either every flag is fresh enough for a digital reminder to still work, or there's nothing open.</p>
+  </div>
+<% } %>
+
+<div class="space-y-3">
+  <% queue.forEach(item => { %>
+    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div>
+          <a href="/admin/studies/<%= study.id %>/respondents/<%= item.respondent.id %>" class="font-semibold text-brand-700 hover:underline"><%= item.respondent.respondent_code %></a>
+          <span class="text-slate-400 text-sm ml-1"><%= item.respondent.name || '' %></span>
+          <div class="text-xs text-slate-400 mt-0.5"><%= item.respondent.contact || 'No contact on file' %></div>
+        </div>
+        <div class="text-right">
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700">Oldest flag: <%= item.oldestFlagHours %>h</span>
+          <% if (item.quality) { %>
+            <div class="text-xs text-slate-500 mt-1">Quality score <span class="font-mono font-semibold text-slate-800"><%= item.quality.score %></span> &middot; <%= item.quality.band.replace('_', ' ') %></div>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-1.5 mb-3">
+        <% item.flags.forEach(f => { %>
+          <span class="text-[11px] font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-600"><%= f.flag_type.replace(/_/g, ' ') %></span>
+        <% }) %>
+      </div>
+
+      <% if (item.lastContact) { %>
+        <div class="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3">
+          Last contact: <%= item.lastContact.outcome.replace(/_/g, ' ') %> by <%= item.lastContact.staff_email %>
+          on <%= String(item.lastContact.created_at).slice(0, 16) %><% if (item.lastContact.notes) { %> &mdash; "<%= item.lastContact.notes %>"<% } %>
+        </div>
+      <% } %>
+
+      <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= item.respondent.id %>/follow-up" class="flex flex-wrap items-end gap-2">
+        <select name="outcome" class="border border-slate-300 rounded-lg px-2.5 py-2 text-xs bg-white">
+          <option value="reached_resolved">Reached &mdash; resolved</option>
+          <option value="reached_unresolved">Reached &mdash; still unresolved</option>
+          <option value="could_not_reach" selected>Could not reach</option>
+          <option value="escalated">Escalated</option>
+        </select>
+        <input name="notes" placeholder="What happened (optional)" class="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-2.5 py-2 text-xs" />
+        <button class="bg-brand-700 text-white rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition">Log call</button>
+      </form>
+    </div>
+  <% }) %>
+</div>
+
+<%- include('../partials/footer') %>

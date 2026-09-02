@@ -16,10 +16,27 @@
         <span class="font-mono text-xs text-slate-500"><%= respondent.respondent_code %></span>
         <% if (respondent.is_practice) { %><span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Practice</span><% } %>
         <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full <%= risk==='red'?'badge-red':risk==='amber'?'badge-amber':'badge-green' %>"><%= risk %></span>
+        <%# The colour badge above is kept for anyone used to reading it at a
+            glance; this is the actual number and band behind it. %>
+        <% if (quality) { %>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-full px-2.5 py-0.5" title="Compliance <%= quality.breakdown.complianceScore %> / Flags <%= quality.breakdown.flagScore %> / Follow-through <%= quality.breakdown.followThroughScore %> / Media <%= quality.breakdown.mediaScore %>">
+            <span class="font-mono font-semibold text-slate-800"><%= quality.score %></span>
+            <%= BAND_LABELS[quality.band] %>
+          </span>
+        <% } %>
       </div>
       <div class="text-sm text-slate-500">Registered <%= respondent.created_at %><% if (interviewer) { %> by <%= interviewer.name %><% } %></div>
     </div>
     <div class="flex flex-wrap gap-2">
+      <% if (respondent.end_validation_status === 'completed') { %>
+        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-verified-soft text-verified"><%- icon('check-circle', 'w-4 h-4') %> Close-out complete</span>
+      <% } else if (respondent.end_validation_status === 'pending') { %>
+        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-unverified-soft text-unverified"><%- icon('warning', 'w-4 h-4') %> Close-out sent, awaiting response</span>
+      <% } else if (['active', 'activated'].includes(respondent.activation_status)) { %>
+        <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/send-end-validation">
+          <button class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-slate-50 transition">Send end-of-diary validation</button>
+        </form>
+      <% } %>
       <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/export.csv"
          class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
         <%- icon('download', 'w-3.5 h-3.5') %> Export answers

@@ -1,0 +1,59 @@
+<%- include('../partials/header', { title: 'Before we finish — Inicio Diary', user: null, fieldMode: true }) %>
+
+<%#
+  End-of-diary validation (spec section 4.3 / 6.2). A short, fixed set of
+  questions -- see lib/closeOutQuestionnaire.js for why it isn't the dynamic
+  engine. Reached only once a respondent is gated here (routes/respondent.js);
+  nothing else in the diary is reachable until this is answered.
+%>
+<div class="max-w-lg mx-auto pb-10">
+  <div class="text-center pt-4 pb-7">
+    <span class="w-14 h-14 rounded-full bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center mx-auto mb-4"><%- icon('clipboard', 'w-6 h-6') %></span>
+    <h1 class="font-display text-2xl font-bold tracking-tight text-slate-900 dark:text-night-ink">Before we finish</h1>
+    <p class="text-sm text-slate-500 dark:text-night-muted mt-2 leading-relaxed">
+      Thanks for taking part in <%= study.name %>. A few quick questions to close out your diary
+      &mdash; this takes about a minute.
+    </p>
+  </div>
+
+  <% if (existing) { %>
+    <div class="rounded-2xl border border-verified/30 bg-verified-soft dark:bg-verified/10 p-4 mb-6 text-sm text-verified">
+      You already completed this on <%= String(existing.completed_at || '').slice(0, 16) %>. You can look back at what you answered below.
+    </div>
+  <% } %>
+
+  <form method="POST" action="/r/<%= respondent.unique_token %>/close-out" class="space-y-6">
+    <% questions.forEach(function (q) { %>
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 dark:text-night-ink mb-2">
+          <%= q.text %><% if (q.required) { %> <span class="text-red-500">*</span><% } %>
+        </label>
+
+        <% if (q.type === 'single') { %>
+          <div class="space-y-2">
+            <% q.options.forEach(function (opt) { %>
+              <label class="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-night-line px-3.5 py-3 cursor-pointer <%= values[q.code] === opt ? 'border-signal bg-signal-soft dark:bg-signal/10' : '' %>">
+                <input type="radio" name="<%= q.code %>" value="<%= opt %>" <%= values[q.code] === opt ? 'checked' : '' %> <%= existing ? 'disabled' : '' %> class="accent-signal" />
+                <span class="text-sm text-slate-700 dark:text-night-ink"><%= opt %></span>
+              </label>
+            <% }) %>
+          </div>
+        <% } else { %>
+          <textarea name="<%= q.code %>" rows="2" <%= existing ? 'disabled' : '' %>
+            class="w-full rounded-xl border border-slate-300 dark:border-night-line dark:bg-night-sunken px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-signal"
+            placeholder="<%= q.required ? '' : 'Optional' %>"><%= values[q.code] || '' %></textarea>
+        <% } %>
+
+        <% if (errors[q.code]) { %>
+          <p class="text-xs text-red-600 mt-1.5"><%= errors[q.code] %></p>
+        <% } %>
+      </div>
+    <% }) %>
+
+    <% if (!existing) { %>
+      <button class="w-full rounded-2xl bg-signal text-white font-semibold py-3.5">Finish my diary</button>
+    <% } %>
+  </form>
+</div>
+
+<%- include('../partials/footer') %>

@@ -664,6 +664,10 @@
             ${orderedSections().map((s) => `<option value="${escapeHtml(s)}" ${q.section === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
           </select>
         </div>
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <label class="text-xs text-slate-500 shrink-0 qb-mono">APPLIES TO</label>
+          ${cadenceChipsHtml(q)}
+        </div>
         <div class="border-t border-[var(--qb-line)] pt-2.5">
           ${qRules.map(conditionChipHtml).join('')}
           <button type="button" class="q-add-condition-btn text-xs font-semibold text-[var(--qb-branch)] hover:underline inline-flex items-center gap-1">+ Add Condition</button>
@@ -689,6 +693,22 @@
     return '';
   }
 
+  // Empty selection == every cadence, matching a question created before this
+  // control existed -- see lib/questionnaire.js for where this is enforced.
+  const CADENCES = [['realtime', 'Real-time'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['hybrid', 'Hybrid']];
+  function questionCadences(q) {
+    if (Array.isArray(q.applicable_cadences)) return q.applicable_cadences;
+    try { const p = JSON.parse(q.applicable_cadences || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
+  }
+  function cadenceChipsHtml(q) {
+    const current = questionCadences(q);
+    return CADENCES.map(([v, l]) =>
+      `<label class="inline-flex items-center gap-1 text-[11px] text-[var(--qb-ink)] cursor-pointer">
+        <input type="checkbox" class="q-cadence h-3.5 w-3.5 accent-[var(--qb-signal)]" value="${v}" ${current.includes(v) ? 'checked' : ''} /> ${l}
+      </label>`
+    ).join('');
+  }
+
   function optionRowHtml(value, i) {
     return `<div class="flex items-center gap-2 q-option-row border-l-2 border-dashed border-[var(--qb-line)] pl-3 pr-1.5 py-1" data-idx="${i}">
       <span class="qb-mono text-[10px] text-slate-400 w-4 shrink-0">${String.fromCharCode(65 + i)}</span>
@@ -705,6 +725,7 @@
       code: row.querySelector('.q-code').value,
       required: row.querySelector('.q-required').checked,
       section: row.querySelector('.q-section-select').value,
+      applicable_cadences: Array.from(row.querySelectorAll('.q-cadence:checked')).map((b) => b.value),
     };
     if (type === 'single' || type === 'multi') {
       patch.options = Array.from(row.querySelectorAll('.q-option-input')).map((i) => i.value);
@@ -957,6 +978,7 @@
     if (!row) return;
     if (e.target.classList.contains('q-type')) return onTypeChange(e.target);
     if (e.target.classList.contains('q-required')) return saveCard(row);
+    if (e.target.classList.contains('q-cadence')) return saveCard(row);
     if (e.target.classList.contains('q-section-select')) return onSectionReassign(row);
   });
 

@@ -6,7 +6,10 @@
     <h1 class="text-2xl font-bold text-slate-900">QC Worklist</h1>
     <p class="text-slate-500 text-sm mt-1">Review and resolve automated data-quality flags.</p>
   </div>
-  <div class="flex gap-2 text-sm">
+  <div class="flex gap-2 text-sm items-center">
+    <a href="/admin/qc/follow-up?study=<%= study.id %>" class="inline-flex items-center gap-1.5 border border-slate-300 rounded-xl px-3 py-2 bg-white text-slate-700 font-medium hover:bg-slate-50 transition">
+      <%- icon('warning', 'w-4 h-4 text-red-500') %> Exception follow-up
+    </a>
     <select onchange="window.location='/admin/qc?study='+this.value+'&status=<%= statusFilter %>'" class="border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-brand-400">
       <% studies.forEach(s => { %><option value="<%= s.id %>" <%= s.id===study.id?'selected':'' %>><%= s.name %></option><% }) %>
     </select>

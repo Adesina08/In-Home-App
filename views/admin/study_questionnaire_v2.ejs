@@ -103,6 +103,19 @@
     ['text', 'Short text'], ['longtext', 'Long text'], ['date', 'Date'],
     ['time', 'Time'], ['photo', 'Photo'], ['video', 'Video'], ['audio', 'Audio'],
   ];
+  // Which diary_mode(s) each question applies to. Empty selection == every
+  // cadence -- the same default a question gets when nobody has touched this
+  // control at all, so leaving every box unchecked is not a way to hide a
+  // question by accident.
+  var CADENCES = [
+    ['realtime', 'Real-time'], ['daily', 'Daily'], ['weekly', 'Weekly'],
+    ['monthly', 'Monthly'], ['hybrid', 'Hybrid'],
+  ];
+  function cadencesOf(q) {
+    if (Array.isArray(q.applicable_cadences)) return q.applicable_cadences;
+    try { var p = JSON.parse(q.applicable_cadences || '[]'); return Array.isArray(p) ? p : []; }
+    catch (e) { return []; }
+  }
   var OPS = { equals: 'is', not_equals: 'is not', in: 'is one of', not_in: 'is none of', includes: 'includes' };
 
   function esc(s) {
@@ -190,6 +203,9 @@
         '<label class="flex items-center gap-2 mt-6"><input type="checkbox" id="fRequired" ' + (q.required ? 'checked' : '') + ' class="h-4 w-4 rounded border-slate-300 accent-brand-700" />' +
           '<span class="text-sm text-slate-700">Required</span></label>' +
       '</div>' +
+      '<div class="mt-4"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Applies to</div>' +
+      '<div id="cadenceRow" class="flex flex-wrap gap-3"></div>' +
+      '<p class="text-[11px] text-slate-400 mt-1.5">Leave all unchecked for every cadence &mdash; the same as a question created before this existed.</p></div>' +
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
@@ -203,7 +219,25 @@
       '</div>';
 
     if (AI_FILLABLE.indexOf(q.type) > -1) renderOptions(q, opts);
+    renderCadences(q);
     wireEditor(q);
+  }
+
+  function renderCadences(q) {
+    var host = document.getElementById('cadenceRow');
+    if (!host) return;
+    var current = cadencesOf(q);
+    host.innerHTML = CADENCES.map(function (c) {
+      return '<label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">' +
+        '<input type="checkbox" class="cadence-in h-4 w-4 rounded border-slate-300 accent-brand-700" value="' + c[0] + '"' +
+        (current.indexOf(c[0]) > -1 ? ' checked' : '') + ' />' + c[1] + '</label>';
+    }).join('');
+    host.querySelectorAll('.cadence-in').forEach(function (box) {
+      box.addEventListener('change', function () {
+        var picked = Array.prototype.slice.call(host.querySelectorAll('.cadence-in:checked')).map(function (b) { return b.value; });
+        patch(q.id, { applicable_cadences: picked });
+      });
+    });
   }
 
   function renderOptions(q, opts) {
