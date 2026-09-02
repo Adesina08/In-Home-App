@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-default-theme="<%= typeof fieldMode !== 'undefined' && fieldMode ? 'dark' : 'light' %>">
+<html lang="en" data-default-theme="<%= typeof defaultTheme !== 'undefined' ? defaultTheme : (typeof fieldMode !== 'undefined' && fieldMode ? 'dark' : 'light') %>">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -49,8 +49,26 @@
        what made the dark theme apply to every element EXCEPT the page itself --
        white text on a white page. */
     body[data-field="1"] { background: #FAF9F7; color: #0F172A; }
-    html.dark body[data-field="1"] { background: #0A1628; color: #F8FAFC; }
-    html.dark body { background: #0A1628; color: #F8FAFC; }
+
+    /* :where() gives the ".dark" trigger ZERO specificity, so this rule only
+       supplies a DEFAULT background/text colour for the page -- it no longer
+       outranks an explicit utility class the way a plain `html.dark body {...}`
+       selector does (html + .dark + body = a higher specificity than a single
+       class like `.text-slate-700`). That plain form is what made every label
+       and option on pages with no dark: styling of their own -- the pre-survey
+       and the About You dropdowns -- render near-white text on their still-white
+       cards the moment dark mode was on anywhere in the app. */
+    html:where(.dark) body { background: #0A1628; color: #F8FAFC; }
+
+    /* Tailwind's preflight sets color:inherit on every form control so authors
+       must style them explicitly. None of the light-styled forms in this app
+       do (they only set border/background), so those controls were inheriting
+       the dark page colour above regardless of the :where() fix -- the actual
+       "typed text disappears" and "selected option text disappears" bug.
+       Declared after the compiled Tailwind stylesheet, so for equal-specificity
+       ties this simply wins; any page that DOES want its own colour on a
+       control still overrides this with its own class as normal. */
+    input, textarea, select { color: #0F172A; }
     body { font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; }
     .badge-green { background:#E6F4EA; color:#1E7E34; }
     .badge-amber { background:#FFF4E5; color:#B8860B; }
@@ -58,6 +76,24 @@
   </style>
 </head>
 <body data-field="<%= typeof fieldMode !== 'undefined' && fieldMode ? '1' : '' %>" class="bg-slate-50 min-h-screen text-slate-800 antialiased">
+<%# One floating, theme-neutral toggle for pages that don't have their own
+    top-right control (onboarding, mobile sign-in) -- gated behind a flag
+    rather than shown everywhere, so it never doubles up with the in-flow
+    toggles already built into the respondent app's Diary/Activity/Profile
+    tabs. Both icons render; CSS shows the one matching the current theme, so
+    there is nothing for JS to keep in sync. %>
+<% if (typeof showThemeToggle !== 'undefined' && showThemeToggle) { %>
+  <button type="button" data-theme-toggle aria-pressed="false" aria-label="Toggle dark mode"
+    style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;z-index:60;width:40px;height:40px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(15,23,42,.12);background:rgba(255,255,255,.92);box-shadow:0 1px 4px rgba(15,23,42,.15)">
+    <span class="fab-sun" style="color:#1D4ED8;display:flex"><%- icon('sun', 'w-5 h-5') %></span>
+    <span class="fab-moon" style="color:#1D4ED8;display:none"><%- icon('moon', 'w-5 h-5') %></span>
+  </button>
+  <style>
+    html.dark .fab-sun { display: none !important; }
+    html.dark .fab-moon { display: flex !important; }
+  </style>
+<% } %>
+
 <% if (typeof user !== 'undefined' && user) {
   const adminLinks = [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ];
   const navFor = {
