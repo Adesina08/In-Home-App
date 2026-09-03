@@ -2,6 +2,7 @@ const express = require("express");
 const store = require("../lib/store");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
+const { getSchedulerIntervalMinutes, setSchedulerIntervalMinutes, MIN_MINUTES, MAX_MINUTES } = require("../lib/systemSettings");
 
 const router = express.Router();
 
@@ -72,6 +73,32 @@ async function deleteRespondentCascade(respondentId) {
 
   return respondent;
 }
+
+// Platform-wide operational settings -- currently just the scheduler
+// interval, previously only reachable via an Azure App Service environment
+// variable. Superadmin-only: this is one setting for the whole platform, not
+// a per-study one, so it does not belong on an individual study's Settings
+// page and it is not something an ordinary Admin should be able to change
+// (an interval set too low on a busy platform is a real load concern).
+router.get("/system-settings", onlySuperadmin, async (req, res) => {
+  const currentMinutes = await getSchedulerIntervalMinutes();
+  res.render("admin/system_settings", {
+    currentMinutes,
+    minMinutes: MIN_MINUTES,
+    maxMinutes: MAX_MINUTES,
+    saved: req.query.saved,
+  });
+});
+
+router.post("/system-settings", onlySuperadmin, async (req, res) => {
+  const applied = await setSchedulerIntervalMinutes(req.body.scheduler_interval_minutes, req.session.user.email);
+  logAudit(req.session.user.email, "update_system_settings", "system_settings", null, {
+    scheduler_interval_minutes: applied,
+  });
+  // Takes effect on the scheduler's next cycle automatically (lib/scheduler.js
+  // re-reads this value before every run) -- no restart needed.
+  res.redirect("/admin/system-settings?saved=1");
+});
 
 router.get("/superadmin", onlySuperadmin, async (req, res) => {
   const studies = await store.find("studies", {}, { sort: { id: 1 } });
