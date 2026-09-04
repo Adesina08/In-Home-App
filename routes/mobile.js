@@ -5,6 +5,12 @@ const { logAudit } = require("../lib/audit");
 
 const router = express.Router();
 
+// Native Expo API. Keeping it under /mobile/api means the public mobile router
+// remains the single mount point in server.js while the web login and native
+// client share the same respondent-account rules.
+router.use("/api", require("./mobileNativeAuth"));
+router.use("/api", require("./mobileApi"));
+
 router.get("/login", async (req, res) => {
   // Already signed in: straight back into the diary.
   if (req.session.respondentAccountId) {
