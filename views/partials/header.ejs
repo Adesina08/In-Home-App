@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-default-theme="<%= typeof defaultTheme !== 'undefined' ? defaultTheme : (typeof fieldMode !== 'undefined' && fieldMode ? 'dark' : 'light') %>">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title><%= typeof title !== 'undefined' ? title : 'Inicio Diary' %></title>
+  <link rel="stylesheet" href="/public/tailwind.css" />
+  <link rel="icon" href="/public/icons/icon-192.png" />
+  <meta name="theme-color" content="#1F3864" />
+  <script>
+    // Respondents now install the native Inicio Diary APK. Retire any old
+    // browser-installed PWA/service-worker state left from earlier pilot builds
+    // so public /join and /invite links stay in the browser onboarding flow.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.getRegistrations()
+          .then(function (regs) { return Promise.all(regs.map(function (reg) { return reg.unregister(); })); })
+          .catch(function () {});
+        if (window.caches && caches.keys) {
+          caches.keys()
+            .then(function (keys) { return Promise.all(keys.map(function (key) { return caches.delete(key); })); })
+            .catch(function () {});
+        }
+      });
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    // Applied before first paint, deliberately inline and render-blocking.
+    // Loading this with the rest of the JS produces a white flash on a dark
+    // screen every single time -- which on a diary opened daily for three
+    // weeks is the most-seen bug in the product.
+    (function () {
+      try {
+        var saved = localStorage.getItem('inicio-theme');
+        var wantsDark = saved
+          ? saved === 'dark'
+          : (document.documentElement.dataset.defaultTheme === 'dark');
+        if (wantsDark) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    /* display=swap so a slow connection shows Segoe UI immediately rather than
+       invisible text -- these screens are used on mobile data in the field. */
+    /* Theme-aware, not a fixed colour. Hardcoding the paper background here is
+       what made the dark theme apply to every element EXCEPT the page itself --
+       white text on a white page. */
+    body[data-field="1"] { background: #FAF9F7; color: #0F172A; }
+
+    /* :where() gives the ".dark" trigger ZERO specificity, so this rule only
+       supplies a DEFAULT background/text colour for the page -- it no longer
+       outranks an explicit utility class the way a plain `html.dark body {...}`
+       selector does (html + .dark + body = a higher specificity than a single
+       class like `.text-slate-700`). That plain form is what made every label
+       and option on pages with no dark: styling of their own -- the pre-survey
+       and the About You dropdowns -- render near-white text on their still-white
+       cards the moment dark mode was on anywhere in the app. */
+    html:where(.dark) body { background: #0A1628; color: #F8FAFC; }
+
+    /* Tailwind's preflight sets color:inherit on every form control so authors
+       must style them explicitly. None of the light-styled forms in this app
+       do (they only set border/background), so those controls were inheriting
+       the dark page colour above regardless of the :where() fix -- the actual
+       "typed text disappears" and "selected option text disappears" bug.
+       Declared after the compiled Tailwind stylesheet, so for equal-specificity
+       ties this simply wins; any page that DOES want its own colour on a
+       control still overrides this with its own class as normal. */
+    input, textarea, select { color: #0F172A; }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    .badge-green { background:#E6F4EA; color:#1E7E34; }
+    .badge-amber { background:#FFF4E5; color:#B8860B; }
+    .badge-red { background:#FCE8E6; color:#C0392B; }
+  </style>
+</head>
+<body data-field="<%= typeof fieldMode !== 'undefined' && fieldMode ? '1' : '' %>" class="bg-slate-50 min-h-screen text-slate-800 antialiased">
+<%# One floating, theme-neutral toggle for pages that don't have their own
+    top-right control (onboarding, mobile sign-in) -- gated behind a flag
+    rather than shown everywhere, so it never doubles up with the in-flow
+    toggles already built into the respondent app's Diary/Activity/Profile
+    tabs. Both icons render; CSS shows the one matching the current theme, so
+    there is nothing for JS to keep in sync. %>
+<% if (typeof showThemeToggle !== 'undefined' && showThemeToggle) { %>
+  <button type="button" data-theme-toggle aria-pressed="false" aria-label="Toggle dark mode"
+    style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;z-index:60;width:40px;height:40px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(15,23,42,.12);background:rgba(255,255,255,.92);box-shadow:0 1px 4px rgba(15,23,42,.15)">
+    <span class="fab-sun" style="color:#1D4ED8;display:flex"><%- icon('sun', 'w-5 h-5') %></span>
+    <span class="fab-moon" style="color:#1D4ED8;display:none"><%- icon('moon', 'w-5 h-5') %></span>
+  </button>
+  <style>
+    html.dark .fab-sun { display: none !important; }
+    html.dark .fab-moon { display: flex !important; }
+  </style>
+<% } %>
+
+<% if (typeof user !== 'undefined' && user) {
+  const adminLinks = [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','WhatsApp','chat'], ['/admin/users','Users','users'], ['/help','Help','help'] ];
+  const navFor = {
+    superadmin: [ ['/admin/superadmin','Control Center','shield'], ['/admin/system-settings','System Settings','settings'], ...adminLinks ],
+    admin: adminLinks,
+    interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'], ['/help','Help','help'] ],
+    client: [ ['/client','Client Dashboard','chart-bar'], ['/help','Help','help'] ],
+  };
+  const links = navFor[user.role] || [];
+  const path = typeof currentPath !== 'undefined' ? currentPath : '';
+  const roleColor = { superadmin: 'bg-red-400/90', admin: 'bg-violet-400/90', interviewer: 'bg-sky-400/90', client: 'bg-emerald-400/90' }[user.role] || 'bg-slate-400/90';
+  const initials = (user.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+%>
+<header class="bg-brand-700 text-white sticky top-0 z-30 shadow-md">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3 shrink-0">
+      <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-8 w-auto" />
+      <div class="leading-tight">
+        <div class="font-bold tracking-wide text-base">Inicio Diary</div>
+        <div class="text-brand-200 text-[11px] hidden lg:block -mt-0.5">Research Operations Platform</div>
+      </div>
+    </div>
+    <nav class="flex items-center gap-1 sm:gap-1.5 text-sm overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <% links.forEach(([href, label, ic]) => {
+        const active = path === href || (href !== '/admin' && href !== '/interviewer' && href !== '/client' && path.startsWith(href));
+      %>
+        <a href="<%= href %>" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition <%= active ? 'bg-white/15 text-white font-semibold' : 'text-brand-100 hover:bg-white/10 hover:text-white' %>">
+          <%- icon(ic, 'w-4 h-4') %>
+          <span class="hidden md:inline"><%= label %></span>
+        </a>
+      <% }) %>
+      <span class="w-px h-5 bg-white/15 mx-1 hidden sm:block"></span>
+      <div class="flex items-center gap-2 pl-1 shrink-0">
+        <div class="w-7 h-7 rounded-full <%= roleColor %> text-white text-xs font-bold flex items-center justify-center hidden sm:flex"><%= initials %></div>
+        <span class="text-brand-100 hidden sm:inline text-xs"><%= user.name %> <span class="uppercase tracking-wide bg-white/10 rounded px-1.5 py-0.5 ml-1"><%= user.role %></span></span>
+        <a href="/logout" title="Log out" class="flex items-center gap-1 text-brand-100 hover:text-white shrink-0 px-2 py-1.5 rounded-lg hover:bg-white/10">
+          <%- icon('logout', 'w-4 h-4') %>
+          <span class="hidden lg:inline text-xs">Log out</span>
+        </a>
+      </div>
+    </nav>
+  </div>
+</header>
+<% } %>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">

@@ -1,0 +1,267 @@
+<%- include('../partials/header', { title: study.name + ' — Settings', user }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 max-w-4xl">
+  <div class="flex items-start gap-2 text-sm text-slate-500 mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+    <%- icon('cog', 'w-4 h-4 mt-0.5 text-brand-500') %>
+    <span>Everything about how this study behaves is set here — how often people log, what evidence they must provide, which automatic quality checks run, and when reminders go out. Nothing on the respondent or QC side is fixed in the code.</span>
+  </div>
+
+  <% if (typeof closeBlocked !== 'undefined' && closeBlocked && closeBlocked.length) { %>
+    <div class="border border-red-200 bg-red-50 rounded-xl p-4 mb-6">
+      <div class="flex items-start gap-2 mb-2">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 text-red-600') %>
+        <div>
+          <div class="font-semibold text-red-800 text-sm">Study not closed — <%= closeBlocked.length %> unresolved QC exception<%= closeBlocked.length === 1 ? '' : 's' %></div>
+          <div class="text-xs text-red-700 mt-0.5">Closing a study freezes its dataset for delivery, so every critical/high flag has to be looked at first — marking one <strong>Reviewed</strong> is enough, it doesn't have to be Resolved. Your other changes on this form were <strong>not</strong> saved.</div>
+        </div>
+      </div>
+      <ul class="mt-3 space-y-1.5 max-h-52 overflow-auto">
+        <% closeBlocked.slice(0, 25).forEach(f => { %>
+          <li class="text-xs text-slate-700 bg-white border border-red-100 rounded-lg px-3 py-2 flex items-start gap-2">
+            <span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded <%= f.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' %> shrink-0"><%= f.severity %></span>
+            <span><span class="font-mono text-slate-500"><%= f.respondent_code %></span> — <%= f.reason %></span>
+          </li>
+        <% }) %>
+      </ul>
+      <% if (closeBlocked.length > 25) { %>
+        <div class="text-xs text-red-700 mt-2">…and <%= closeBlocked.length - 25 %> more.</div>
+      <% } %>
+      <a href="/admin/qc?study=<%= study.id %>" class="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-red-700 hover:underline">
+        <%- icon('arrow-right', 'w-3.5 h-3.5') %> Open QC Worklist
+      </a>
+    </div>
+  <% } %>
+
+  <form method="POST" action="/admin/studies/<%= study.id %>/settings" class="space-y-8">
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('building', 'w-4 h-4 text-brand-500') %> Study Identity</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label>
+          <input name="name" value="<%= study.name %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Status</label>
+          <select name="status" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% ['draft','live','closed'].forEach(s => { %>
+              <option value="<%= s %>" <%= study.status===s?'selected':'' %>><%= s %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Market</label>
+          <input name="market" value="<%= study.market||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Categories</label>
+        <p class="text-xs text-slate-400 mb-2.5">Tick every category this study covers — a household diary often spans more than one.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 border border-slate-200 rounded-xl p-3.5 bg-slate-50/60">
+          <% CATEGORIES.forEach(c => { %>
+            <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input type="checkbox" name="category" value="<%= c %>" <%= selectedCategories.includes(c) ? 'checked' : '' %>
+                     class="h-4 w-4 rounded border-slate-300 accent-brand-700" />
+              <%= c %>
+            </label>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('calendar', 'w-4 h-4 text-brand-500') %> How often people log, and how they're recruited</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">How often should people log?</label>
+          <select name="diary_mode" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% [['realtime','Occasion (real-time)'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].forEach(([v,l]) => { %>
+              <option value="<%= v %>" <%= study.diary_mode===v?'selected':'' %>><%= l %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">How are respondents recruited?</label>
+          <select name="recruitment_mode" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <% ['f2f','remote','hybrid'].forEach(v => { %>
+              <option value="<%= v %>" <%= study.recruitment_mode===v?'selected':'' %>><%= v %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <!-- Shown on the invitation page, to people who have had no contact with
+           the study before the text arrives. It is the only thing standing
+           between an unsolicited link and looking like a scam, so it is worth
+           writing properly. -->
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">What to tell people you invite</label>
+        <textarea name="invite_brief" rows="4" maxlength="1000"
+                  placeholder="e.g. We're looking at how families in Lagos use household cleaning products. You'd log each time you use one — a few quick questions and a photo — for two weeks."
+                  class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition"><%= study.invite_brief || '' %></textarea>
+        <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+          This is the first thing someone reads when they open an invitation link, before they're asked for anything.
+          Say what the study is about and what taking part involves, in plain words. Leave it blank and a generic description is used instead.
+        </p>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('photo', 'w-4 h-4 text-brand-500') %> Evidence</h3>
+      <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" name="mandatory_photo" id="mandatory_photo" <%= study.mandatory_photo? 'checked':'' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+        <span>
+          Every entry must include a photo
+          <span class="block text-xs text-slate-400 mt-0.5">Entries submitted without one are flagged for review — they're still saved, never rejected.</span>
+        </span>
+      </label>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> Automatic quality checks</h3>
+      <p class="text-xs text-slate-500 mb-4">These run on every entry as it's submitted. A check never rejects or deletes anything — it adds the entry to the QC Worklist for someone to look at. Untick one to switch it off entirely for this study.</p>
+
+      <div class="space-y-3">
+        <!-- Late entries -->
+        <div class="border border-slate-200 rounded-xl p-3.5 qc-rule">
+          <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" name="qc_back_entry_enabled" data-qc-toggle <%= study.qc_back_entry_enabled ? 'checked' : '' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+            <span class="flex-1">
+              Flag an entry logged more than
+              <input type="number" min="1" name="back_entry_hours" value="<%= study.back_entry_hours %>"
+                     class="qc-field w-16 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />
+              hours after it happened
+              <span class="block text-xs text-slate-400 mt-1">Entries written from memory days later are less accurate than ones logged in the moment.</span>
+            </span>
+          </label>
+        </div>
+
+        <!-- Repeated answers -->
+        <div class="border border-slate-200 rounded-xl p-3.5 qc-rule">
+          <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" name="qc_duplicate_enabled" data-qc-toggle <%= study.qc_duplicate_enabled ? 'checked' : '' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+            <span class="flex-1">
+              Flag an entry when
+              <input type="number" min="1" max="100" step="5" name="duplicate_similarity_pct" value="<%= Math.round((study.duplicate_similarity_threshold || 0.9) * 100) %>"
+                     class="qc-field w-16 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />%
+              or more of its answers match that person's previous entry
+              <span class="block text-xs text-slate-400 mt-1">Catches someone repeating themselves rather than logging afresh. Switch off for studies where genuinely identical entries are expected — the same drink, at home, every evening.</span>
+            </span>
+          </label>
+        </div>
+
+        <!-- Backfilling in one sitting -->
+        <div class="border border-slate-200 rounded-xl p-3.5 qc-rule">
+          <label class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" name="qc_burst_enabled" data-qc-toggle <%= study.qc_burst_enabled ? 'checked' : '' %> class="h-4 w-4 mt-0.5 rounded border-slate-300 accent-brand-700" />
+            <span class="flex-1">
+              Flag when someone logs more than
+              <input type="number" min="1" name="burst_entry_count_threshold" value="<%= study.burst_entry_count_threshold %>"
+                     class="qc-field w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />
+              entries within
+              <input type="number" min="1" name="burst_entry_window_hours" value="<%= study.burst_entry_window_hours %>"
+                     class="qc-field w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center mx-1 focus:outline-none focus:ring-2 focus:ring-brand-400" />
+              hours
+              <span class="block text-xs text-slate-400 mt-1">Usually someone catching up on a week they forgot. Allow more for an occasion diary, where several entries an evening is normal.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2"><%- icon('bell', 'w-4 h-4 text-brand-500') %> Reminders</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Send a reminder after this many hours without an entry</label>
+          <p class="text-xs text-slate-400 mb-1.5">Leave blank to work it out from how often people log.</p>
+          <input type="number" name="reminder_due_hours" value="<%= study.reminder_due_hours||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Count the entry as missed after this many hours</label>
+          <p class="text-xs text-slate-400 mb-1.5">Leave blank to use double the reminder time.</p>
+          <input type="number" name="reminder_missed_hours" value="<%= study.reminder_missed_hours||'' %>" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">How reminders are sent</label>
+          <p class="text-xs text-slate-400 mb-1.5">Respondents can override this for themselves.</p>
+          <select name="default_reminder_channel" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+            <option value="whatsapp" <%= study.default_reminder_channel==='whatsapp'?'selected':'' %>>WhatsApp</option>
+            <option value="in-app" <%= study.default_reminder_channel==='in-app'?'selected':'' %>>In-app / Push</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-6 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('check', 'w-4 h-4') %> Save Settings
+    </button>
+  </form>
+
+<script>
+  // Dim a switched-off check and lock its numbers. Deliberately `readonly`
+  // rather than `disabled`: a disabled input is omitted from the POST, so the
+  // save would fall back to defaults and silently discard the thresholds the
+  // admin had set -- switching a rule off and on again would quietly change
+  // its numbers. readonly keeps them in the submission untouched.
+  (function () {
+    document.querySelectorAll('[data-qc-toggle]').forEach(function (toggle) {
+      var rule = toggle.closest('.qc-rule');
+      function apply() {
+        rule.classList.toggle('opacity-50', !toggle.checked);
+        rule.querySelectorAll('.qc-field').forEach(function (f) {
+          f.readOnly = !toggle.checked;
+          f.tabIndex = toggle.checked ? 0 : -1;
+        });
+      }
+      toggle.addEventListener('change', apply);
+      apply();
+    });
+  })();
+</script>
+</div>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
+
+<%# ---- Pilot readiness (approved comps) ---- %>
+<div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5 mt-5">
+  <div class="flex items-center justify-between gap-3 mb-1">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink">Pilot Readiness Checklist</div>
+    <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-signal-soft dark:bg-signal/15 text-signal"><%= readiness.pct %>% complete</span>
+  </div>
+  <%# Every item is derived from the database. A checklist an admin can tick
+      without doing the work tells you nothing on the morning of launch. %>
+  <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Ticks are worked out from your setup &mdash; nothing here is marked by hand.</p>
+  <div class="h-2 rounded-full bg-slate-100 dark:bg-night-sunken overflow-hidden mb-5">
+    <div class="h-full rounded-full bg-signal" style="width: <%= readiness.pct %>%"></div>
+  </div>
+  <% readiness.items.forEach(function (i) { %>
+    <div class="flex items-center gap-3 py-2 border-b border-slate-100 dark:border-night-line last:border-0">
+      <span class="shrink-0 <%= i.done ? 'text-verified' : 'text-slate-300 dark:text-night-muted' %>">
+        <%- icon(i.done ? 'check-circle' : 'circle', 'w-5 h-5') %>
+      </span>
+      <span class="flex-1 text-sm <%= i.done ? 'text-slate-700 dark:text-night-ink' : 'text-slate-500 dark:text-night-muted' %>">
+        <%= i.label %><% if (i.optional) { %> <span class="text-[11px] text-slate-400">optional</span><% } %>
+      </span>
+      <% if (i.detail) { %><span class="font-mono text-xs text-slate-400 dark:text-night-muted shrink-0"><%= i.detail %></span><% } %>
+    </div>
+  <% }) %>
+</div>
+
+<div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5 mt-5">
+  <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-1">Configuration Overview</div>
+  <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Questionnaire and skip logic at a glance.</p>
+  <div class="grid grid-cols-4 gap-3 text-center">
+    <% var ov = [['Questions', readiness.counts.questions], ['Rules', readiness.counts.rules], ['Brands', readiness.counts.brands], ['KPIs', readiness.counts.kpis]]; %>
+    <% ov.forEach(function (o) { %>
+      <div class="rounded-xl border border-slate-200 dark:border-night-line py-3">
+        <div class="font-mono text-2xl font-semibold text-slate-900 dark:text-night-ink leading-none"><%= o[1] %></div>
+        <div class="text-[11px] text-slate-500 dark:text-night-muted mt-1.5"><%= o[0] %></div>
+      </div>
+    <% }) %>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

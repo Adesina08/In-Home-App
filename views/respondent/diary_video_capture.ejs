@@ -1,0 +1,85 @@
+<%- include('../partials/header', { title: 'Record Video — Inicio Diary', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<div class="max-w-2xl mx-auto pb-10">
+  <div class="flex items-center justify-between mb-5 px-1">
+    <div>
+      <div class="text-brand-700 font-bold">Inicio Diary</div>
+      <div class="text-slate-500 text-sm"><%= study.name %></div>
+    </div>
+    <a href="/r/<%= respondent.unique_token %>/diary/new<%= practice ? '?practice=1' : '' %>" class="text-sm text-slate-400 hover:text-slate-600 shrink-0">← Change method</a>
+  </div>
+
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-4 sm:p-6">
+    <div class="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center mb-4"><%- icon('video', 'w-6 h-6') %></div>
+    <h1 class="text-lg font-bold text-slate-900 mb-1.5">Record with your front camera</h1>
+    <p class="text-sm text-slate-500 mb-5 leading-relaxed">Use the front-facing camera to tell us about this consumption occasion. Hold the product or packaging where it can be seen when relevant. Once you submit, you're done — there's no form to fill in afterwards. The team reviews your video and records the details.</p>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 border border-red-100">
+        <%- icon('warning', 'w-4 h-4 mt-0.5') %>
+        <span><%= error %></span>
+      </div>
+    <% } %>
+
+    <form method="POST" action="/r/<%= respondent.unique_token %>/diary/analyze-video" enctype="multipart/form-data">
+      <input type="hidden" name="practice" value="<%= practice ? '1' : '0' %>" />
+      <button type="button" class="camera-capture-trigger w-full flex flex-col items-center gap-2 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-10 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 transition mb-5" data-kind="video" data-target="videoFileInput" data-label="videoFileLabel">
+        <%- icon('video', 'w-8 h-8 text-slate-400') %>
+        <span id="videoFileLabel">Tap to open front camera</span>
+      </button>
+      <input type="file" id="videoFileInput" name="video" accept="video/*" class="hidden" />
+      <p class="text-xs text-slate-400 -mt-3 mb-3">Records a new video with the front camera. Existing gallery videos cannot be attached here.</p>
+
+      <% if (typeof prompts !== 'undefined' && prompts && prompts.length) { %>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-4">
+          <div class="text-sm font-semibold text-slate-800 mb-1">What you'll be asked</div>
+          <p class="text-xs text-slate-500 mb-3 leading-relaxed">These stay on screen while you record. Talk through them, and hold the pack up where the camera can see it.</p>
+          <ol class="space-y-1.5 list-decimal list-inside">
+            <% prompts.forEach((p) => { %>
+              <li class="text-sm text-slate-700"><%= p.text %></li>
+            <% }) %>
+          </ol>
+          <% if (typeof truncated !== 'undefined' && truncated) { %>
+            <p class="text-xs text-amber-700 mt-3 leading-relaxed">This study has more questions than fit in one recording. Cover what you can &mdash; the team fills in the rest from your video.</p>
+          <% } %>
+        </div>
+      <% } %>
+      <div id="videoRequiredNotice" class="hidden flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-4">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+        <span>Record a video first — tap the camera area above.</span>
+      </div>
+      <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-3 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
+        <%- icon('arrow-right', 'w-4 h-4') %> Analyze Video &amp; Continue
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+  // The teleprompter script, derived server-side from THIS study's
+  // questionnaire (lib/videoPrompts.js). camera-capture.js reads it when the
+  // video modal opens; a photo question never sees it.
+  window.INICIO_VIDEO_PROMPTS = <%- JSON.stringify(typeof prompts !== 'undefined' ? prompts : []) %>;
+</script>
+<script src="/public/js/camera-capture.js"></script>
+<script>
+  (function () {
+    var form = document.querySelector('form[action$="/analyze-video"]');
+    var input = document.getElementById('videoFileInput');
+    var notice = document.getElementById('videoRequiredNotice');
+    if (!form || !input || !notice) return;
+    form.addEventListener('submit', function (e) {
+      if (input.files && input.files.length) {
+        notice.classList.add('hidden');
+        return;
+      }
+      e.preventDefault();
+      notice.classList.remove('hidden');
+      notice.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    input.addEventListener('change', function () {
+      if (input.files && input.files.length) notice.classList.add('hidden');
+    });
+  })();
+</script>
+<%- include('../partials/footer') %>

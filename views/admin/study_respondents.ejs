@@ -1,0 +1,226 @@
+<%- include('../partials/header', { title: study.name + ' — Respondents', user }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
+
+<% if (typeof activated !== 'undefined' && activated) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %>
+    Hold released — <strong><%= activated %></strong> is now activated and can log diary entries. Their QC flag is still on the worklist for you to disposition.
+  </div>
+<% } %>
+
+<% if (typeof invited !== 'undefined' && invited) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %> <%= invited %>
+  </div>
+<% } %>
+<% if (typeof inviteError !== 'undefined' && inviteError) { %>
+  <div class="flex items-center gap-2 mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
+    <%- icon('warning', 'w-4 h-4') %> <%= inviteError %>
+  </div>
+<% } %>
+
+<!-- Invite an existing (or new) person onto this study. Distinct from the
+     public sign-up link below: this is research adding someone deliberately,
+     including a person already on other studies. -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+  <div class="flex items-center gap-2 mb-1">
+    <%- icon('plus', 'w-4 h-4 text-brand-500') %>
+    <span class="font-semibold text-slate-800 text-sm">Invite someone to this study</span>
+  </div>
+  <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+    Enter a phone number or email. If they already have an account — from this or any other study — they're added to it,
+    and this study appears next time they sign in. They still give consent for this study before their diary opens.
+  </p>
+  <form method="POST" action="/admin/studies/<%= study.id %>/respondents/invite" class="flex flex-wrap items-end gap-2">
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-medium text-slate-500 mb-1">Phone or email</label>
+      <input name="contact" required placeholder="e.g. 0801 234 5678"
+             class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+    </div>
+    <div class="flex-1 min-w-[160px]">
+      <label class="block text-xs font-medium text-slate-500 mb-1">Name (optional)</label>
+      <input name="name" placeholder="Only used if we don't already have it"
+             class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+    </div>
+    <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('arrow-right', 'w-4 h-4') %> Invite
+    </button>
+  </form>
+  <% if (!accountsAllowed) { %>
+    <p class="text-[11px] text-amber-700 mt-2.5">
+      This study recruits face-to-face only, so invitees can't sign in with an account —
+      they'll need their personal diary link. Set recruitment to <strong>remote</strong> or <strong>hybrid</strong> on
+      <a href="/admin/studies/<%= study.id %>" class="underline">Settings &amp; Thresholds</a> to let them sign in.
+    </p>
+  <% } %>
+  <div class="mt-3 pt-3 border-t border-slate-100">
+    <a href="/admin/studies/<%= study.id %>/bulk-invite" class="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 transition">
+      <%- icon('upload', 'w-3.5 h-3.5') %> Inviting a whole list? Upload it instead
+    </a>
+  </div>
+</div>
+
+<!-- Remote self-onboarding invite (spec Flow B step 1). Shown regardless of
+     mode so the link is discoverable, but clearly marked inactive when the
+     study's recruitment mode or status means it wouldn't currently work. -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2 mb-1">
+        <%- icon('qrcode', 'w-4 h-4 text-brand-500') %>
+        <span class="font-semibold text-slate-800 text-sm">Remote sign-up link</span>
+        <% if (remoteOpen) { %>
+          <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Open</span>
+        <% } else { %>
+          <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Not accepting sign-ups</span>
+        <% } %>
+      </div>
+      <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+        Share this with people recruited remotely — they consent, enter their details, verify by code, and activate themselves.
+        <% if (!remoteOpen) { %>
+          <span class="text-amber-700 font-medium">
+            It won't work until this study is <strong>live</strong> and its recruitment mode is <strong>remote</strong> or <strong>hybrid</strong>
+            (currently <%= study.status %> / <%= study.recruitment_mode %>) — change that on
+            <a href="/admin/studies/<%= study.id %>" class="underline">Settings &amp; Thresholds</a>.
+          </span>
+        <% } %>
+      </p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <code class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-600 break-all"><%= joinUrl %></code>
+        <button type="button" id="copyJoinUrl" data-url="<%= joinUrl %>"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-50 hover:border-slate-400 transition">
+          <%- icon('clipboard', 'w-3.5 h-3.5') %> <span>Copy</span>
+        </button>
+        <a href="<%= joinUrl %>" target="_blank"
+           class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:underline px-1">
+          <%- icon('eye', 'w-3.5 h-3.5') %> Preview
+        </a>
+      </div>
+      <p class="text-[11px] text-slate-400 mt-2">Study code: <span class="font-mono text-slate-500"><%= joinCode %></span></p>
+    </div>
+    <img src="/admin/studies/<%= study.id %>/join-qr.png" alt="QR code for the remote sign-up link"
+         class="w-28 h-28 rounded-xl border border-slate-200 p-1.5 bg-white shrink-0" />
+  </div>
+</div>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+      <th class="px-5 py-2.5">Code</th><th class="py-2.5">Name</th><th class="py-2.5">Mode</th><th class="py-2.5">Channel</th>
+      <th class="py-2.5">Consent</th><th class="py-2.5">Status</th><th class="py-2.5">Risk</th><th class="py-2.5">Lock</th><th class="py-2.5">Link</th>
+    </tr></thead>
+    <tbody>
+    <% respondents.forEach(r => { %>
+      <tr class="border-t border-slate-100 hover:bg-slate-50/70 <%= r.is_practice ? 'opacity-50' : '' %>">
+        <td class="px-5 py-2.5 font-mono text-xs">
+          <a href="/admin/studies/<%= study.id %>/respondents/<%= r.id %>" class="text-brand-600 hover:underline font-semibold"><%= r.respondent_code %></a><% if(r.is_practice){ %> <span class="text-xs text-slate-400">(practice)</span><% } %>
+        </td>
+        <td class="py-2.5 font-medium">
+          <a href="/admin/studies/<%= study.id %>/respondents/<%= r.id %>" class="text-slate-700 hover:text-brand-700 hover:underline"><%= r.name %></a>
+        </td>
+        <td class="py-2.5 uppercase text-xs text-slate-500"><%= r.recruitment_mode %></td>
+        <td class="py-2.5 text-xs text-slate-500"><%= r.preferred_channel %></td>
+        <td class="py-2.5 text-xs text-slate-600"><%= r.consent_status %></td>
+        <td class="py-2.5">
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium capitalize <%= r.activation_status === 'disqualified' ? 'badge-red' : ['active','activated','completed'].includes(r.activation_status) ? 'badge-green' : 'bg-slate-100 text-slate-600' %>" <%= r.activation_status === 'disqualified' && r.disqualify_reason ? `title="${r.disqualify_reason.replace(/"/g,'&quot;')}"` : '' %>><%= r.activation_status %></span>
+        </td>
+        <td class="py-2.5"><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= r.risk==='red'?'badge-red':r.risk==='amber'?'badge-amber':'badge-green' %>"><%= r.risk %></span></td>
+        <td class="py-2.5">
+          <% if (r.hasLock) { %>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium badge-green" title="Has registered a device fingerprint/Face ID lock">Locked</span>
+          <% } else if (r.biometric_exempt) { %>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium badge-amber" title="This device has no fingerprint/Face ID support, so the lock can't be enforced">Exempt</span>
+          <% } else { %>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500" title="Hasn't opened their diary link yet, or hasn't finished lock setup">Pending</span>
+          <% } %>
+        </td>
+        <td class="py-2.5 pr-5 flex items-center gap-3">
+          <% if (r.activation_status === 'registered') { %>
+            <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= r.id %>/activate"
+                  onsubmit="return confirm('Release the hold and activate <%= r.respondent_code %>? Do this only after checking the open recruitment flag on the QC Worklist.')">
+              <button class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline" title="Held by a recruitment QC check — review the flag, then activate">
+                <%- icon('check-circle', 'w-3.5 h-3.5') %> Activate
+              </button>
+            </form>
+          <% } %>
+          <a class="text-brand-600 underline text-xs font-medium" href="/r/<%= r.unique_token %>" target="_blank">Open diary link</a>
+          <button type="button" class="qr-open-btn inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-700 transition"
+            data-url="<%= r.diaryUrl %>" data-png="/admin/studies/<%= study.id %>/respondents/<%= r.id %>/qr.png" data-name="<%= r.respondent_code %>">
+            <%- icon('qrcode', 'w-3.5 h-3.5') %> QR
+          </button>
+        </td>
+      </tr>
+    <% }) %>
+    <% if (!respondents.length) { %><tr><td colspan="9" class="px-5 py-8 text-slate-400 text-center">No respondents registered yet. Use Interviewer &gt; Register Respondent for F2F, or generate a remote invite link.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+
+<!-- Single shared QR modal, hidden by default; the QR image is only fetched
+     once a row's "QR" button is clicked, so a large respondent list never
+     pays to render a code no one opens. -->
+<div id="qrModal" style="display:none" class="fixed inset-0 z-50 items-center justify-center bg-slate-900/50 p-4">
+  <div class="bg-white rounded-2xl shadow-card max-w-xs w-full p-6 text-center relative">
+    <button type="button" id="qrModalClose" class="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
+      <%- icon('x', 'w-5 h-5') %>
+    </button>
+    <h2 id="qrModalTitle" class="text-sm font-semibold text-slate-700 mb-3">Respondent QR code</h2>
+    <img id="qrModalImg" src="" alt="QR code that opens this respondent's diary link" class="mx-auto w-56 h-56 rounded-xl border border-slate-200 p-2 bg-white mb-3" />
+    <p class="text-xs text-slate-400 mb-3">Scan with a phone camera to open the diary link, then use the browser's "Add to Home Screen" option to install it.</p>
+    <div id="qrModalUrl" class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-[11px] font-mono break-all text-slate-600"></div>
+  </div>
+</div>
+<script>
+  (function () {
+    var modal = document.getElementById('qrModal');
+    var img = document.getElementById('qrModalImg');
+    var urlBox = document.getElementById('qrModalUrl');
+    var title = document.getElementById('qrModalTitle');
+    document.querySelectorAll('.qr-open-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        img.src = btn.getAttribute('data-png');
+        urlBox.textContent = btn.getAttribute('data-url');
+        title.textContent = 'QR code — ' + btn.getAttribute('data-name');
+        modal.style.display = 'flex';
+      });
+    });
+    document.getElementById('qrModalClose').addEventListener('click', function () {
+      modal.style.display = 'none';
+    });
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+
+    // Copy the remote sign-up link. navigator.clipboard needs a secure context
+    // (HTTPS or localhost), so fall back to selecting the text for the admin
+    // to copy manually rather than appearing to do nothing on a plain-HTTP host.
+    var copyBtn = document.getElementById('copyJoinUrl');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var url = copyBtn.getAttribute('data-url');
+        var label = copyBtn.querySelector('span');
+        function flash(text) {
+          var original = 'Copy';
+          label.textContent = text;
+          setTimeout(function () { label.textContent = original; }, 1600);
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(url).then(function () { flash('Copied'); }).catch(function () { flash('Press Ctrl+C'); });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = url;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); flash('Copied'); } catch (e) { flash('Press Ctrl+C'); }
+          document.body.removeChild(ta);
+        }
+      });
+    }
+  })();
+</script>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
+<%- include('../partials/footer') %>

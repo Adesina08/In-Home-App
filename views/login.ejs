@@ -1,0 +1,130 @@
+<%- include('partials/header', { title: 'Sign in — Inicio Diary', user: null }) %>
+
+<%#
+  Sign-in, redesigned. Two changes of substance beyond the visual pass:
+
+  1. The seeded demo accounts are gated to non-production. Printing four working
+     staff logins and a shared password on a publicly reachable page -- one of
+     them a superadmin who can delete studies -- was the most serious issue on
+     this screen, and it was not a design problem.
+
+  2. The left panel used to sell the product to people who have already bought
+     it. It now carries the two things that help someone who cannot get in:
+     which environment they are signing into, and who to ask.
+%>
+
+<div class="min-h-[80vh] flex items-center justify-center -mt-4">
+  <div class="w-full max-w-4xl grid md:grid-cols-2 rounded-3xl overflow-hidden shadow-pop border border-slate-200/70 bg-white">
+
+    <div class="hidden md:flex flex-col justify-between bg-brand-700 text-white p-10 relative overflow-hidden">
+      <%# One quiet geometric mark rather than two stacked blurs. %>
+      <div class="absolute -right-24 -bottom-24 w-72 h-72 rounded-full border-[28px] border-white/[0.04]"></div>
+      <div class="relative">
+        <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-11 w-auto mb-9" />
+        <div class="font-display text-[26px] font-extrabold leading-[1.15] tracking-tight">Inicio Diary</div>
+        <div class="font-mono text-[11px] uppercase tracking-[0.09em] text-brand-200 mt-1.5">Research operations</div>
+      </div>
+      <div class="relative mt-8 space-y-3.5">
+        <% var feats = [
+            ['clipboard', 'Study setup', 'Design studies and configure workflows'],
+            ['users', 'Respondent management', 'Recruit, assign, and track respondents'],
+            ['shield', 'QC monitoring', 'Monitor quality and ensure compliance'],
+            ['chart', 'Client reporting', 'Real-time insights and performance']
+           ]; %>
+        <% feats.forEach(function (f) { %>
+          <div class="flex items-start gap-3 pb-3.5 border-b border-white/10 last:border-0">
+            <span class="w-10 h-10 rounded-xl border border-white/20 flex items-center justify-center shrink-0"><%- icon(f[0], 'w-5 h-5') %></span>
+            <span class="min-w-0">
+              <span class="block font-semibold text-sm"><%= f[1] %></span>
+              <span class="block text-xs text-brand-200 leading-snug"><%= f[2] %></span>
+            </span>
+          </div>
+        <% }) %>
+      </div>
+
+      <div class="relative text-sm">
+        <div class="font-mono text-[10px] uppercase tracking-[0.09em] text-brand-300">Environment</div>
+        <div class="font-semibold mb-5"><%= process.env.NODE_ENV === 'production' ? 'Production' : 'Development' %> &middot; France Central</div>
+        <div class="font-mono text-[10px] uppercase tracking-[0.09em] text-brand-300">Trouble signing in?</div>
+        <div class="text-brand-100">Ask your research manager to reset it.</div>
+      </div>
+    </div>
+
+    <div class="p-8 sm:p-10 flex flex-col justify-center">
+      <div class="mb-7 md:hidden">
+        <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-9 w-auto" />
+      </div>
+      <h1 class="font-display text-[22px] font-bold text-slate-900 tracking-tight mb-1">Welcome back</h1>
+      <p class="text-sm text-slate-500 mb-6">Staff and client accounts.</p>
+
+      <% if (error) { %>
+        <%# Never distinguishes "no such account" from "wrong password", so the
+            form cannot be used to discover who has an account here. %>
+        <div class="flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 border border-red-100">
+          <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+          <span><%= error %></span>
+        </div>
+      <% } %>
+
+      <form method="POST" action="/login" class="space-y-4">
+        <div>
+          <label for="email" class="block text-sm font-medium text-slate-600 mb-1.5">Email</label>
+          <input id="email" name="email" type="email" required autofocus autocomplete="username"
+            class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition"
+            placeholder="you@example.com" />
+        </div>
+        <div>
+          <div class="flex items-baseline justify-between mb-1.5">
+            <label for="password" class="block text-sm font-medium text-slate-600">Password</label>
+            <a href="/forgot-password" class="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">Forgot password?</a>
+          </div>
+          <div class="relative">
+            <input id="password" name="password" type="password" required autocomplete="current-password"
+              class="w-full border border-slate-300 rounded-xl px-3.5 py-3 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+            <%# A show/hide toggle is worth more than a strength meter here:
+                most failed sign-ins are typos, not forgotten passwords. %>
+            <button type="button" id="pwToggle"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 hover:text-slate-700">Show</button>
+          </div>
+        </div>
+        <button type="submit"
+          class="w-full inline-flex items-center justify-center gap-2 bg-brand-700 text-white rounded-xl py-3 font-semibold text-sm hover:bg-brand-600 transition shadow-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700">
+          Sign in <%- icon('arrow-right', 'w-4 h-4') %>
+        </button>
+      </form>
+
+      <% if (typeof showDemoAccounts !== 'undefined' && showDemoAccounts) { %>
+        <div class="mt-7 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+          <div class="font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5"><%- icon('users', 'w-3.5 h-3.5') %> Demo accounts &mdash; development only</div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+          <% var demos = [['shield','Superadmin','superadmin@inicio.demo'],['users','Admin','admin@inicio.demo'],['user','Interviewer','interviewer@inicio.demo'],['chart','Client','client@inicio.demo']]; %>
+          <% demos.forEach(function (d) { %>
+            <div class="rounded-lg border border-slate-200 p-2 text-center">
+              <span class="text-signal inline-flex justify-center mb-1"><%- icon(d[0], 'w-4 h-4') %></span>
+              <div class="text-[11px] font-semibold text-slate-700"><%= d[1] %></div>
+              <div class="font-mono text-[10px] text-slate-500 truncate"><%= d[2] %></div>
+            </div>
+          <% }) %>
+        </div>
+          <div class="mt-1.5">Password for all: <span class="font-mono font-semibold text-slate-700">Demo1234!</span></div>
+          <div class="mt-2 pt-2 border-t border-slate-200 text-[11px] text-slate-400">Hidden when NODE_ENV=production.</div>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var t = document.getElementById('pwToggle');
+    var p = document.getElementById('password');
+    if (!t || !p) return;
+    t.addEventListener('click', function () {
+      var show = p.type === 'password';
+      p.type = show ? 'text' : 'password';
+      t.textContent = show ? 'Hide' : 'Show';
+    });
+  })();
+</script>
+
+<%- include('partials/footer') %>

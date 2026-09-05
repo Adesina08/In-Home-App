@@ -1,0 +1,8 @@
+node_modules/
+data.sqlite*
+.env
+uploads/*
+!uploads/.gitkeep
+screenshots/
+server.log
+data.localdb.json*

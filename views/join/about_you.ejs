@@ -1,0 +1,144 @@
+<%- include('../partials/header', { title: 'About you — ' + study.name, user: null, showThemeToggle: true }) %>
+
+<div class="max-w-2xl mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 sm:p-8">
+    <div class="mb-7">
+      <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-2">One-time INICIO profile</div>
+      <h1 class="text-2xl font-bold text-slate-900">A little about you</h1>
+      <p class="text-sm text-slate-600 mt-2 leading-relaxed">
+        We ask these questions only the first time you create an INICIO profile. If you join another INICIO study later, we can reuse this profile instead of asking everything again.
+      </p>
+      <div class="mt-4 rounded-xl bg-brand-50 border border-brand-100 p-4 text-xs text-slate-600 leading-relaxed">
+        Your permission to be contacted about future research is separate from consent for this study. Every new study will still show its own study-specific consent before you take part.
+      </div>
+    </div>
+
+    <form method="POST" action="/join/<%= code %>/about-you" class="space-y-5">
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Name</label>
+        <input name="name" value="<%= values.name || '' %>" autocomplete="name" class="w-full rounded-xl border <%= errors.name ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm" />
+        <% if (errors.name) { %><p class="text-xs text-red-600 mt-1"><%= errors.name %></p><% } %>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Where do you currently live?</label>
+        <input name="location" value="<%= values.location || '' %>" placeholder="City / state / area" autocomplete="address-level2" class="w-full rounded-xl border <%= errors.location ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm" />
+        <% if (errors.location) { %><p class="text-xs text-red-600 mt-1"><%= errors.location %></p><% } %>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-semibold text-slate-800 mb-1.5">Age</label>
+          <input name="age" value="<%= values.age || '' %>" inputmode="numeric" type="number" min="1" max="120" class="w-full rounded-xl border <%= errors.age ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm" />
+          <% if (errors.age) { %><p class="text-xs text-red-600 mt-1"><%= errors.age %></p><% } %>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-800 mb-1.5">Gender</label>
+          <select name="gender" class="w-full rounded-xl border <%= errors.gender ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+            <option value="">Choose…</option>
+            <option value="male" <%= values.gender === 'male' ? 'selected' : '' %>>Male</option>
+            <option value="female" <%= values.gender === 'female' ? 'selected' : '' %>>Female</option>
+            <option value="other" <%= values.gender === 'other' ? 'selected' : '' %>>Other</option>
+            <option value="prefer_not_to_say" <%= values.gender === 'prefer_not_to_say' ? 'selected' : '' %>>Prefer not to say</option>
+          </select>
+          <% if (errors.gender) { %><p class="text-xs text-red-600 mt-1"><%= errors.gender %></p><% } %>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Highest level of education completed</label>
+        <select name="education_level" class="w-full rounded-xl border <%= errors.education_level ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+          <option value="">Choose…</option>
+          <option value="no_formal_schooling" <%= values.education_level === 'no_formal_schooling' ? 'selected' : '' %>>No formal schooling</option>
+          <option value="primary" <%= values.education_level === 'primary' ? 'selected' : '' %>>Primary</option>
+          <option value="secondary" <%= values.education_level === 'secondary' ? 'selected' : '' %>>Secondary</option>
+          <option value="vocational_technical" <%= values.education_level === 'vocational_technical' ? 'selected' : '' %>>Vocational / technical</option>
+          <option value="tertiary_university" <%= values.education_level === 'tertiary_university' ? 'selected' : '' %>>Tertiary / university</option>
+          <option value="postgraduate" <%= values.education_level === 'postgraduate' ? 'selected' : '' %>>Postgraduate</option>
+          <option value="other" <%= values.education_level === 'other' ? 'selected' : '' %>>Other</option>
+          <option value="prefer_not_to_say" <%= values.education_level === 'prefer_not_to_say' ? 'selected' : '' %>>Prefer not to say</option>
+        </select>
+        <% if (errors.education_level) { %><p class="text-xs text-red-600 mt-1"><%= errors.education_level %></p><% } %>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Occupation</label>
+        <select name="occupation" class="w-full rounded-xl border <%= errors.occupation ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+          <option value="">Choose…</option>
+          <% [
+            ['student', 'Student'],
+            ['trader_retail', 'Trader / retail'],
+            ['artisan_skilled_trade', 'Artisan / skilled trade'],
+            ['farmer', 'Farmer'],
+            ['civil_servant', 'Civil servant / public sector'],
+            ['private_sector_employee', 'Private sector employee'],
+            ['self_employed_business', 'Self-employed / business owner'],
+            ['professional', 'Professional (teacher, nurse, engineer, etc.)'],
+            ['homemaker', 'Homemaker'],
+            ['retired', 'Retired'],
+            ['not_currently_working', 'Not currently working'],
+            ['other', 'Other'],
+            ['prefer_not_to_say', 'Prefer not to say'],
+          ].forEach(([value, label]) => { %>
+            <option value="<%= value %>" <%= values.occupation === value ? 'selected' : '' %>><%= label %></option>
+          <% }) %>
+        </select>
+        <% if (errors.occupation) { %><p class="text-xs text-red-600 mt-1"><%= errors.occupation %></p><% } %>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Religion</label>
+        <select name="religion" class="w-full rounded-xl border <%= errors.religion ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+          <option value="">Choose…</option>
+          <% [
+            ['christianity', 'Christianity'],
+            ['islam', 'Islam'],
+            ['traditional', 'Traditional / indigenous belief'],
+            ['other', 'Other'],
+            ['none', 'No religion'],
+            ['prefer_not_to_say', 'Prefer not to say'],
+          ].forEach(([value, label]) => { %>
+            <option value="<%= value %>" <%= values.religion === value ? 'selected' : '' %>><%= label %></option>
+          <% }) %>
+        </select>
+        <p class="text-[11px] text-slate-400 mt-1">“Prefer not to say” is a valid answer.</p>
+        <% if (errors.religion) { %><p class="text-xs text-red-600 mt-1"><%= errors.religion %></p><% } %>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-800 mb-1.5">Marital status</label>
+        <select name="marital_status" class="w-full rounded-xl border <%= errors.marital_status ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm bg-white">
+          <option value="">Choose…</option>
+          <option value="single" <%= values.marital_status === 'single' ? 'selected' : '' %>>Single</option>
+          <option value="married" <%= values.marital_status === 'married' ? 'selected' : '' %>>Married</option>
+          <option value="living_with_partner" <%= values.marital_status === 'living_with_partner' ? 'selected' : '' %>>Living with partner</option>
+          <option value="separated" <%= values.marital_status === 'separated' ? 'selected' : '' %>>Separated</option>
+          <option value="divorced" <%= values.marital_status === 'divorced' ? 'selected' : '' %>>Divorced</option>
+          <option value="widowed" <%= values.marital_status === 'widowed' ? 'selected' : '' %>>Widowed</option>
+          <option value="other" <%= values.marital_status === 'other' ? 'selected' : '' %>>Other</option>
+          <option value="prefer_not_to_say" <%= values.marital_status === 'prefer_not_to_say' ? 'selected' : '' %>>Prefer not to say</option>
+        </select>
+        <% if (errors.marital_status) { %><p class="text-xs text-red-600 mt-1"><%= errors.marital_status %></p><% } %>
+      </div>
+
+      <fieldset>
+        <legend class="block text-sm font-semibold text-slate-800 mb-2">May INICIO contact you about future research studies?</legend>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <label class="rounded-xl border border-slate-300 p-3 flex items-start gap-2 cursor-pointer">
+            <input type="radio" name="recontact_consent" value="yes" class="mt-0.5" <%= values.recontact_consent === 'yes' ? 'checked' : '' %> />
+            <span><span class="block text-sm font-semibold text-slate-800">Yes</span><span class="block text-xs text-slate-500 mt-0.5">You may invite me to suitable future studies.</span></span>
+          </label>
+          <label class="rounded-xl border border-slate-300 p-3 flex items-start gap-2 cursor-pointer">
+            <input type="radio" name="recontact_consent" value="no" class="mt-0.5" <%= values.recontact_consent === 'no' ? 'checked' : '' %> />
+            <span><span class="block text-sm font-semibold text-slate-800">No</span><span class="block text-xs text-slate-500 mt-0.5">Do not contact me about other studies.</span></span>
+          </label>
+        </div>
+        <% if (errors.recontact_consent) { %><p class="text-xs text-red-600 mt-1"><%= errors.recontact_consent %></p><% } %>
+      </fieldset>
+
+      <button class="w-full rounded-xl bg-brand-700 text-white font-semibold text-sm py-3.5 hover:bg-brand-800 transition">Save profile & continue</button>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

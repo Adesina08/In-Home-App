@@ -1,0 +1,294 @@
+<%- include('../partials/header', { title: respondent.respondent_code + ' — Respondent', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="mb-5">
+  <a href="/admin/studies/<%= study.id %>/respondents" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+    &larr; Back to all respondents
+  </a>
+</div>
+
+<!-- Profile -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 mb-5">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2.5 flex-wrap mb-1">
+        <h1 class="text-xl font-bold text-slate-900"><%= respondent.name || '(no name)' %></h1>
+        <span class="font-mono text-xs text-slate-500"><%= respondent.respondent_code %></span>
+        <% if (respondent.is_practice) { %><span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Practice</span><% } %>
+        <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full <%= risk==='red'?'badge-red':risk==='amber'?'badge-amber':'badge-green' %>"><%= risk %></span>
+        <%# The colour badge above is kept for anyone used to reading it at a
+            glance; this is the actual number and band behind it. %>
+        <% if (quality) { %>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-full px-2.5 py-0.5" title="Compliance <%= quality.breakdown.complianceScore %> / Flags <%= quality.breakdown.flagScore %> / Follow-through <%= quality.breakdown.followThroughScore %> / Media <%= quality.breakdown.mediaScore %>">
+            <span class="font-mono font-semibold text-slate-800"><%= quality.score %></span>
+            <%= BAND_LABELS[quality.band] %>
+          </span>
+        <% } %>
+      </div>
+      <div class="text-sm text-slate-500">Registered <%= respondent.created_at %><% if (interviewer) { %> by <%= interviewer.name %><% } %></div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <% if (respondent.end_validation_status === 'completed') { %>
+        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-verified-soft text-verified"><%- icon('check-circle', 'w-4 h-4') %> Close-out complete</span>
+      <% } else if (respondent.end_validation_status === 'pending') { %>
+        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-unverified-soft text-unverified"><%- icon('warning', 'w-4 h-4') %> Close-out sent, awaiting response</span>
+      <% } else if (['active', 'activated'].includes(respondent.activation_status)) { %>
+        <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/send-end-validation">
+          <button class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-slate-50 transition">Send end-of-diary validation</button>
+        </form>
+      <% } %>
+      <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/export.csv"
+         class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('download', 'w-3.5 h-3.5') %> Export answers
+      </a>
+      <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/media.csv"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        <%- icon('download', 'w-3.5 h-3.5') %> Export media log
+      </a>
+      <% if (respondent.contact) { %>
+        <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/send-link">
+          <button class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+            <%- icon('chat', 'w-3.5 h-3.5') %> Text them their link
+          </button>
+        </form>
+      <% } %>
+      <button type="button" id="showQr"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        <%- icon('qrcode', 'w-3.5 h-3.5') %> Show their QR
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 pt-5 border-t border-slate-100">
+    <% [
+         ['Contact', respondent.contact || '—'],
+         ['Recruitment', (respondent.recruitment_mode || '—').toUpperCase()],
+         ['Channel', respondent.preferred_channel || '—'],
+         ['Consent', respondent.consent_status || '—'],
+         ['Status', respondent.activation_status || '—'],
+         ['Device lock', hasLock ? 'Locked' : (respondent.biometric_exempt ? 'Exempt' : 'Pending')],
+       ].forEach(([label, value]) => { %>
+      <div>
+        <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5"><%= label %></div>
+        <div class="text-sm text-slate-700 break-words"><%= value %></div>
+      </div>
+    <% }) %>
+  </div>
+
+  <% if (respondent.contact_verified_at || respondent.tutorial_completed_at) { %>
+    <div class="mt-3 text-xs text-slate-400">
+      <% if (respondent.contact_verified_at) { %>Contact verified <%= respondent.contact_verified_at %><% } %>
+      <% if (respondent.contact_verified_at && respondent.tutorial_completed_at) { %> · <% } %>
+      <% if (respondent.tutorial_completed_at) { %>Tutorial completed <%= respondent.tutorial_completed_at %><% } %>
+    </div>
+  <% } %>
+
+  <% if (respondent.activation_status === 'disqualified' && respondent.disqualify_reason) { %>
+    <div class="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3">
+      <%- icon('stop', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span>Participation ended: <%= respondent.disqualify_reason %></span>
+    </div>
+  <% } %>
+</div>
+
+<!-- The respondent's own link, shown as a QR rather than as a button that opens
+     it. Opening a diary on a staff device registers that device's lock against
+     the respondent (see routes/interviewer.js), which would leave them unable
+     to unlock their own. Everything staff need to review is on this page and
+     the entry pages already. -->
+<div id="qrModal" style="display:none" class="fixed inset-0 z-50 items-center justify-center bg-slate-900/50 p-4">
+  <div class="bg-white rounded-2xl shadow-xl p-5 max-w-xs w-full text-center relative">
+    <button type="button" id="qrModalClose" class="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
+      <%- icon('x', 'w-4 h-4') %>
+    </button>
+    <h2 class="text-sm font-semibold text-slate-700 mb-3"><%= respondent.respondent_code %> — diary link</h2>
+    <img id="qrModalImg" src="" alt="QR code that opens this respondent's diary"
+         class="mx-auto w-56 h-56 rounded-xl border border-slate-200 p-2 bg-white mb-3" />
+    <p class="text-[11px] text-slate-500 mb-2">The respondent scans this with their <strong>own</strong> phone — the diary's lock is tied to the device that opens it.</p>
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-[11px] font-mono break-all text-slate-600"><%= respondentLink %></div>
+  </div>
+</div>
+<script>
+  (function () {
+    var modal = document.getElementById('qrModal');
+    var img = document.getElementById('qrModalImg');
+    var src = '/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/qr.png';
+    document.getElementById('showQr').addEventListener('click', function () {
+      if (!img.getAttribute('src')) img.setAttribute('src', src); // fetched only on demand
+      modal.style.display = 'flex';
+    });
+    document.getElementById('qrModalClose').addEventListener('click', function () { modal.style.display = 'none'; });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
+  })();
+</script>
+
+<!-- Sign-in account. A respondent row is one person's participation in ONE
+     study; the account is the person, and is what lets them sign in once and
+     see every study they're on. -->
+<% if (typeof linked !== 'undefined' && linked) { %>
+  <div class="flex items-center gap-2 mb-5 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %> <%= linked %>
+  </div>
+<% } %>
+<% if (typeof linkError !== 'undefined' && linkError) { %>
+  <div class="flex items-center gap-2 mb-5 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
+    <%- icon('warning', 'w-4 h-4') %> <%= linkError %>
+  </div>
+<% } %>
+
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+  <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+    <%- icon('users', 'w-4 h-4 text-brand-500') %> Sign-in account
+  </div>
+
+  <% if (account) { %>
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <div class="text-sm text-slate-700">
+          <strong><%= account.name || '(no name)' %></strong> · <span class="font-mono text-xs"><%= account.contact %></span>
+        </div>
+        <div class="text-xs text-slate-400 mt-1">
+          <%= account.contact_verified_at ? `Verified ${account.contact_verified_at}` : 'Contact not yet verified' %>
+          <% if (account.last_login_at) { %> · Last signed in <%= account.last_login_at %><% } %>
+        </div>
+      </div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/account" class="shrink-0">
+        <input type="hidden" name="action" value="unlink" />
+        <button class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+          Unlink
+        </button>
+      </form>
+    </div>
+
+    <div class="mt-4 pt-4 border-t border-slate-100">
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-2">
+        Other studies on this account
+      </div>
+      <% if (!otherEnrolments.length) { %>
+        <div class="text-sm text-slate-400">This is the only study they're on.</div>
+      <% } else { %>
+        <div class="space-y-1.5">
+          <% otherEnrolments.forEach(e => { %>
+            <div class="flex items-center gap-2 text-sm flex-wrap">
+              <a href="/admin/studies/<%= e.study_id %>/respondents/<%= e.id %>"
+                 class="text-brand-600 hover:underline font-medium"><%= e.study_name %></a>
+              <span class="font-mono text-xs text-slate-500"><%= e.respondent_code %></span>
+              <span class="text-xs text-slate-400">
+                · <%= e.activation_status %> · <%= e.submitted_count %> <%= e.submitted_count === 1 ? 'entry' : 'entries' %>
+              </span>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+  <% } else { %>
+    <p class="text-sm text-slate-500 leading-relaxed">
+      This respondent uses their personal diary link only — they don't sign in.
+      <% if (!accountsAllowed) { %>
+        This study recruits face-to-face, so that's expected.
+      <% } %>
+    </p>
+    <% if (respondent.contact) { %>
+      <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/account" class="mt-3">
+        <input type="hidden" name="contact" value="<%= respondent.contact %>" />
+        <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+          <%- icon('plus', 'w-3.5 h-3.5') %>
+          <% if (linkCandidate) { %>Link to the existing account for <%= respondent.contact %><% } else { %>Give them an account for <%= respondent.contact %><% } %>
+        </button>
+        <p class="text-[11px] text-slate-400 mt-2 leading-relaxed">
+          <% if (linkCandidate) { %>
+            An account already exists for this number. Only link it if this is the same person — a household sharing one
+            phone should stay as two separate respondents.
+          <% } else { %>
+            They'll be able to sign in with this number and see every study they're on. Do this only once you're sure the
+            number belongs to them.
+          <% } %>
+        </p>
+      </form>
+    <% } %>
+  <% } %>
+</div>
+
+<!-- QC flags for this respondent (including ones not tied to a single entry) -->
+<% const openFlags = flags.filter(f => f.status === 'open'); %>
+<% if (flags.length) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+      <%- icon('shield', 'w-4 h-4 text-brand-500') %> QC Flags
+      <span class="text-xs font-normal text-slate-400"><%= openFlags.length %> open of <%= flags.length %></span>
+    </div>
+    <div class="space-y-2">
+      <% flags.forEach(f => { %>
+        <div class="flex items-start gap-2.5 text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 <%= f.status === 'open' ? '' : 'opacity-60' %>">
+          <span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5 <%= f.severity==='critical'?'bg-red-100 text-red-700':f.severity==='high'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600' %>"><%= f.severity %></span>
+          <div class="flex-1 min-w-0">
+            <div class="text-slate-700"><%= f.reason %></div>
+            <div class="text-[11px] text-slate-400 mt-0.5">
+              <%= f.flag_type %> · <%= f.created_time %> · <%= f.status %><% if (f.reviewer) { %> by <%= f.reviewer %><% } %>
+              <% if (f.record_id) { %>
+                · <a href="/admin/studies/<%= study.id %>/records/<%= f.record_id %>" class="text-brand-600 hover:underline font-medium">view the entry</a>
+              <% } else { %>
+                · <span class="italic">not tied to one entry</span>
+              <% } %>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+<% } %>
+
+<!-- Diary entries -->
+<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card">
+  <div class="px-5 pt-5 pb-3 font-semibold text-slate-800 flex items-center gap-2">
+    <%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Diary Entries
+    <span class="text-xs font-normal text-slate-400"><%= records.length %> total</span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+        <th class="px-5 py-2.5">Period</th><th class="py-2.5">Occurred</th><th class="py-2.5">Entered</th>
+        <th class="py-2.5">How</th><th class="py-2.5">Status</th><th class="py-2.5">Answers</th>
+        <th class="py-2.5">Evidence</th><th class="py-2.5">Flags</th><th class="py-2.5"></th>
+      </tr></thead>
+      <tbody>
+      <% records.forEach(r => { %>
+        <tr class="border-t border-slate-100 hover:bg-slate-50/70">
+          <td class="px-5 py-2.5 font-medium text-slate-700"><%= r.period_label %><% if (r.is_practice) { %> <span class="text-xs text-slate-400">(practice)</span><% } %></td>
+          <td class="py-2.5 text-xs text-slate-500"><%= r.occurrence_time || '—' %></td>
+          <td class="py-2.5 text-xs text-slate-500"><%= r.entry_time %></td>
+          <td class="py-2.5 text-xs uppercase text-slate-500"><%= r.entry_mode %></td>
+          <td class="py-2.5">
+            <span class="text-xs px-2.5 py-1 rounded-full font-medium <%= r.status==='submitted' ? 'badge-green' : (r.status==='screened_out' ? 'bg-slate-200 text-slate-600' : 'badge-amber') %>"><%= r.status === 'screened_out' ? 'screened out' : r.status %></span>
+          </td>
+          <td class="py-2.5 text-xs text-slate-600"><%= r.answer_count %></td>
+          <td class="py-2.5 text-xs text-slate-500">
+            <% if (r.media_count) { %>
+              <span class="inline-flex items-center gap-1.5">
+                <% if (r.photo_count) { %><span title="<%= r.photo_count %> photo(s)">📷 <%= r.photo_count %></span><% } %>
+                <% if (r.video_count) { %><span title="<%= r.video_count %> video(s)">🎥 <%= r.video_count %></span><% } %>
+                <% if (r.audio_count) { %><span title="<%= r.audio_count %> audio">🎤 <%= r.audio_count %></span><% } %>
+              </span>
+            <% } else { %><span class="text-slate-300">none</span><% } %>
+          </td>
+          <td class="py-2.5">
+            <% if (r.open_flags) { %>
+              <span class="text-xs px-2 py-0.5 rounded-full font-medium badge-red"><%= r.open_flags %></span>
+            <% } else { %><span class="text-slate-300 text-xs">—</span><% } %>
+          </td>
+          <td class="py-2.5 pr-5 text-right">
+            <a href="/admin/studies/<%= study.id %>/records/<%= r.id %>" class="text-brand-600 text-xs font-semibold hover:underline">Open &rarr;</a>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (!records.length) { %>
+        <tr><td colspan="9" class="px-5 py-10 text-center text-slate-400">
+          <div class="flex flex-col items-center gap-2"><%- icon('calendar', 'w-6 h-6 text-slate-300') %> <span class="text-sm">This respondent hasn't logged any diary entries yet.</span></div>
+        </td></tr>
+      <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

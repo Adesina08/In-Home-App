@@ -1,0 +1,1056 @@
+<%- include('../partials/header', { title: study.name + ' — Questionnaire', user }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
+
+<!--
+  This page's visual language is deliberately different from a generic
+  SaaS builder: it borrows from paper survey instruments -- a coding sheet
+  and its cross-reference index -- since that's the real artifact this page
+  replaces. A vertical "spine" running down the question list stands for
+  sequence (it's literally the order respondents answer in); numbered
+  circular nodes sit on it like stops on a line; section and condition tags
+  are cut as small flags rather than plain pills. Colors and type are scoped
+  to .qb-canvas so the rest of the app (nav, other tabs) is unaffected.
+
+  Structure (reworked from the original one-long-scroll layout): Questions /
+  Skip Logic / Brand-SKU List are real panels switched by the buttons below
+  (synced to the URL hash so old "#skip-logic"-style links still work), not
+  anchor jumps down one page. Within Questions, a left Section Index rail is
+  pure navigation -- click a section to scroll to and expand it in the main
+  column, where sections are collapsible accordions and each question is a
+  single collapsed row (drag handle, type dot, text, required/conditional
+  markers) that expands inline to the full editor on click. A question's
+  Section is a dropdown populated from the sections that actually exist,
+  not a free-text field, so it can't silently create a typo'd phantom section.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  .qb-canvas {
+    --qb-ink: #14213D;
+    --qb-paper: #EEF2F7;
+    --qb-card: #FBFCFD;
+    --qb-line: #C7D0DE;
+    --qb-signal: #E8A33D;
+    --qb-branch: #2F8F82;
+    --qb-branch-tint: #E7F3F1;
+    --qb-branch-soft: #7FADA6;
+    --qb-danger: #C4533D;
+    font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    color: var(--qb-ink);
+    background: var(--qb-paper);
+    border-radius: 1.5rem;
+    padding: 1.75rem;
+    /* The negative margin used to pull the panel 4px wider than the page
+       container on each side, which put its edge outside <main> and produced a
+       horizontal scrollbar at some widths. min-width:0 stops any wide child
+       (a long question row, a table) from stretching the panel past the page
+       and "poking out of the grey". */
+    min-width: 0;
+  }
+  .qb-canvas .section-group,
+  .qb-canvas .q-row-header,
+  .qb-canvas #sectionAccordions { min-width: 0; }
+  .qb-canvas .qb-display { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
+  .qb-canvas .qb-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  .qb-canvas .qb-flag {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+  }
+  .qb-canvas ::selection { background: var(--qb-signal); color: var(--qb-ink); }
+  .qb-canvas .qb-mode-btn.is-active { background: var(--qb-ink); color: #fff; border-color: var(--qb-ink); }
+  .qb-canvas .qb-mode-btn:not(.is-active) { background: #fff; color: var(--qb-ink); }
+  .qb-canvas .q-row-chevron, .qb-canvas .section-toggle-btn { transition: transform 0.15s ease; }
+  .qb-canvas .q-row-chevron.is-open, .qb-canvas .section-toggle-btn.is-open { transform: rotate(90deg); }
+</style>
+
+<div class="qb-canvas">
+
+<% if (typeof published !== 'undefined' && published && published !== 'none') { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %>
+    Published version <%= published %> — diary entries saved from now on are stamped v<%= published %>. Earlier entries keep the version they were answered against.
+  </div>
+<% } %>
+<% if (typeof imported !== 'undefined' && imported) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('check-circle', 'w-4 h-4') %>
+    Imported <%= imported %> question<%= imported == 1 ? '' : 's' %> from your upload.
+  </div>
+<% } %>
+<% if (typeof rulesCreated !== 'undefined' && rulesCreated) { %>
+  <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
+    <%- icon('arrow-right', 'w-4 h-4') %>
+    Also created <%= rulesCreated %> skip rule<%= rulesCreated == 1 ? '' : 's' %> from the Condition column — review them in <a href="#skip-logic" class="underline font-semibold">Skip Logic</a>.
+  </div>
+<% } %>
+<% if (typeof rulesSkipped !== 'undefined' && rulesSkipped && Number(rulesSkipped) > 0) { %>
+  <div class="flex items-center gap-2 mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
+    <%- icon('warning', 'w-4 h-4') %>
+    <%= rulesSkipped %> condition<%= rulesSkipped == 1 ? '' : 's' %> referenced a question that wasn't included in this import — set those up manually in <a href="#skip-logic" class="underline font-semibold">Skip Logic</a> if still needed.
+  </div>
+<% } %>
+
+<div class="flex flex-wrap gap-2 mb-6">
+  <button type="button" class="qb-mode-btn is-active px-4 py-2 rounded text-sm font-semibold qb-mono uppercase tracking-wide text-xs transition border border-[var(--qb-line)] flex items-center gap-1.5" data-mode="questionnaire"><%- icon('clipboard', 'w-3.5 h-3.5') %> Questionnaire</button>
+  <button type="button" class="qb-mode-btn px-4 py-2 rounded text-sm font-semibold qb-mono uppercase tracking-wide text-xs transition border border-[var(--qb-line)] flex items-center gap-1.5" data-mode="skip-logic"><%- icon('arrow-right', 'w-3.5 h-3.5') %> Skip Logic</button>
+  <button type="button" class="qb-mode-btn px-4 py-2 rounded text-sm font-semibold qb-mono uppercase tracking-wide text-xs transition border border-[var(--qb-line)] flex items-center gap-1.5" data-mode="brands"><%- icon('building', 'w-3.5 h-3.5') %> Brand / SKU List</button>
+</div>
+
+<!-- ============================= Questionnaire ============================= -->
+<div id="questionnaire" class="qb-panel">
+  <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+    <div>
+      <div class="qb-mono text-[10px] uppercase tracking-[0.2em] text-[var(--qb-branch)] font-semibold mb-1">Study Instrument &middot; Form <%= study.id %></div>
+      <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Questionnaire</h2>
+    </div>
+    <div class="flex gap-2 items-center">
+      <!-- Published version state. Every saved response is stamped with the
+           study's current version, so "unpublished changes" is a real data
+           condition (entries being collected against wording that hasn't been
+           versioned yet), not just a UI nicety. -->
+      <span class="qb-mono text-[10px] uppercase tracking-wide px-2 py-1 rounded border <%= study.questionnaire_dirty ? 'border-[var(--qb-signal)] text-[var(--qb-ink)] bg-[#FDF4E5]' : 'border-[var(--qb-line)] text-slate-500 bg-white' %>"
+            title="<%= study.version_published_at ? 'Last published ' + study.version_published_at : 'Never published — still on the original version' %>">
+        v<%= study.version || 1 %><%= study.questionnaire_dirty ? ' · unpublished changes' : '' %>
+      </span>
+      <% if (study.questionnaire_dirty) { %>
+        <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish">
+          <button class="inline-flex items-center gap-1.5 bg-[var(--qb-branch)] text-white rounded px-3.5 py-2 text-xs font-semibold hover:opacity-90 transition"
+                  title="Stamp responses collected from now on as v<%= (study.version || 1) + 1 %>">
+            <%- icon('check', 'w-3.5 h-3.5') %> Publish v<%= (study.version || 1) + 1 %>
+          </button>
+        </form>
+      <% } %>
+      <a href="/admin/studies/<%= study.id %>/questionnaire/live-preview" target="_blank" class="inline-flex items-center gap-1.5 bg-white border border-[var(--qb-line)] text-[var(--qb-ink)] rounded px-3.5 py-2 text-xs font-semibold hover:border-[var(--qb-ink)] transition">
+        <%- icon('eye', 'w-3.5 h-3.5') %> Preview
+      </a>
+      <a href="/admin/studies/<%= study.id %>/questionnaire/upload" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3.5 py-2 text-xs font-semibold hover:opacity-90 transition">
+        <%- icon('upload', 'w-3.5 h-3.5') %> Upload Questionnaire
+      </a>
+    </div>
+  </div>
+
+  <p class="text-xs text-slate-500 mb-4">Every field auto-saves as you edit. Click a question row to open its editor, or a section header to collapse it. Drag a row's grip handle to reorder it within its section — move it to a different section using the Section dropdown inside its editor.</p>
+
+  <%# minmax(0,1fr), not 1fr. A grid child defaults to min-width:auto, so a
+      plain 1fr refuses to shrink below its content -- long question text and
+      the right-hand type badges then push the whole column past the container
+      and out of the page. min-w-0 on the column itself is the same guard one
+      level down, for the flex rows inside it. %>
+  <div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-6">
+    <!-- Section Index: pure navigation -- click scrolls to and expands a section in the main column. Renaming/deleting/conditions live on the section header itself. -->
+    <aside class="lg:sticky lg:top-20 lg:self-start space-y-3">
+      <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-3">
+        <div class="flex items-center justify-between mb-2 px-1">
+          <span class="qb-display font-semibold text-sm text-[var(--qb-ink)]">Section Index</span>
+          <span id="sectionsSummary" class="text-[11px] text-slate-500 qb-mono"></span>
+        </div>
+        <div id="sectionIndexList" class="space-y-1"></div>
+      </div>
+      <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-3">
+        <div class="flex gap-2">
+          <input id="newSectionInput" placeholder="New section title" class="flex-1 min-w-0 border border-[var(--qb-line)] bg-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" />
+          <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3 py-2 text-sm font-semibold hover:opacity-90 transition shrink-0"><%- icon('plus', 'w-4 h-4') %></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main column: accordion sections, each holding collapsed-by-default question rows -->
+    <div class="min-w-0">
+      <div id="sectionAccordions" class="space-y-3 min-w-0"></div>
+      <button type="button" id="addQuestionBtn" class="mt-3 w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-3 text-sm font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition">
+        <%- icon('plus', 'w-4 h-4') %> Add question
+      </button>
+    </div>
+  </div>
+
+  <script type="application/json" id="qb-data"><%- JSON.stringify({
+    studyId: study.id,
+    questions: questions.filter(function (q) { return q.active; }),
+    rules: rules,
+  }).replace(/</g, "\\u003c") %></script>
+</div>
+
+<!-- ============================= Skip Logic ============================= -->
+<div id="skip-logic" class="qb-panel hidden">
+  <div class="flex items-center gap-2 mb-4">
+    <%- icon('arrow-right', 'w-5 h-5 text-[var(--qb-branch)]') %>
+    <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Skip Logic Rules</h2>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="lg:col-span-2 bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-500 text-xs uppercase tracking-wide qb-mono">
+          <th class="px-5 py-2.5">Rule</th><th class="py-2.5"></th>
+        </tr></thead>
+        <tbody>
+        <% rules.forEach(r => { %>
+          <tr class="border-t border-[var(--qb-line)] hover:bg-white/60">
+            <td class="px-5 py-3.5 text-[var(--qb-ink)]">
+              <% if (r.action === 'terminate') { %>
+                <span class="font-semibold text-[var(--qb-danger)] inline-flex items-center gap-1"><%- icon('stop', 'w-3.5 h-3.5') %> Terminate</span>
+                <% if (r.terminate_scope === 'study') { %>
+                  — ends the respondent's <strong>whole study participation</strong>
+                <% } else { %>
+                  — ends <strong>this diary entry</strong> only
+                <% } %>
+              <% } else { %>
+                <span class="font-semibold <%= r.action === 'show' ? 'text-[var(--qb-branch)]' : 'text-[var(--qb-danger)]' %>"><%= r.action === 'show' ? 'Show' : 'Hide' %></span>
+                <% if (r.target_section) { %>
+                  the whole <strong>"<%= r.target_section %>"</strong> section
+                <% } else { %>
+                  "<strong><%= r.target_text %></strong>"
+                <% } %>
+              <% } %>
+              <%
+                const opText = { equals: '=', not_equals: '≠', in: 'is one of', not_in: 'is none of', includes: 'includes' }[r.operator] || r.operator;
+                const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? r.value.split('|').join(', ') : r.value;
+              %>
+              if "<%= r.condition_text %>" <%= opText %> <span class="qb-mono bg-white border border-[var(--qb-line)] px-1.5 py-0.5 rounded text-xs"><%= valueDisplay %></span>
+            </td>
+            <td class="py-3 pr-5 text-right">
+              <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic/<%= r.id %>/delete">
+                <button class="text-[var(--qb-danger)] text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (!rules.length) { %><tr><td colspan="2" class="px-5 py-8 text-slate-500 text-center">No skip logic yet — build the <a href="#questionnaire" class="underline font-semibold">questionnaire</a> first, then add rules here.</td></tr><% } %>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-5 h-fit">
+      <div class="qb-display font-semibold text-[var(--qb-ink)] mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-[var(--qb-branch)]') %> Add Skip Rule</div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/skip-logic" class="space-y-3.5 text-sm">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Action</label>
+          <select name="action" id="ruleActionSelect" onchange="toggleAction()" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <option value="show">Show target question</option>
+            <option value="hide">Hide target question</option>
+            <option value="terminate">Terminate survey</option>
+          </select>
+        </div>
+        <div id="targetBlock">
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Target</label>
+          <div class="flex gap-4 mb-2 text-xs text-slate-600">
+            <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="question" checked onchange="toggleTargetType()" /> One question</label>
+            <label class="flex items-center gap-1.5"><input type="radio" name="target_type" value="section" onchange="toggleTargetType()" <%= sections.length ? '' : 'disabled' %> /> Whole section</label>
+          </div>
+          <select name="target_question_id" id="targetQuestionSelect" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <% activeQuestions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
+          </select>
+          <select name="target_section" id="targetSectionSelect" class="hidden w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <% sections.forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+          </select>
+          <% if (!sections.length) { %><p class="text-xs text-slate-500 mt-1">No sections defined yet — add one back in <a href="#questionnaire" class="underline font-semibold">Questionnaire</a> to skip a whole section at once.</p><% } %>
+        </div>
+        <div id="terminateScopeBlock" class="hidden">
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Scope</label>
+          <select name="terminate_scope" id="terminateScopeSelect" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <option value="entry">This diary entry only</option>
+            <option value="study">End the respondent's whole study participation</option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1">"This diary entry only" ends just the occasion being logged right now — the respondent can still submit future entries normally. "Whole study participation" disqualifies them entirely, like an interviewer marking someone ineligible at registration.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">When condition question</label>
+          <select name="condition_question_id" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <% activeQuestions.forEach(q => { %><option value="<%= q.id %>"><%= q.text %></option><% }) %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Operator</label>
+          <select name="operator" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <option value="equals">Equals</option>
+            <option value="not_equals">Not equals</option>
+            <option value="in">Is one of (multiple values)</option>
+            <option value="not_in">Is none of (multiple values)</option>
+            <option value="includes">Includes (for multi-select condition questions)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Value</label>
+          <input name="value" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" placeholder="e.g. Yes / Brand A -- for 'is one of' or 'is none of', separate values with a comma" />
+        </div>
+        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-[var(--qb-ink)] text-white rounded py-2.5 font-semibold text-sm hover:opacity-90 transition"><%- icon('plus', 'w-4 h-4') %> Add Rule</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= Brand / SKU List ============================= -->
+<div id="brands" class="qb-panel hidden">
+  <div class="flex items-center gap-2 mb-4">
+    <%- icon('building', 'w-5 h-5 text-[var(--qb-branch)]') %>
+    <h2 class="qb-display text-2xl font-bold text-[var(--qb-ink)]">Brand / SKU List</h2>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="lg:col-span-2 bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-500 text-xs uppercase tracking-wide qb-mono"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Category</th><th class="py-2.5">SKU</th><th class="py-2.5"></th></tr></thead>
+        <tbody>
+        <% brands.forEach(b => { %>
+          <tr class="border-t border-[var(--qb-line)] hover:bg-white/60 <%= b.active ? '' : 'opacity-40' %>">
+            <td class="px-5 py-2.5 font-medium text-[var(--qb-ink)]"><%= b.name %></td>
+            <td class="py-2.5 text-slate-600"><%= b.category||'—' %></td>
+            <td class="py-2.5 qb-mono text-xs text-slate-500"><%= b.sku||'—' %></td>
+            <td class="py-2.5 pr-5 text-right">
+              <% if (b.active) { %>
+              <form method="POST" action="/admin/studies/<%= study.id %>/brands/<%= b.id %>/delete">
+                <button class="text-[var(--qb-danger)] text-xs font-medium hover:underline flex items-center gap-1 ml-auto"><%- icon('x', 'w-3.5 h-3.5') %> Remove</button>
+              </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (!brands.length) { %><tr><td colspan="4" class="px-5 py-8 text-slate-500 text-center">No brands yet — add the approved pilot brand/SKU list on the right.</td></tr><% } %>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-5 h-fit">
+      <div class="qb-display font-semibold text-[var(--qb-ink)] mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-[var(--qb-branch)]') %> Add Brand / Product</div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/brands" class="space-y-3.5 text-sm">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label><input name="name" required class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">Category</label><input name="category" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" /></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1.5">SKU</label><input name="sku" class="w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" /></div>
+        <button class="w-full inline-flex items-center justify-center gap-1.5 bg-[var(--qb-ink)] text-white rounded py-2.5 font-semibold text-sm hover:opacity-90 transition"><%- icon('plus', 'w-4 h-4') %> Add</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+</div><!-- /.qb-canvas -->
+
+<script>
+  // Real mode switching (Questionnaire / Skip Logic / Brands) instead of the
+  // old anchor-jump pills that just scrolled down one very long page -- each
+  // is its own panel now, and the visible one is synced to the URL hash so
+  // existing "#skip-logic"-style links (see the banners above, and bookmarks
+  // to this page) keep working exactly as before.
+  (function () {
+    const modeButtons = document.querySelectorAll('.qb-mode-btn');
+    const panels = {
+      questionnaire: document.getElementById('questionnaire'),
+      'skip-logic': document.getElementById('skip-logic'),
+      brands: document.getElementById('brands'),
+    };
+    function setMode(mode) {
+      if (!panels[mode]) mode = 'questionnaire';
+      Object.entries(panels).forEach(([key, el]) => el.classList.toggle('hidden', key !== mode));
+      modeButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.mode === mode));
+    }
+    modeButtons.forEach((btn) => btn.addEventListener('click', () => {
+      setMode(btn.dataset.mode);
+      if (history.replaceState) history.replaceState(null, '', '#' + btn.dataset.mode);
+    }));
+    window.addEventListener('hashchange', () => setMode(location.hash.slice(1)));
+    setMode(location.hash ? location.hash.slice(1) : 'questionnaire');
+  })();
+
+  function toggleTargetType() {
+    const isSection = document.querySelector('input[name="target_type"]:checked').value === 'section';
+    document.getElementById('targetQuestionSelect').classList.toggle('hidden', isSection);
+    document.getElementById('targetQuestionSelect').required = !isSection;
+    document.getElementById('targetSectionSelect').classList.toggle('hidden', !isSection);
+    document.getElementById('targetSectionSelect').required = isSection;
+  }
+
+  // A "Terminate survey" rule has no target question/section to show or hide —
+  // it ends the entry (or the respondent's participation) outright — so swap
+  // the Target picker for the Scope picker instead, and un-require whichever
+  // target select is hidden so it doesn't block submitting the form.
+  function toggleAction() {
+    const isTerminate = document.getElementById('ruleActionSelect').value === 'terminate';
+    document.getElementById('targetBlock').classList.toggle('hidden', isTerminate);
+    document.getElementById('terminateScopeBlock').classList.toggle('hidden', !isTerminate);
+    if (isTerminate) {
+      document.getElementById('targetQuestionSelect').required = false;
+      document.getElementById('targetSectionSelect').required = false;
+    } else {
+      toggleTargetType();
+    }
+  }
+</script>
+
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById('qb-data').textContent);
+  const STUDY_ID = DATA.studyId;
+  let questions = DATA.questions; // active only, ordered by order_index
+  let rules = DATA.rules;
+
+  const TYPE_LABELS = {
+    single: 'Single select', multi: 'Multi-select', numeric: 'Numeric',
+    text: 'Short/long text', date: 'Date/time', photo: 'Photo', video: 'Video (brand detection)', audio: 'Audio (spoken answer)',
+  };
+  const TYPE_COLOR = {
+    single: '#3B82F6', multi: '#8B5CF6', numeric: '#D97706', text: '#64748B',
+    date: '#0D9488', photo: '#DB2777', video: '#4F46E5', audio: '#0EA5E9',
+  };
+  const OP_LABELS = { equals: 'Equals', not_equals: 'Not equals', in: 'Is one of', not_in: 'Is none of', includes: 'Includes' };
+  // Rendered server-side once and reused as plain strings inside the client-side
+  // template literals below, so the inline card editor stays consistent with the
+  // rest of the app's icon set without duplicating SVG markup by hand.
+  const ICON_TRASH_SM = <%- JSON.stringify(icon('trash', 'w-4 h-4')) %>;
+  const ICON_TRASH = <%- JSON.stringify(icon('trash', 'w-3.5 h-3.5')) %>;
+  const ICON_GRIP = <%- JSON.stringify(icon('grip', 'w-4 h-5')) %>;
+  const ICON_X = <%- JSON.stringify(icon('x', 'w-3 h-3')) %>;
+  const ICON_CHEVRON = <%- JSON.stringify(icon('chevron', 'w-3.5 h-3.5')) %>;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function api(method, url, body) {
+    const res = await fetch(url, {
+      method,
+      headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Something went wrong saving that.');
+    return data;
+  }
+
+  function orderedSections() {
+    const seen = [];
+    questions.forEach((q) => { if (q.section && !seen.includes(q.section)) seen.push(q.section); });
+    return seen;
+  }
+
+  // Which sections/questions are expanded right now -- kept outside the
+  // render functions so a full re-render (needed whenever the underlying
+  // data changes shape: add/delete/reorder/condition edits) doesn't collapse
+  // everything back shut. Sections start open (matches the old page's
+  // always-fully-visible behavior); individual questions start collapsed,
+  // which is the actual fix for "48 questions all expanded at once".
+  const openSections = new Set(orderedSections());
+  if (questions.some((q) => !q.section)) openSections.add('');
+  const openQuestions = new Set();
+
+  function flash(el) {
+    if (!el) return;
+    el.classList.remove('opacity-0');
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => el.classList.add('opacity-0'), 1200);
+  }
+
+  function closeAllConditionForms() {
+    document.querySelectorAll('.section-condition-form, .q-condition-form').forEach((f) => { f.classList.add('hidden'); f.innerHTML = ''; });
+  }
+
+  function conditionFormHtml(kind, excludeFn) {
+    const opts = questions
+      .filter((q) => !excludeFn(q))
+      .map((q) => `<option value="${q.id}">${escapeHtml(q.text || '(untitled question)')}</option>`)
+      .join('');
+    return `
+      <div class="bg-white border border-[var(--qb-line)] rounded p-3 space-y-2 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <select class="cf-action qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 bg-white">
+            <option value="show">Show ${kind}</option>
+            <option value="hide">Hide ${kind}</option>
+          </select>
+          <select class="cf-operator border border-[var(--qb-line)] rounded px-2 py-1.5 bg-white">
+            <option value="equals">Equals</option>
+            <option value="not_equals">Not equals</option>
+            <option value="in">Is one of</option>
+            <option value="not_in">Is none of</option>
+            <option value="includes">Includes</option>
+          </select>
+        </div>
+        <select class="cf-condition border border-[var(--qb-line)] rounded px-2 py-1.5 bg-white w-full">${opts || '<option value="">No other questions available yet</option>'}</select>
+        <input class="cf-value border border-[var(--qb-line)] rounded px-2 py-1.5 w-full" placeholder="Value (comma-separate for 'is one of' / 'is none of')" />
+        <div class="flex gap-2">
+          <button type="button" class="cf-submit flex-1 bg-[var(--qb-branch)] text-white rounded py-1.5 font-semibold hover:opacity-90">Add Condition</button>
+          <button type="button" class="cf-cancel px-3 rounded border border-[var(--qb-line)] hover:bg-slate-50">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  function conditionChipHtml(r) {
+    const opText = OP_LABELS[r.operator] || r.operator;
+    const valueDisplay = ['in', 'not_in', 'includes'].includes(r.operator) ? String(r.value || '').split('|').join(', ') : r.value;
+    return `<div class="inline-flex items-center gap-1.5 bg-[var(--qb-branch-tint)] text-[var(--qb-branch)] text-xs pl-3 pr-2.5 py-1 mr-1.5 mb-1.5 border-l-2 border-[var(--qb-branch)]">
+      <span>${r.action === 'show' ? 'Show' : 'Hide'} if "${escapeHtml(r.condition_text)}" ${opText} <strong>${escapeHtml(valueDisplay)}</strong></span>
+      <button type="button" class="chip-delete text-[var(--qb-branch-soft)] hover:text-[var(--qb-danger)]" data-rule-id="${r.id}">&#10005;</button>
+    </div>`;
+  }
+
+  async function submitConditionForm(btn, ctx) {
+    const form = btn.closest('.section-condition-form, .q-condition-form');
+    const conditionId = form.querySelector('.cf-condition').value;
+    const value = form.querySelector('.cf-value').value.trim();
+    if (!conditionId) return alert('No other question is available to use as the condition.');
+    if (!value) return alert('Enter a value to compare against.');
+    const body = {
+      target_type: ctx.kind,
+      action: form.querySelector('.cf-action').value,
+      operator: form.querySelector('.cf-operator').value,
+      value,
+      condition_question_id: conditionId,
+    };
+    if (ctx.kind === 'section') body.target_section = ctx.targetSection;
+    else body.target_question_id = ctx.targetQuestionId;
+    try {
+      const rule = await api('POST', `/admin/studies/${STUDY_ID}/skip-logic`, body);
+      rules.push(rule);
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function onDeleteRule(ruleId) {
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/skip-logic/${ruleId}/delete`);
+      rules = rules.filter((r) => String(r.id) !== String(ruleId));
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  // ---------------- Section Index (sidebar nav) ----------------
+  function renderSectionIndex() {
+    const list = document.getElementById('sectionIndexList');
+    const secs = orderedSections();
+    const ungroupedCount = questions.filter((q) => !q.section).length;
+    document.getElementById('sectionsSummary').textContent = secs.length || ungroupedCount
+      ? `${secs.length} section${secs.length === 1 ? '' : 's'} · ${questions.length} Q`
+      : '';
+    const rows = secs
+      .map((name, i) => {
+        const count = questions.filter((q) => q.section === name).length;
+        const hasCond = rules.some((r) => r.target_section === name);
+        return `
+      <button type="button" class="section-index-item w-full text-left flex items-center gap-2.5 px-2 py-2 rounded hover:bg-white border border-transparent hover:border-[var(--qb-line)] transition" data-section="${escapeHtml(name)}">
+        <span class="qb-mono w-6 h-6 rounded-full border border-[var(--qb-line)] bg-white text-[var(--qb-ink)] text-[10px] font-bold flex items-center justify-center shrink-0">${i + 1}</span>
+        <span class="flex-1 min-w-0">
+          <span class="block text-sm font-medium text-[var(--qb-ink)] truncate">${escapeHtml(name)}</span>
+          <span class="block text-[11px] text-slate-500 qb-mono">${count} Q &middot; ${hasCond ? 'CONDITIONAL' : 'ALWAYS SHOWN'}</span>
+        </span>
+        <span class="w-2 h-2 rounded-full shrink-0" style="background:${hasCond ? 'var(--qb-signal)' : 'var(--qb-branch)'}"></span>
+      </button>`;
+      })
+      .join('');
+    const ungroupedRow = ungroupedCount
+      ? `
+      <button type="button" class="section-index-item w-full text-left flex items-center gap-2.5 px-2 py-2 rounded hover:bg-white border border-transparent hover:border-[var(--qb-line)] transition" data-section="">
+        <span class="qb-mono w-6 h-6 rounded-full border border-dashed border-[var(--qb-line)] bg-white text-slate-400 text-[10px] font-bold flex items-center justify-center shrink-0">&ndash;</span>
+        <span class="flex-1 min-w-0">
+          <span class="block text-sm font-medium text-slate-500 truncate">No section</span>
+          <span class="block text-[11px] text-slate-400 qb-mono">${ungroupedCount} Q</span>
+        </span>
+      </button>`
+      : '';
+    list.innerHTML = rows + ungroupedRow || '<div class="text-xs text-slate-500 px-2 py-2">No sections yet — everything is ungrouped. Add one below.</div>';
+  }
+
+  document.getElementById('sectionIndexList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.section-index-item');
+    if (!btn) return;
+    const name = btn.dataset.section;
+    openSections.add(name);
+    renderQuestions();
+    const group = document.querySelector(`.section-group[data-section-group="${CSS.escape(name)}"]`);
+    if (group) group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.getElementById('addSectionBtn').addEventListener('click', async () => {
+    const input = document.getElementById('newSectionInput');
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, { section: name });
+      questions.push(created);
+      input.value = '';
+      openSections.add(name);
+      openQuestions.add(created.id);
+      renderAll();
+      const row = document.getElementById('qcard-' + created.id);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.querySelector('.q-text').focus();
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  // ---------------- Main column: section accordions + question rows ----------------
+  function renderQuestions() {
+    const container = document.getElementById('sectionAccordions');
+    const secs = orderedSections();
+    const groups = secs.map((name) => ({ name, qs: questions.filter((q) => q.section === name) }));
+    const ungrouped = questions.filter((q) => !q.section);
+    if (ungrouped.length) groups.push({ name: '', qs: ungrouped });
+    container.innerHTML = groups.length
+      ? groups.map((g) => sectionGroupHtml(g, secs)).join('')
+      : '<div class="text-sm text-slate-500 bg-[var(--qb-card)] border border-dashed border-[var(--qb-line)] p-8 text-center rounded-lg">No questions yet — click "Add question" below.</div>';
+  }
+
+  function sectionGroupHtml(g, secs) {
+    const name = g.name;
+    const isUngrouped = name === '';
+    const number = isUngrouped ? null : secs.indexOf(name) + 1;
+    const hasCond = !isUngrouped && rules.some((r) => r.target_section === name);
+    const isOpen = openSections.has(name);
+    return `
+    <div class="section-group border border-[var(--qb-line)] bg-[var(--qb-card)] rounded-lg overflow-hidden" data-section-group="${escapeHtml(name)}">
+      <div class="section-header flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/60 transition">
+        <span class="section-toggle-btn shrink-0 text-slate-400 ${isOpen ? 'is-open' : ''}">${ICON_CHEVRON}</span>
+        ${isUngrouped
+          ? `<span class="qb-mono w-7 h-7 rounded-full border border-dashed border-[var(--qb-line)] text-slate-400 text-[11px] font-bold flex items-center justify-center shrink-0">&ndash;</span>`
+          : `<span class="qb-mono w-7 h-7 rounded-full bg-[var(--qb-ink)] text-white text-[11px] font-bold flex items-center justify-center shrink-0">${number}</span>`}
+        <div class="flex-1 min-w-0">
+          ${isUngrouped
+            ? `<div class="qb-display font-semibold text-slate-500">No section</div>`
+            : `<div class="section-name-display qb-display font-semibold text-[var(--qb-ink)] truncate cursor-text rounded px-1 -mx-1 hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-[var(--qb-signal)]" contenteditable="true" spellcheck="false" title="Click to rename">${escapeHtml(name)}</div>`}
+          <div class="text-xs text-slate-500 mt-0.5 qb-mono">
+            <span class="inline-flex items-center justify-center text-[10px] font-semibold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mr-1">${g.qs.length} Q</span>
+            ${isUngrouped ? '' : `<span class="${hasCond ? 'text-[var(--qb-branch)] font-semibold' : ''}">${hasCond ? 'HAS VISIBILITY CONDITION' : 'ALWAYS SHOWN'}</span>`}
+          </div>
+        </div>
+        ${isUngrouped ? '' : `
+        <button type="button" class="section-condition-btn text-xs font-medium px-2.5 py-1.5 rounded border border-[var(--qb-line)] text-[var(--qb-ink)] hover:border-[var(--qb-ink)] transition shrink-0">Condition</button>
+        <button type="button" class="section-delete-btn w-8 h-8 rounded text-slate-400 hover:text-[var(--qb-danger)] hover:bg-red-50 transition shrink-0 flex items-center justify-center" title="Remove section">${ICON_TRASH_SM}</button>`}
+      </div>
+      ${isUngrouped ? '' : `<div class="section-condition-form hidden px-4 pb-3"></div>`}
+      <div class="section-body ${isOpen ? '' : 'hidden'} border-t border-[var(--qb-line)] p-3 space-y-2">
+        ${g.qs.map((q) => questionRowHtml(q)).join('')}
+        <button type="button" class="add-question-to-section-btn w-full inline-flex items-center justify-center gap-1.5 border-2 border-dashed border-[var(--qb-line)] text-slate-500 rounded-lg py-2 text-xs font-semibold hover:border-[var(--qb-signal)] hover:text-[var(--qb-ink)] transition" data-section="${escapeHtml(name)}">+ Add question to ${isUngrouped ? 'no section' : 'this section'}</button>
+      </div>
+    </div>`;
+  }
+
+  function questionRowHtml(q) {
+    const options = q.options_json ? JSON.parse(q.options_json) : [];
+    const qRules = rules.filter((r) => r.target_question_id === q.id);
+    const isOpen = openQuestions.has(q.id);
+    const color = TYPE_COLOR[q.type] || '#94A3B8';
+    const preview = q.text && q.text.trim() ? escapeHtml(q.text) : '<span class="italic text-slate-400">(untitled question)</span>';
+    return `
+    <div class="question-row bg-white border border-[var(--qb-line)] rounded-lg" id="qcard-${q.id}" data-id="${q.id}">
+      <div class="q-row-header flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-slate-50/70 transition rounded-lg">
+        <span class="drag-handle shrink-0 cursor-grab active:cursor-grabbing text-slate-300 hover:!text-[var(--qb-signal)] transition" draggable="true" title="Drag to reorder within this section">${ICON_GRIP}</span>
+        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${color}" title="${TYPE_LABELS[q.type] || q.type}"></span>
+        <span class="flex-1 min-w-0 text-sm text-[var(--qb-ink)] truncate q-row-preview">${preview}</span>
+        ${q.required ? `<span class="w-1.5 h-1.5 rounded-full bg-[var(--qb-danger)] shrink-0 q-required-dot" title="Required"></span>` : ''}
+        ${qRules.length ? `<span class="qb-mono text-[9px] font-bold uppercase tracking-wide text-[var(--qb-branch)] bg-[var(--qb-branch-tint)] rounded px-1.5 py-0.5 shrink-0">Conditional</span>` : ''}
+        <span class="qb-mono text-[10px] uppercase tracking-wide bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 shrink-0 hidden sm:inline-block">${TYPE_LABELS[q.type] || q.type}</span>
+        <button type="button" class="q-delete w-7 h-7 rounded text-slate-300 hover:text-[var(--qb-danger)] hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove question">${ICON_TRASH}</button>
+        <span class="q-row-chevron shrink-0 text-slate-400 ${isOpen ? 'is-open' : ''}">${ICON_CHEVRON}</span>
+      </div>
+      <div class="q-row-body ${isOpen ? '' : 'hidden'} border-t border-[var(--qb-line)] p-3 pl-9">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <select class="q-type qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            ${Object.entries(TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${q.type === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <input class="q-code qb-mono border border-[var(--qb-line)] rounded px-2 py-1.5 text-xs w-24 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" placeholder="code" value="${escapeHtml(q.code || '')}" title="Code (used by skip logic / mapping)" />
+          <label class="flex items-center gap-1.5 text-xs font-medium text-[var(--qb-ink)] border border-[var(--qb-line)] rounded pl-2 pr-2.5 py-1.5 bg-white cursor-pointer hover:border-[var(--qb-ink)] transition"><input type="checkbox" class="q-required h-3.5 w-3.5 accent-[var(--qb-ink)]" ${q.required ? 'checked' : ''} /> Required</label>
+          <span class="save-indicator qb-mono text-[10px] font-semibold text-[var(--qb-branch)] ml-0.5 opacity-0 transition-opacity flex items-center gap-1">&#10003; SAVED</span>
+        </div>
+        <textarea class="q-text w-full border border-[var(--qb-line)] bg-white rounded px-3.5 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" rows="2" placeholder="Question text">${escapeHtml(q.text)}</textarea>
+        <div class="q-typebody mb-3">${typeBodyHtml(q, options)}</div>
+        <div class="flex items-center gap-2 mb-3">
+          <label class="text-xs text-slate-500 shrink-0 qb-mono">SECTION</label>
+          <select class="q-section-select border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition">
+            <option value="">&mdash; No section &mdash;</option>
+            ${orderedSections().map((s) => `<option value="${escapeHtml(s)}" ${q.section === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <label class="text-xs text-slate-500 shrink-0 qb-mono">APPLIES TO</label>
+          ${cadenceChipsHtml(q)}
+        </div>
+        <div class="border-t border-[var(--qb-line)] pt-2.5">
+          ${qRules.map(conditionChipHtml).join('')}
+          <button type="button" class="q-add-condition-btn text-xs font-semibold text-[var(--qb-branch)] hover:underline inline-flex items-center gap-1">+ Add Condition</button>
+          <div class="q-condition-form hidden mt-2"></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function typeBodyHtml(q, options) {
+    if (q.type === 'single' || q.type === 'multi') {
+      return `
+        <div class="q-options space-y-1.5">${options.map(optionRowHtml).join('')}</div>
+        <button type="button" class="q-add-option text-xs font-semibold text-[var(--qb-branch)] hover:underline mt-1.5">+ Add option</button>`;
+    }
+    if (q.type === 'numeric') {
+      return `
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="text-xs text-slate-500 qb-mono">MIN</label><input type="number" class="q-min w-full border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs" value="${q.min_value ?? ''}" /></div>
+          <div><label class="text-xs text-slate-500 qb-mono">MAX</label><input type="number" class="q-max w-full border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs" value="${q.max_value ?? ''}" /></div>
+        </div>`;
+    }
+    return '';
+  }
+
+  // Empty selection == every cadence, matching a question created before this
+  // control existed -- see lib/questionnaire.js for where this is enforced.
+  const CADENCES = [['realtime', 'Real-time'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['hybrid', 'Hybrid']];
+  function questionCadences(q) {
+    if (Array.isArray(q.applicable_cadences)) return q.applicable_cadences;
+    try { const p = JSON.parse(q.applicable_cadences || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
+  }
+  function cadenceChipsHtml(q) {
+    const current = questionCadences(q);
+    return CADENCES.map(([v, l]) =>
+      `<label class="inline-flex items-center gap-1 text-[11px] text-[var(--qb-ink)] cursor-pointer">
+        <input type="checkbox" class="q-cadence h-3.5 w-3.5 accent-[var(--qb-signal)]" value="${v}" ${current.includes(v) ? 'checked' : ''} /> ${l}
+      </label>`
+    ).join('');
+  }
+
+  function optionRowHtml(value, i) {
+    return `<div class="flex items-center gap-2 q-option-row border-l-2 border-dashed border-[var(--qb-line)] pl-3 pr-1.5 py-1" data-idx="${i}">
+      <span class="qb-mono text-[10px] text-slate-400 w-4 shrink-0">${String.fromCharCode(65 + i)}</span>
+      <input class="q-option-input flex-1 border-0 border-b border-transparent hover:border-[var(--qb-line)] bg-transparent px-1 py-1 text-xs focus:outline-none focus:border-[var(--qb-signal)] transition" value="${escapeHtml(value)}" placeholder="Option ${i + 1}" />
+      <button type="button" class="q-remove-option w-6 h-6 rounded text-slate-300 hover:text-[var(--qb-danger)] hover:bg-red-50 transition flex items-center justify-center shrink-0" title="Remove option">${ICON_X}</button>
+    </div>`;
+  }
+
+  function collectCardPatch(row) {
+    const type = row.querySelector('.q-type').value;
+    const patch = {
+      text: row.querySelector('.q-text').value,
+      type,
+      code: row.querySelector('.q-code').value,
+      required: row.querySelector('.q-required').checked,
+      section: row.querySelector('.q-section-select').value,
+      applicable_cadences: Array.from(row.querySelectorAll('.q-cadence:checked')).map((b) => b.value),
+    };
+    if (type === 'single' || type === 'multi') {
+      patch.options = Array.from(row.querySelectorAll('.q-option-input')).map((i) => i.value);
+    } else if (type === 'numeric') {
+      patch.min_value = row.querySelector('.q-min').value;
+      patch.max_value = row.querySelector('.q-max').value;
+    }
+    return patch;
+  }
+
+  // Blur-triggered autosave for text/code/min/max/option fields. Deliberately
+  // does NOT trigger a full re-render -- that would yank focus away from
+  // wherever the respondent has since tabbed to, since the PATCH response
+  // (and this handler) resolve asynchronously after the blur already
+  // happened. Instead it patches just the row's own collapsed-preview text
+  // and required-dot directly, leaving the rest of the DOM (including
+  // whatever's currently focused) untouched.
+  async function saveCard(row) {
+    const id = Number(row.dataset.id);
+    const patch = collectCardPatch(row);
+    // A freshly-created question starts blank -- don't autosave (or alert)
+    // until it actually has text; nothing meaningful to persist yet.
+    if (!patch.text || !patch.text.trim()) return;
+    try {
+      const updated = await api('PATCH', `/admin/studies/${STUDY_ID}/questions/${id}`, patch);
+      const idx = questions.findIndex((q) => q.id === updated.id);
+      if (idx >= 0) questions[idx] = updated;
+      flash(row.querySelector('.save-indicator'));
+      refreshRowPreview(row, updated);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  function refreshRowPreview(row, q) {
+    const previewEl = row.querySelector('.q-row-preview');
+    if (previewEl) previewEl.innerHTML = q.text && q.text.trim() ? escapeHtml(q.text) : '<span class="italic text-slate-400">(untitled question)</span>';
+    const header = row.querySelector('.q-row-header');
+    if (!header) return;
+    let dot = header.querySelector('.q-required-dot');
+    if (q.required && !dot && previewEl) {
+      dot = document.createElement('span');
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-[var(--qb-danger)] shrink-0 q-required-dot';
+      dot.title = 'Required';
+      previewEl.insertAdjacentElement('afterend', dot);
+    } else if (!q.required && dot) {
+      dot.remove();
+    }
+  }
+
+  // Reassigning a question's section is a discrete, deliberate action (not
+  // continuous typing like the fields above), so unlike saveCard() this DOES
+  // fully re-render -- the row has to physically move to a different
+  // accordion, and the section headers'/sidebar's counts need to catch up.
+  async function onSectionReassign(row) {
+    const id = Number(row.dataset.id);
+    const patch = collectCardPatch(row);
+    if (!patch.text || !patch.text.trim()) {
+      alert("Add the question's text before assigning a section.");
+      return;
+    }
+    try {
+      const updated = await api('PATCH', `/admin/studies/${STUDY_ID}/questions/${id}`, patch);
+      const idx = questions.findIndex((q) => q.id === updated.id);
+      if (idx >= 0) questions[idx] = updated;
+      openSections.add(updated.section || '');
+      openQuestions.add(id);
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function onTypeChange(select) {
+    const row = select.closest('.question-row');
+    const id = Number(row.dataset.id);
+    const q = questions.find((x) => x.id === id);
+    q.type = select.value;
+    if (q.type === 'single' || q.type === 'multi') {
+      const existing = q.options_json ? JSON.parse(q.options_json) : [];
+      if (!existing.length) q.options_json = JSON.stringify(['']);
+    }
+    renderQuestions();
+    const newRow = document.getElementById('qcard-' + id);
+    await saveCard(newRow);
+  }
+
+  function onAddOption(row) {
+    const id = Number(row.dataset.id);
+    const q = questions.find((x) => x.id === id);
+    const opts = q.options_json ? JSON.parse(q.options_json) : [];
+    opts.push('');
+    q.options_json = JSON.stringify(opts);
+    renderQuestions();
+    const newRow = document.getElementById('qcard-' + id);
+    const inputs = newRow.querySelectorAll('.q-option-input');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }
+
+  function onRemoveOption(btn) {
+    const row = btn.closest('.question-row');
+    const id = Number(row.dataset.id);
+    const optRow = btn.closest('.q-option-row');
+    const idx = Number(optRow.dataset.idx);
+    const q = questions.find((x) => x.id === id);
+    const opts = q.options_json ? JSON.parse(q.options_json) : [];
+    opts.splice(idx, 1);
+    q.options_json = opts.length ? JSON.stringify(opts) : null;
+    renderQuestions();
+    saveCard(document.getElementById('qcard-' + id));
+  }
+
+  async function onDeleteQuestion(row) {
+    const id = row.dataset.id;
+    if (!confirm('Remove this question?')) return;
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/questionnaire/${id}/delete`);
+      questions = questions.filter((q) => String(q.id) !== String(id));
+      rules = rules.filter((r) => String(r.target_question_id) !== String(id));
+      openQuestions.delete(Number(id));
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function onAddQuestionToSection(name) {
+    try {
+      const created = await api('POST', `/admin/studies/${STUDY_ID}/questions`, name ? { section: name } : {});
+      questions.push(created);
+      openSections.add(name || '');
+      openQuestions.add(created.id);
+      renderAll();
+      const row = document.getElementById('qcard-' + created.id);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.querySelector('.q-text').focus();
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  document.getElementById('addQuestionBtn').addEventListener('click', () => onAddQuestionToSection(''));
+
+  async function onSectionNameBlur(el) {
+    const wrapper = el.closest('[data-section-group]');
+    const oldName = wrapper.dataset.sectionGroup;
+    const newName = el.textContent.trim();
+    if (!newName || newName === oldName) {
+      el.textContent = oldName;
+      return;
+    }
+    try {
+      await api('PATCH', `/admin/studies/${STUDY_ID}/sections`, { oldName, newName });
+      questions.forEach((q) => { if (q.section === oldName) q.section = newName; });
+      rules.forEach((r) => { if (r.target_section === oldName) r.target_section = newName; });
+      if (openSections.has(oldName)) { openSections.delete(oldName); openSections.add(newName); }
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+      el.textContent = oldName;
+    }
+  }
+
+  async function onDeleteSection(name) {
+    if (!confirm(`Remove the "${name}" section? Its questions become ungrouped, and any section-level condition on it is removed.`)) return;
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/sections/delete`, { name });
+      questions.forEach((q) => { if (q.section === name) q.section = null; });
+      rules = rules.filter((r) => r.target_section !== name);
+      openSections.delete(name);
+      openSections.add('');
+      renderAll();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  const accordionsEl = document.getElementById('sectionAccordions');
+
+  accordionsEl.addEventListener('click', (e) => {
+    const group = e.target.closest('.section-group');
+    if (!group) return;
+    const name = group.dataset.sectionGroup;
+
+    // Row-level clicks (inside a question's collapsed header or open editor) take priority.
+    const row = e.target.closest('.question-row');
+    if (row) {
+      const qid = Number(row.dataset.id);
+      if (e.target.closest('.q-delete')) { onDeleteQuestion(row); return; }
+      if (e.target.classList.contains('q-add-option')) { onAddOption(row); return; }
+      if (e.target.closest('.q-remove-option')) { onRemoveOption(e.target.closest('.q-remove-option')); return; }
+      if (e.target.classList.contains('chip-delete')) { onDeleteRule(e.target.dataset.ruleId); return; }
+      if (e.target.classList.contains('q-add-condition-btn')) {
+        const formWrap = row.querySelector('.q-condition-form');
+        const wasHidden = formWrap.classList.contains('hidden');
+        closeAllConditionForms();
+        if (wasHidden) {
+          formWrap.innerHTML = conditionFormHtml('this question', (q) => q.id === qid);
+          formWrap.classList.remove('hidden');
+        }
+        return;
+      }
+      if (e.target.classList.contains('cf-submit')) { submitConditionForm(e.target, { kind: 'question', targetQuestionId: qid }); return; }
+      if (e.target.classList.contains('cf-cancel')) {
+        const formWrap = row.querySelector('.q-condition-form');
+        formWrap.classList.add('hidden');
+        formWrap.innerHTML = '';
+        return;
+      }
+      if (e.target.closest('.q-row-header')) {
+        if (openQuestions.has(qid)) openQuestions.delete(qid); else openQuestions.add(qid);
+        renderQuestions();
+        return;
+      }
+      return; // click landed somewhere inert inside the open editor body
+    }
+
+    // Section header / controls (only reached when the click wasn't inside a question row).
+    if (e.target.closest('.section-condition-btn')) {
+      const formWrap = group.querySelector('.section-condition-form');
+      const wasHidden = formWrap.classList.contains('hidden');
+      closeAllConditionForms();
+      if (wasHidden) {
+        formWrap.innerHTML = conditionFormHtml('this section', (q) => q.section === name);
+        formWrap.classList.remove('hidden');
+      }
+      return;
+    }
+    if (e.target.closest('.section-delete-btn')) { onDeleteSection(name); return; }
+    if (e.target.classList.contains('cf-submit')) { submitConditionForm(e.target, { kind: 'section', targetSection: name }); return; }
+    if (e.target.classList.contains('cf-cancel')) {
+      const formWrap = group.querySelector('.section-condition-form');
+      formWrap.classList.add('hidden');
+      formWrap.innerHTML = '';
+      return;
+    }
+    if (e.target.classList.contains('section-name-display')) return; // contenteditable handles its own focus/typing
+    const addBtn = e.target.closest('.add-question-to-section-btn');
+    if (addBtn) { onAddQuestionToSection(addBtn.dataset.section); return; }
+    if (e.target.closest('.section-header')) {
+      if (openSections.has(name)) openSections.delete(name); else openSections.add(name);
+      renderQuestions();
+    }
+  });
+
+  accordionsEl.addEventListener('change', (e) => {
+    const row = e.target.closest('.question-row');
+    if (!row) return;
+    if (e.target.classList.contains('q-type')) return onTypeChange(e.target);
+    if (e.target.classList.contains('q-required')) return saveCard(row);
+    if (e.target.classList.contains('q-cadence')) return saveCard(row);
+    if (e.target.classList.contains('q-section-select')) return onSectionReassign(row);
+  });
+
+  accordionsEl.addEventListener(
+    'blur',
+    (e) => {
+      if (e.target.classList && e.target.classList.contains('section-name-display')) { onSectionNameBlur(e.target); return; }
+      const row = e.target.closest && e.target.closest('.question-row');
+      if (!row) return;
+      if (e.target.matches('.q-text, .q-code, .q-min, .q-max, .q-option-input')) saveCard(row);
+    },
+    true
+  );
+
+  // Drag-and-drop reorder (grip handle only, so text selection inside the
+  // row's inputs/textarea isn't hijacked by the browser's native drag).
+  // Confined to within one section: moving a question to a different section
+  // is done via its Section dropdown, since a drag can only change sequence
+  // (order_index) and has no way to also tell the server which section a
+  // cross-section drop should assign -- allowing it would let the row's
+  // visual position drift out of sync with its actual data until the next
+  // re-render silently snapped it back.
+  let dragId = null;
+  accordionsEl.addEventListener('dragstart', (e) => {
+    if (!e.target.classList || !e.target.classList.contains('drag-handle')) return;
+    const row = e.target.closest('.question-row');
+    dragId = row.dataset.id;
+    e.dataTransfer.effectAllowed = 'move';
+    row.classList.add('opacity-40');
+  });
+  accordionsEl.addEventListener('dragend', (e) => {
+    const row = e.target.closest && e.target.closest('.question-row');
+    if (row) row.classList.remove('opacity-40');
+    dragId = null;
+  });
+  accordionsEl.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    const overRow = e.target.closest('.question-row');
+    if (!overRow || overRow.dataset.id === dragId) return;
+    const dragging = document.getElementById('qcard-' + dragId);
+    if (!dragging) return;
+    if (dragging.closest('.section-body') !== overRow.closest('.section-body')) return;
+    e.preventDefault();
+    const rect = overRow.getBoundingClientRect();
+    const before = e.clientY - rect.top < rect.height / 2;
+    overRow.parentElement.insertBefore(dragging, before ? overRow : overRow.nextSibling);
+  });
+  accordionsEl.addEventListener('drop', async (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    await persistOrder();
+  });
+
+  async function persistOrder() {
+    const ids = Array.from(accordionsEl.querySelectorAll('.question-row')).map((el) => Number(el.dataset.id));
+    questions.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    try {
+      await api('POST', `/admin/studies/${STUDY_ID}/questions/reorder`, { ids });
+      renderQuestions();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  function renderAll() {
+    renderSectionIndex();
+    renderQuestions();
+  }
+  renderAll();
+})();
+</script>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
+<%- include('../partials/footer') %>

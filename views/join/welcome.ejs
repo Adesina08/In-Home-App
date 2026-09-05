@@ -1,0 +1,71 @@
+<%- include('../partials/header', { title: study.name + ' — Inicio Diary', user: null, fieldMode: true, defaultTheme: 'light', showThemeToggle: true }) %>
+
+<%#
+  The study brief. The single most important screen in recruitment and
+  previously the thinnest: someone standing at a recruitment point decides
+  here, and duration and cadence were not shown anywhere before consent.
+%>
+<div class="max-w-lg mx-auto px-1 pb-10">
+  <div class="text-center pt-4 pb-7">
+    <img src="/public/icons/logo-header.png" alt="" class="h-12 w-auto mx-auto mb-3" />
+    <div class="font-display text-2xl font-bold tracking-tight text-slate-900 dark:text-night-ink">Inicio Diary</div>
+    <div class="text-sm text-signal mt-0.5">Research. Insights. Impact.</div>
+  </div>
+
+  <div class="text-center mb-7">
+    <span class="w-16 h-16 rounded-full bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center mx-auto mb-4">
+      <%- icon('clipboard', 'w-7 h-7') %>
+    </span>
+    <h1 class="font-display text-3xl font-bold tracking-tight leading-tight text-slate-900 dark:text-night-ink"><%= study.name %></h1>
+    <div class="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-night-muted mt-2.5">
+      <%- icon('location', 'w-4 h-4') %> <%= study.market || 'Nigeria' %>
+      <span class="opacity-50">&bull;</span>
+      <%= study.category || 'Consumption' %>
+    </div>
+    <p class="text-sm text-slate-600 dark:text-night-muted leading-relaxed mt-4">
+      <%= study.invite_brief || 'Help us understand consumption habits in households like yours. Your answers will help shape better products and services for your community.' %>
+    </p>
+  </div>
+
+  <%# Duration, cadence and what is needed, before consent. Someone who learns
+      on day three that this runs for weeks is an avoidable drop-out. %>
+  <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised p-5 mb-6">
+    <div class="flex items-start gap-3 mb-4">
+      <span class="w-10 h-10 rounded-full bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center shrink-0"><%- icon('clipboard', 'w-5 h-5') %></span>
+      <span>
+        <span class="block font-semibold text-slate-900 dark:text-night-ink">Before we begin</span>
+        <span class="block text-sm text-slate-500 dark:text-night-muted">Here's what taking part involves.</span>
+      </span>
+    </div>
+    <dl class="space-y-3.5 border-t border-slate-100 dark:border-night-line pt-4">
+      <div class="flex gap-3">
+        <dt class="w-28 shrink-0 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted pt-1">What you'd do</dt>
+        <dd class="text-sm text-slate-700 dark:text-night-ink">Log each occasion on your phone as it happens &mdash; a few questions, a photo and a short spoken answer.</dd>
+      </div>
+      <div class="flex gap-3">
+        <dt class="w-28 shrink-0 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted pt-1">For how long</dt>
+        <dd class="text-sm text-slate-700 dark:text-night-ink">
+          <span class="font-mono font-semibold"><%= durationLabel %></span><br />
+          <span class="text-slate-500 dark:text-night-muted"><%= cadenceLabel %></span>
+        </dd>
+      </div>
+      <div class="flex gap-3">
+        <dt class="w-28 shrink-0 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 dark:text-night-muted pt-1">What you need</dt>
+        <dd class="text-sm text-slate-700 dark:text-night-ink">A phone with a camera, and somewhere quiet enough to record a short voice note.</dd>
+      </div>
+    </dl>
+  </div>
+
+  <a href="/join/<%= code %>/consent"
+     class="flex items-center justify-center gap-2 w-full h-14 rounded-2xl bg-signal text-white font-semibold text-base mb-3">
+    Get started <%- icon('arrow-right', 'w-5 h-5') %>
+  </a>
+  <%# Decline available from the first screen, not only at the end. %>
+  <a href="/join/<%= code %>/decline" class="block text-center text-sm font-medium text-slate-500 dark:text-night-muted py-2">I'd rather not take part</a>
+
+  <p class="flex items-center justify-center gap-1.5 text-xs text-slate-400 dark:text-night-muted mt-5">
+    <%- icon('shield', 'w-4 h-4') %> Your data is safe and confidential.
+  </p>
+</div>
+
+<%- include('../partials/footer') %>

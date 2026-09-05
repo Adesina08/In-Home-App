@@ -1,0 +1,133 @@
+<%- include('../partials/header', { title: 'Respondent Panel — INICIO' }) %>
+
+<div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+  <div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-1">Reusable respondent profiles</div>
+    <h1 class="text-2xl font-bold text-slate-900">Respondent Panel</h1>
+    <p class="text-sm text-slate-500 mt-1">People are stored once and can be enrolled into multiple studies. Future invitations are only enabled where recontact permission is Yes.</p>
+  </div>
+  <div class="rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm text-slate-600">
+    <span class="font-bold text-slate-900"><%= rows.length %></span> matching profile<%= rows.length === 1 ? '' : 's' %>
+  </div>
+</div>
+
+<% if (result) { %>
+  <div class="mb-5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800"><%= result %></div>
+<% } %>
+
+<form method="GET" action="/admin/panel" class="bg-white border border-slate-200 rounded-2xl p-4 mb-5 grid sm:grid-cols-2 lg:grid-cols-6 gap-3">
+  <div class="lg:col-span-2">
+    <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Search</label>
+    <input name="q" value="<%= filters.q %>" placeholder="Name, location, occupation, contact" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <div>
+    <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Gender</label>
+    <select name="gender" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">All</option>
+      <option value="male" <%= filters.gender === 'male' ? 'selected' : '' %>>Male</option>
+      <option value="female" <%= filters.gender === 'female' ? 'selected' : '' %>>Female</option>
+      <option value="other" <%= filters.gender === 'other' ? 'selected' : '' %>>Other</option>
+      <option value="prefer_not_to_say" <%= filters.gender === 'prefer_not_to_say' ? 'selected' : '' %>>Prefer not to say</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Education</label>
+    <select name="education" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">All</option>
+      <option value="no_formal_schooling" <%= filters.education === 'no_formal_schooling' ? 'selected' : '' %>>No formal schooling</option>
+      <option value="primary" <%= filters.education === 'primary' ? 'selected' : '' %>>Primary</option>
+      <option value="secondary" <%= filters.education === 'secondary' ? 'selected' : '' %>>Secondary</option>
+      <option value="vocational_technical" <%= filters.education === 'vocational_technical' ? 'selected' : '' %>>Vocational / technical</option>
+      <option value="tertiary_university" <%= filters.education === 'tertiary_university' ? 'selected' : '' %>>Tertiary / university</option>
+      <option value="postgraduate" <%= filters.education === 'postgraduate' ? 'selected' : '' %>>Postgraduate</option>
+      <option value="other" <%= filters.education === 'other' ? 'selected' : '' %>>Other</option>
+      <option value="prefer_not_to_say" <%= filters.education === 'prefer_not_to_say' ? 'selected' : '' %>>Prefer not to say</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Recontact</label>
+    <select name="recontact" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">All</option>
+      <option value="yes" <%= filters.recontact === 'yes' ? 'selected' : '' %>>Yes</option>
+      <option value="no" <%= filters.recontact === 'no' ? 'selected' : '' %>>No</option>
+    </select>
+  </div>
+  <div class="flex gap-2">
+    <div class="flex-1"><label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Min age</label><input name="min_age" value="<%= filters.min_age %>" inputmode="numeric" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>
+    <div class="flex-1"><label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Max age</label><input name="max_age" value="<%= filters.max_age %>" inputmode="numeric" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>
+  </div>
+  <div class="lg:col-span-6 flex gap-2 justify-end">
+    <a href="/admin/panel" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Clear</a>
+    <button class="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white">Apply filters</button>
+  </div>
+</form>
+
+<form method="POST" action="/admin/panel/invite">
+  <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+    <div class="px-4 py-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <div class="font-semibold text-slate-900">Panel members</div>
+        <div class="text-xs text-slate-500 mt-0.5">Religion is intentionally not shown in this recruitment list. Use only the fields needed for study targeting.</div>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2">
+        <select name="study_id" required class="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-w-[220px]">
+          <option value="">Invite selected to study…</option>
+          <% inviteStudies.forEach(study => { %>
+            <option value="<%= study.id %>"><%= study.name %></option>
+          <% }) %>
+        </select>
+        <button class="rounded-lg bg-brand-700 text-white px-4 py-2 text-sm font-semibold">Invite selected</button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left w-12">Select</th>
+            <th class="px-4 py-3 text-left">Person</th>
+            <th class="px-4 py-3 text-left">Location</th>
+            <th class="px-4 py-3 text-left">Age</th>
+            <th class="px-4 py-3 text-left">Gender</th>
+            <th class="px-4 py-3 text-left">Education</th>
+            <th class="px-4 py-3 text-left">Occupation</th>
+            <th class="px-4 py-3 text-left">Studies</th>
+            <th class="px-4 py-3 text-left">Future contact</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <% rows.forEach(row => { %>
+            <tr class="hover:bg-slate-50/60">
+              <td class="px-4 py-3">
+                <% if (row.can_invite) { %><input type="checkbox" name="profile_id" value="<%= row.id %>" class="rounded" /><% } else { %><span class="text-slate-300">—</span><% } %>
+              </td>
+              <td class="px-4 py-3">
+                <div class="font-semibold text-slate-900"><%= row.name || 'Unnamed' %></div>
+                <div class="text-xs text-slate-400 mt-0.5"><%= row.contact || 'No verified account contact' %></div>
+              </td>
+              <td class="px-4 py-3 text-slate-600"><%= row.location || '—' %></td>
+              <td class="px-4 py-3 text-slate-600"><%= row.age == null ? '—' : row.age %></td>
+              <td class="px-4 py-3 text-slate-600"><%= (row.gender || '—').replaceAll('_',' ') %></td>
+              <td class="px-4 py-3 text-slate-600"><%= (row.education_level || '—').replaceAll('_',' ') %></td>
+              <td class="px-4 py-3 text-slate-600"><%= row.occupation || '—' %></td>
+              <td class="px-4 py-3"><span class="inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600"><%= row.studies_count %></span></td>
+              <td class="px-4 py-3">
+                <% if (row.recontact_consent === 'yes') { %>
+                  <span class="inline-flex rounded-full bg-emerald-50 text-emerald-700 px-2 py-1 text-xs font-semibold">Yes</span>
+                  <% if (!row.account_id) { %><div class="text-[10px] text-amber-600 mt-1">Needs verified account before invite</div><% } %>
+                <% } else { %>
+                  <span class="inline-flex rounded-full bg-slate-100 text-slate-500 px-2 py-1 text-xs font-semibold">No</span>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (!rows.length) { %>
+            <tr><td colspan="9" class="px-6 py-12 text-center text-slate-400">No completed respondent profiles match these filters.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</form>
+
+<%- include('../partials/footer') %>

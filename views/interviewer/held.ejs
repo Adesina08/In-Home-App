@@ -1,0 +1,43 @@
+<%- include('../partials/header', { title: 'Held for Review — INICIO', user }) %>
+
+<div class="max-w-lg mx-auto bg-white rounded-2xl border border-slate-200/70 p-8 shadow-card">
+  <div class="text-center">
+    <div class="w-14 h-14 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4">
+      <%- icon('warning', 'w-7 h-7') %>
+    </div>
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Registered — Held for Review</h1>
+    <p class="text-slate-500 text-sm mb-5">
+      <strong class="text-slate-700"><%= name || 'This respondent' %></strong> was saved as
+      <strong class="text-slate-700"><%= code %></strong>, but their diary hasn't been activated yet.
+      Nothing has been lost — the research team reviews the point below and activates them from the admin Respondents screen.
+    </p>
+  </div>
+
+  <div class="space-y-3 mb-6 text-left">
+    <% holds.forEach(h => { %>
+      <div class="border border-amber-200 bg-amber-50 rounded-xl p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1">
+          <%= h.flagType === 'duplicate_identity' ? 'Possible duplicate' : 'Consent not recorded' %>
+        </div>
+        <div class="text-sm text-slate-700"><%= h.reason %></div>
+      </div>
+    <% }) %>
+  </div>
+
+  <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-xs text-slate-500">
+    <span class="font-semibold text-slate-700">What to do now:</span>
+    if this is genuinely a different person (for example a second member of the same household sharing one phone number),
+    tell the research team so they can release the hold. If it was a mistake, no further action is needed — the respondent
+    simply stays inactive and cannot submit diary entries.
+  </div>
+
+  <div class="flex flex-wrap gap-3 justify-center">
+    <a href="/interviewer/register" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <%- icon('plus', 'w-4 h-4') %> Register Another
+    </a>
+    <a href="/interviewer" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
+      <%- icon('users', 'w-4 h-4') %> My Respondents
+    </a>
+  </div>
+</div>
+<%- include('../partials/footer') %>

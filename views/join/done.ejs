@@ -1,0 +1,40 @@
+<%- include('../partials/header', { title: "You're all set — " + study.name, user: null, showThemeToggle: true }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 text-center">
+    <% if (held) { %>
+      <div class="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4">
+        <%- icon('clipboard', 'w-7 h-7') %>
+      </div>
+      <h1 class="text-lg font-bold text-slate-900 mb-1.5">Thanks, <%= respondent.name %> — you're registered</h1>
+      <p class="text-sm text-slate-500 mb-4 leading-relaxed">
+        The study team just needs to confirm a couple of details before your diary opens. Nothing more is needed from you right now.
+      </p>
+      <p class="text-sm text-slate-500 mb-6 leading-relaxed">
+        <strong class="text-slate-700">Save this link</strong> — once you're confirmed, opening it will take you straight into your diary.
+      </p>
+    <% } else { %>
+      <div class="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+        <%- icon('check-circle', 'w-7 h-7') %>
+      </div>
+      <h1 class="text-lg font-bold text-slate-900 mb-1.5">You're all set, <%= respondent.name %></h1>
+      <p class="text-sm text-slate-500 mb-6 leading-relaxed">
+        Your diary is open. <strong class="text-slate-700">Save this link</strong> — it's personal to you, and it's how you get back in.
+      </p>
+    <% } %>
+
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono break-all mb-2 text-slate-600"><%= diaryUrl %></div>
+    <p class="text-[11px] text-slate-400 mb-6">Your respondent code is <span class="font-mono"><%= respondent.respondent_code %></span>. Please don't share this link with anyone else.</p>
+
+    <a href="/r/<%= respondent.unique_token %>"
+       class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <% if (held) { %>Open my link<% } else { %>Go to my diary<% } %> <%- icon('arrow-right', 'w-4 h-4') %>
+    </a>
+
+    <p class="text-[11px] text-slate-400 mt-4 leading-relaxed">
+      Tip: add this to your home screen so it opens like an app — you'll be offered a one-tap Install button, or use your browser's "Add to Home Screen".
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

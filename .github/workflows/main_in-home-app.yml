@@ -1,0 +1,157 @@
+# Build Inicio Diary and deploy the web/API application to Azure App Service.
+name: Build and deploy Inicio Diary
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Never cancel an Azure deployment once it has started. Cancelling the GitHub
+# job does not necessarily cancel OneDeploy on App Service, which can leave a
+# server-side deployment lock behind and make the next release fail with 409.
+# Queue releases instead so only one production deployment runs at a time.
+concurrency:
+  group: inicio-diary-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Set up Java for Android build
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install web dependencies
+        run: npm install
+
+      - name: Build Inicio Diary Android APK
+        run: |
+          cd mobile
+          npm install
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cd ../..
+          mkdir -p public/downloads
+          APK_PATH="$(find mobile/android/app/build/outputs/apk -type f -name '*.apk' | head -n 1)"
+          test -n "$APK_PATH"
+          cp "$APK_PATH" public/downloads/inicio-diary.apk
+          test -s public/downloads/inicio-diary.apk
+
+      - name: Build and test Inicio Diary web application
+        run: |
+          npm run build --if-present
+          npm run test --if-present
+
+      - name: Upload Inicio Diary APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inicio-diary-apk
+          path: public/downloads/inicio-diary.apk
+          if-no-files-found: error
+
+      - name: Prepare compact Azure deployment package
+        run: |
+          rm -rf deploy-package
+          mkdir deploy-package
+          # Every exclude is ANCHORED with a leading slash. An unanchored rsync
+          # pattern matches a directory of that name at ANY depth: "--exclude
+          # mobile" was meant to skip the Capacitor project at /mobile, but it
+          # also silently dropped views/mobile/login.ejs, so /mobile/login --
+          # the screen the Android app opens on -- 500'd in production with
+          # "Failed to lookup view" while working fine locally.
+          rsync -a ./ deploy-package/ \
+            --exclude /deploy-package \
+            --exclude /.git \
+            --exclude /.github \
+            --exclude /mobile \
+            --exclude /tests \
+            --exclude /uploads \
+            --exclude /data \
+            --exclude '*.log'
+          cd deploy-package
+          zip -qr ../inicio-diary-release.zip .
+          cd ..
+          test -s inicio-diary-release.zip
+          ls -lh inicio-diary-release.zip public/downloads/inicio-diary.apk
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: inicio-diary-web
+          path: inicio-diary-release.zip
+          if-no-files-found: error
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: inicio-diary-web
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_087D6C704C4C4218AB38BC4BC07BEDE0 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_2F1EA5A5307B4917B42D53F6C76A3562 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_6D13A5DDBA754F02A2CBC89160C6FB01 }}
+
+      - name: Deploy Inicio Diary to Azure Web App
+        shell: bash
+        run: |
+          set -uo pipefail
+          APP_NAME="In-Home-App"
+          RESOURCE_GROUP="$(az webapp list --query "[?name=='${APP_NAME}'].resourceGroup | [0]" -o tsv)"
+          if [ -z "$RESOURCE_GROUP" ]; then
+            echo "Could not resolve Azure resource group for ${APP_NAME}."
+            exit 1
+          fi
+
+          echo "Deploying ${APP_NAME} in resource group ${RESOURCE_GROUP}."
+          for attempt in 1 2 3 4 5 6; do
+            echo "Azure deployment attempt ${attempt}/6"
+            if az webapp deploy \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$APP_NAME" \
+              --src-path inicio-diary-release.zip \
+              --type zip \
+              --clean true \
+              --restart true \
+              --track-status true; then
+              echo "Inicio Diary deployment completed successfully."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 6 ]; then
+              delay=$((attempt * 30))
+              echo "Azure is still busy or deployment failed temporarily. Retrying in ${delay}s..."
+              sleep "$delay"
+            fi
+          done
+
+          echo "Azure deployment did not succeed after 6 attempts."
+          exit 1

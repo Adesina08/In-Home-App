@@ -1,0 +1,59 @@
+<%- include('partials/header', { title: 'Get the INICIO App', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="text-center mb-6">
+    <div class="w-14 h-14 rounded-2xl bg-brand-700 text-white flex items-center justify-center mx-auto mb-3 shadow-card">
+      <%- icon('smartphone', 'w-7 h-7') %>
+    </div>
+    <h1 class="text-xl font-bold text-slate-900">Get the INICIO App</h1>
+    <p class="text-sm text-slate-500 mt-1.5">INICIO runs as a web app you install straight from your browser — no app store needed.</p>
+  </div>
+
+  <div data-install-card data-install-variant="prompt" class="hidden bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-5 flex items-start gap-3">
+    <span class="w-9 h-9 rounded-xl bg-white text-brand-600 flex items-center justify-center shrink-0 shadow-sm"><%- icon('download', 'w-4 h-4') %></span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-semibold text-slate-800">Your browser can install this in one tap</div>
+      <div class="text-xs text-slate-500 mt-0.5 mb-3">No menus to dig through — this puts the app icon straight on your home screen.</div>
+      <button type="button" data-install-trigger class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition disabled:opacity-50"><%- icon('download', 'w-3.5 h-3.5') %> Install App</button>
+    </div>
+  </div>
+  <script src="/public/js/install-prompt.js"></script>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 mb-5 text-center">
+    <% if (qr) { %>
+      <img src="<%= qr %>" alt="QR code to open the INICIO app" class="mx-auto rounded-xl border border-slate-100" width="220" height="220" />
+    <% } else { %>
+      <div class="w-[220px] h-[220px] mx-auto rounded-xl border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400">QR code unavailable</div>
+    <% } %>
+    <p class="text-xs text-slate-400 mt-3 mb-1">Scan with your phone's camera, or open this link on your phone:</p>
+    <a href="<%= url %>" class="inline-flex items-center gap-1.5 text-brand-600 font-mono text-xs break-all hover:underline"><%- icon('download', 'w-3.5 h-3.5 shrink-0') %><%= url %></a>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+    <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> Already have a personal diary link?</div>
+    <p class="text-xs text-slate-500">If your interviewer gave you your own diary link or QR code, use that one instead — it opens straight into your diary and remembers who you are. This page is a general way to open and install the app.</p>
+  </div>
+
+  <div class="space-y-3">
+    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5">
+      <div class="font-semibold text-slate-800 mb-2 text-sm">On iPhone (Safari)</div>
+      <ol class="text-sm text-slate-600 space-y-1.5 list-decimal list-inside">
+        <li>Open the link above in <strong>Safari</strong>.</li>
+        <li>Tap the <strong>Share</strong> icon (square with an arrow) in the toolbar.</li>
+        <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+        <li>Tap <strong>Add</strong> — the app icon now appears on your home screen like any other app.</li>
+      </ol>
+    </div>
+    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5">
+      <div class="font-semibold text-slate-800 mb-2 text-sm">On Android (Chrome)</div>
+      <ol class="text-sm text-slate-600 space-y-1.5 list-decimal list-inside">
+        <li>Open the link above in <strong>Chrome</strong>.</li>
+        <li>Tap the <strong>⋮</strong> menu in the top-right corner.</li>
+        <li>Tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>).</li>
+        <li>Confirm — the app icon now appears on your home screen and opens full-screen, like any other app.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

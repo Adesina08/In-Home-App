@@ -1,0 +1,16 @@
+{
+  "name": "INICIO In-Home Consumption Diary",
+  "short_name": "INICIO Diary",
+  "description": "In-home consumption diary — log occasions, photo/video evidence, and reminders.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1F3864",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/public/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/public/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/public/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

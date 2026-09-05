@@ -1,0 +1,414 @@
+<%- include('../partials/header', { title: 'Questionnaire — Inicio Diary', user: user }) %>
+<%- include('../partials/study_tabs', { study: study, tab: 'questionnaire' }) %>
+
+<%#
+  Questionnaire builder — rebuilt.
+
+  The screen it replaces was 1,021 lines doing three jobs at once: listing and
+  ordering questions, editing one question, and defining logic across
+  questions. Everything lived in one scrolling column of expandable cards, so
+  editing question 40 meant scrolling past 39 others, and the logic rules were
+  scattered across the cards they happened to attach to — impossible to audit
+  as a set.
+
+  Split into three panes with one job each:
+    left   — the questionnaire as an ordered list. Reorder, jump, add.
+    centre — exactly one question, always fully expanded. No accordion.
+    right  — logic, as sentences, for the whole study in one place.
+
+  Every endpoint, payload and field name is unchanged. This is a structural and
+  visual rebuild, not a behavioural one.
+%>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <div>
+    <h1 class="font-display text-2xl font-bold text-slate-900 tracking-tight">Questionnaire</h1>
+    <div class="font-mono text-xs text-slate-500 mt-1">
+      <span id="qCount"><%= questions.length %></span> questions ·
+      <span id="rCount"><%= rules.length %></span> logic rules ·
+      v<%= study.version %>
+      <% if (study.has_unpublished_changes) { %>
+        <span class="text-unverified font-semibold">· unpublished changes</span>
+      <% } %>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="/admin/studies/<%= study.id %>/questionnaire/upload"
+       class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('upload', 'w-4 h-4') %> Import</a>
+    <% if (study.has_unpublished_changes) { %>
+      <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish">
+        <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition"><%- icon('check', 'w-4 h-4') %> Publish v<%= (study.version || 1) + 1 %></button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<%# Unpublished-change state is load-bearing: an edit here does not reach
+    respondents until it is published, and the old page said so only in small
+    grey text. %>
+<% if (study.has_unpublished_changes) { %>
+  <div class="flex items-start gap-2.5 bg-unverified-soft border border-unverified/30 rounded-xl px-4 py-3 mb-4 text-sm text-unverified">
+    <%- icon('warning', 'w-4 h-4 shrink-0 mt-0.5') %>
+    <div>Respondents are still answering <strong>v<%= study.version %></strong>. Your changes go live when you publish.</div>
+  </div>
+<% } %>
+
+<div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_290px] gap-4 items-start">
+
+  <!-- ============ LEFT: the questionnaire as a list ============ -->
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="px-4 pt-4 pb-2 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Questions</div>
+    <div id="qList" class="pb-2 max-h-[70vh] overflow-y-auto"></div>
+    <div class="px-3 pb-3 pt-1 border-t border-slate-100">
+      <button id="addQuestion" class="w-full text-left px-2.5 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"><%- icon('plus', 'w-4 h-4') %> Add question</button>
+      <button id="addSection" class="w-full text-left px-2.5 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"><%- icon('plus', 'w-4 h-4') %> Add section</button>
+    </div>
+  </div>
+
+  <!-- ============ CENTRE: one question, fully expanded ============ -->
+  <div id="editor" class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 min-h-[420px]"></div>
+
+  <!-- ============ RIGHT: logic for the whole study ============ -->
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+    <div class="px-4 pt-4 pb-2 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Logic</div>
+    <%# Rules read as sentences and live together, because a rule set is only
+        auditable as a set. Attached to individual cards, as before, nobody
+        could answer "what does this questionnaire actually do?" %>
+    <div id="ruleList" class="px-3 pb-3 space-y-1.5 max-h-[46vh] overflow-y-auto"></div>
+    <div class="px-3 pb-4 pt-1 border-t border-slate-100">
+      <button id="addRule" class="w-full text-left px-2.5 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"><%- icon('plus', 'w-4 h-4') %> Add a rule</button>
+      <div id="ruleForm" class="hidden mt-2 space-y-2 text-xs"></div>
+    </div>
+  </div>
+</div>
+
+<div id="saveToast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs font-medium px-3.5 py-2 rounded-lg opacity-0 transition-opacity pointer-events-none">Saved</div>
+
+<script>
+(function () {
+  var STUDY_ID = <%= study.id %>;
+  var questions = <%- JSON.stringify(questions) %>;
+  var rules = <%- JSON.stringify(rules) %>;
+  var selectedId = questions.length ? questions[0].id : null;
+
+  // Which question types the video extractor can pre-fill. Mirrors
+  // lib/videoPrompts.js exactly: single and multi select WITH options. Shown in
+  // the editor because an admin writing a questionnaire for video mode
+  // otherwise has no way to know which of their questions the teleprompter
+  // will put on screen.
+  var AI_FILLABLE = ['single', 'multi'];
+
+  var TYPES = [
+    ['single', 'Single select'], ['multi', 'Multi select'], ['numeric', 'Number'],
+    ['text', 'Short text'], ['longtext', 'Long text'], ['date', 'Date'],
+    ['time', 'Time'], ['photo', 'Photo'], ['video', 'Video'], ['audio', 'Audio'],
+  ];
+  // Which diary_mode(s) each question applies to. Empty selection == every
+  // cadence -- the same default a question gets when nobody has touched this
+  // control at all, so leaving every box unchecked is not a way to hide a
+  // question by accident.
+  var CADENCES = [
+    ['realtime', 'Real-time'], ['daily', 'Daily'], ['weekly', 'Weekly'],
+    ['monthly', 'Monthly'], ['hybrid', 'Hybrid'],
+  ];
+  function cadencesOf(q) {
+    if (Array.isArray(q.applicable_cadences)) return q.applicable_cadences;
+    try { var p = JSON.parse(q.applicable_cadences || '[]'); return Array.isArray(p) ? p : []; }
+    catch (e) { return []; }
+  }
+  var OPS = { equals: 'is', not_equals: 'is not', in: 'is one of', not_in: 'is none of', includes: 'includes' };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  async function api(method, url, body) {
+    var res = await fetch(url, {
+      method: method,
+      headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.error || 'Something went wrong saving that.');
+    return data;
+  }
+
+  var toast = document.getElementById('saveToast');
+  function saved(msg) {
+    toast.textContent = msg || 'Saved';
+    toast.classList.remove('opacity-0');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toast.classList.add('opacity-0'); }, 1400);
+  }
+  function fail(e) { toast.textContent = e.message; toast.classList.remove('opacity-0'); }
+
+  function optionsOf(q) {
+    var raw = q.options_json !== undefined ? q.options_json : q.options;
+    if (Array.isArray(raw)) return raw;
+    try { var p = JSON.parse(raw || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
+  }
+  function canAiFill(q) { return AI_FILLABLE.indexOf(q.type) > -1 && optionsOf(q).length > 0; }
+
+  // ---------- left pane ----------
+  function renderList() {
+    var wrap = document.getElementById('qList');
+    var lastSection = null;
+    var html = '';
+    questions.forEach(function (q, i) {
+      if (q.section !== lastSection) {
+        lastSection = q.section;
+        html += '<div class="px-4 pt-3 pb-1 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-400">' + esc(q.section || 'No section') + '</div>';
+      }
+      html += '<button class="q-item w-full text-left flex items-baseline gap-2.5 px-4 py-2 hover:bg-slate-50 transition ' +
+        (q.id === selectedId ? 'bg-brand-50 shadow-[inset_2px_0_0_var(--tw-color-brand,#1F3864)]' : '') + '" data-id="' + q.id + '" draggable="true">' +
+        '<span class="font-mono text-[10px] text-slate-400 tabular-nums">' + String(i + 1).padStart(2, '0') + '</span>' +
+        '<span class="text-[13px] leading-snug ' + (q.id === selectedId ? 'font-semibold text-slate-900' : 'text-slate-600') + ' truncate">' +
+        esc(q.text || '(untitled)') + '</span></button>';
+    });
+    wrap.innerHTML = html || '<div class="px-4 py-6 text-sm text-slate-400">No questions yet.</div>';
+    document.getElementById('qCount').textContent = questions.length;
+  }
+
+  // ---------- centre pane ----------
+  function renderEditor() {
+    var el = document.getElementById('editor');
+    var q = questions.filter(function (x) { return x.id === selectedId; })[0];
+    if (!q) {
+      el.innerHTML = '<div class="text-center py-16"><div class="font-display text-lg font-bold text-slate-800">No question selected</div>' +
+        '<div class="text-sm text-slate-500 mt-1">Add your first question to start building.</div></div>';
+      return;
+    }
+    var opts = optionsOf(q);
+    var typeOpts = TYPES.map(function (t) {
+      return '<option value="' + t[0] + '"' + (q.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
+    }).join('');
+
+    el.innerHTML =
+      '<div class="flex items-start justify-between gap-3 mb-4">' +
+        '<div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Editing question</div>' +
+        '<button id="delQ" class="text-xs text-red-600 hover:underline">Delete</button>' +
+      '</div>' +
+      '<textarea id="fText" rows="2" class="w-full font-display text-xl font-bold tracking-tight text-slate-900 border-0 border-b-2 border-slate-200 focus:border-brand-500 focus:ring-0 px-0 pb-2 resize-none" placeholder="Ask a question…">' + esc(q.text || '') + '</textarea>' +
+      '<div class="grid grid-cols-2 gap-3 mt-4">' +
+        '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Type</span>' +
+          '<select id="fType" class="mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white">' + typeOpts + '</select></label>' +
+        '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Section</span>' +
+          '<input id="fSection" value="' + esc(q.section || '') + '" class="mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm" placeholder="e.g. Screening" /></label>' +
+      '</div>' +
+      '<div class="grid grid-cols-2 gap-3 mt-3">' +
+        '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Code</span>' +
+          '<input id="fCode" value="' + esc(q.code || '') + '" class="mt-1 w-full font-mono border border-slate-300 rounded-lg px-2.5 py-2 text-sm" /></label>' +
+        '<label class="flex items-center gap-2 mt-6"><input type="checkbox" id="fRequired" ' + (q.required ? 'checked' : '') + ' class="h-4 w-4 rounded border-slate-300 accent-brand-700" />' +
+          '<span class="text-sm text-slate-700">Required</span></label>' +
+      '</div>' +
+      '<div class="mt-4"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Applies to</div>' +
+      '<div id="cadenceRow" class="flex flex-wrap gap-3"></div>' +
+      '<p class="text-[11px] text-slate-400 mt-1.5">Leave all unchecked for every cadence &mdash; the same as a question created before this existed.</p></div>' +
+      (AI_FILLABLE.indexOf(q.type) > -1 ?
+        '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
+        '<div id="optList" class="space-y-1.5"></div>' +
+        '<button id="addOpt" class="mt-2 text-xs text-brand-700 font-medium hover:underline">+ Add option</button></div>' : '') +
+      '<div class="mt-5 pt-4 border-t border-slate-100">' +
+        (canAiFill(q)
+          ? '<div class="flex items-start gap-2 text-xs font-medium text-verified bg-verified-soft rounded-lg px-3 py-2.5">' +
+            '<span>✓</span><span>Video AI can fill this. It appears on the teleprompter during recording, and answers arrive marked unconfirmed for a researcher to check.</span></div>'
+          : '<div class="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5">' +
+            '<span>—</span><span>Video AI cannot fill this ' + (AI_FILLABLE.indexOf(q.type) > -1 ? 'until it has options' : 'question type') + ', so it is left off the teleprompter and asked on the form instead.</span></div>') +
+      '</div>';
+
+    if (AI_FILLABLE.indexOf(q.type) > -1) renderOptions(q, opts);
+    renderCadences(q);
+    wireEditor(q);
+  }
+
+  function renderCadences(q) {
+    var host = document.getElementById('cadenceRow');
+    if (!host) return;
+    var current = cadencesOf(q);
+    host.innerHTML = CADENCES.map(function (c) {
+      return '<label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">' +
+        '<input type="checkbox" class="cadence-in h-4 w-4 rounded border-slate-300 accent-brand-700" value="' + c[0] + '"' +
+        (current.indexOf(c[0]) > -1 ? ' checked' : '') + ' />' + c[1] + '</label>';
+    }).join('');
+    host.querySelectorAll('.cadence-in').forEach(function (box) {
+      box.addEventListener('change', function () {
+        var picked = Array.prototype.slice.call(host.querySelectorAll('.cadence-in:checked')).map(function (b) { return b.value; });
+        patch(q.id, { applicable_cadences: picked });
+      });
+    });
+  }
+
+  function renderOptions(q, opts) {
+    var host = document.getElementById('optList');
+    if (!host) return;
+    host.innerHTML = opts.map(function (o, i) {
+      return '<div class="flex items-center gap-2">' +
+        '<span class="font-mono text-[10px] text-slate-400 w-4 text-right tabular-nums">' + (i + 1) + '</span>' +
+        '<input class="opt-in flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm" value="' + esc(o) + '" data-i="' + i + '" />' +
+        '<button class="opt-del text-slate-400 hover:text-red-600 text-sm px-1" data-i="' + i + '">&times;</button></div>';
+    }).join('') || '<div class="text-xs text-slate-400">No options yet — this question cannot be answered until it has some.</div>';
+
+    host.querySelectorAll('.opt-in').forEach(function (inp) {
+      inp.addEventListener('change', function () {
+        var next = optionsOf(q).slice();
+        next[Number(inp.dataset.i)] = inp.value;
+        patch(q.id, { options: next });
+      });
+    });
+    host.querySelectorAll('.opt-del').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var next = optionsOf(q).slice();
+        next.splice(Number(b.dataset.i), 1);
+        patch(q.id, { options: next });
+      });
+    });
+    var add = document.getElementById('addOpt');
+    if (add) add.onclick = function () { patch(q.id, { options: optionsOf(q).concat(['']) }); };
+  }
+
+  function wireEditor(q) {
+    function on(id, ev, fn) { var e = document.getElementById(id); if (e) e.addEventListener(ev, fn); }
+    on('fText', 'change', function (e) { patch(q.id, { text: e.target.value }); });
+    on('fType', 'change', function (e) { patch(q.id, { type: e.target.value }); });
+    on('fSection', 'change', function (e) { patch(q.id, { section: e.target.value }); });
+    on('fCode', 'change', function (e) { patch(q.id, { code: e.target.value }); });
+    on('fRequired', 'change', function (e) { patch(q.id, { required: e.target.checked ? 1 : 0 }); });
+    on('delQ', 'click', async function () {
+      if (!confirm('Delete this question? Answers already collected against it are kept.')) return;
+      try {
+        await api('POST', '/admin/studies/' + STUDY_ID + '/questionnaire/' + q.id + '/delete');
+        questions = questions.filter(function (x) { return x.id !== q.id; });
+        selectedId = questions.length ? questions[0].id : null;
+        renderList(); renderEditor(); saved('Question deleted');
+      } catch (e) { fail(e); }
+    });
+  }
+
+  async function patch(id, body) {
+    try {
+      var updated = await api('PATCH', '/admin/studies/' + STUDY_ID + '/questions/' + id, body);
+      questions = questions.map(function (q) { return q.id === id ? Object.assign({}, q, updated.question || body) : q; });
+      renderList(); renderEditor(); saved();
+    } catch (e) { fail(e); }
+  }
+
+  // ---------- right pane ----------
+  function renderRules() {
+    var host = document.getElementById('ruleList');
+    var byId = {};
+    questions.forEach(function (q) { byId[q.id] = q; });
+    host.innerHTML = rules.map(function (r) {
+      var val = ['in', 'not_in', 'includes'].indexOf(r.operator) > -1 ? String(r.value || '').split('|').join(', ') : r.value;
+      return '<div class="group border-l-2 border-brand-400 bg-brand-50/50 pl-2.5 pr-1.5 py-1.5 rounded-r text-[12px] leading-snug text-slate-700">' +
+        'If <strong>' + esc(r.condition_text || '') + '</strong> ' + (OPS[r.operator] || r.operator) + ' <strong>' + esc(val) + '</strong>, ' +
+        (r.action === 'show' ? 'show' : 'hide') + ' it.' +
+        '<button class="rule-del float-right text-slate-300 group-hover:text-red-600" data-id="' + r.id + '">&times;</button></div>';
+    }).join('') || '<div class="px-1 py-3 text-xs text-slate-400">No logic yet. Every question is shown to everyone.</div>';
+    document.getElementById('rCount').textContent = rules.length;
+
+    host.querySelectorAll('.rule-del').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        try {
+          await api('POST', '/admin/studies/' + STUDY_ID + '/skip-logic/' + b.dataset.id + '/delete');
+          rules = rules.filter(function (r) { return String(r.id) !== String(b.dataset.id); });
+          renderRules(); saved('Rule removed');
+        } catch (e) { fail(e); }
+      });
+    });
+  }
+
+  // ---------- events ----------
+  document.getElementById('qList').addEventListener('click', function (e) {
+    var b = e.target.closest('.q-item');
+    if (!b) return;
+    selectedId = Number(b.dataset.id);
+    renderList(); renderEditor();
+  });
+
+  document.getElementById('addQuestion').addEventListener('click', async function () {
+    var cur = questions.filter(function (x) { return x.id === selectedId; })[0];
+    try {
+      var created = await api('POST', '/admin/studies/' + STUDY_ID + '/questions', cur && cur.section ? { section: cur.section } : {});
+      questions.push(created.question || created);
+      selectedId = (created.question || created).id;
+      renderList(); renderEditor(); saved('Question added');
+      var t = document.getElementById('fText'); if (t) t.focus();
+    } catch (e) { fail(e); }
+  });
+
+  document.getElementById('addSection').addEventListener('click', async function () {
+    var name = prompt('Name this section (e.g. Screening)');
+    if (!name) return;
+    try {
+      var created = await api('POST', '/admin/studies/' + STUDY_ID + '/questions', { section: name });
+      questions.push(created.question || created);
+      selectedId = (created.question || created).id;
+      renderList(); renderEditor(); saved('Section added');
+    } catch (e) { fail(e); }
+  });
+
+  document.getElementById('addRule').addEventListener('click', function () {
+    var form = document.getElementById('ruleForm');
+    form.classList.toggle('hidden');
+    if (form.classList.contains('hidden')) { form.innerHTML = ''; return; }
+    var qOpts = questions.map(function (q) { return '<option value="' + q.id + '">' + esc(q.text || '(untitled)') + '</option>'; }).join('');
+    form.innerHTML =
+      '<select id="rTarget" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + qOpts + '</select>' +
+      '<div class="grid grid-cols-2 gap-2">' +
+        '<select id="rAction" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white"><option value="show">Show it</option><option value="hide">Hide it</option></select>' +
+        '<select id="rOp" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' +
+          Object.keys(OPS).map(function (k) { return '<option value="' + k + '">' + OPS[k] + '</option>'; }).join('') + '</select>' +
+      '</div>' +
+      '<select id="rCond" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + qOpts + '</select>' +
+      '<input id="rVal" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="Value — comma-separate for is one of / none of" />' +
+      '<button id="rSave" class="w-full bg-brand-700 text-white rounded-lg py-2 font-semibold">Add rule</button>';
+    document.getElementById('rSave').onclick = async function () {
+      var op = document.getElementById('rOp').value;
+      var raw = document.getElementById('rVal').value;
+      try {
+        var created = await api('POST', '/admin/studies/' + STUDY_ID + '/skip-logic', {
+          question_id: Number(document.getElementById('rTarget').value),
+          condition_question_id: Number(document.getElementById('rCond').value),
+          action: document.getElementById('rAction').value,
+          operator: op,
+          value: ['in', 'not_in', 'includes'].indexOf(op) > -1 ? raw.split(',').map(function (v) { return v.trim(); }).filter(Boolean).join('|') : raw,
+        });
+        rules.push(created.rule || created);
+        form.classList.add('hidden'); form.innerHTML = '';
+        renderRules(); saved('Rule added');
+      } catch (e) { fail(e); }
+    };
+  });
+
+  // Drag to reorder. The list is the only place order is expressed, so this is
+  // where it belongs — the old page mixed reordering into the same cards you
+  // edited in, which made both harder.
+  var dragId = null;
+  document.getElementById('qList').addEventListener('dragstart', function (e) {
+    var b = e.target.closest('.q-item'); if (!b) return;
+    dragId = Number(b.dataset.id); e.dataTransfer.effectAllowed = 'move';
+  });
+  document.getElementById('qList').addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.getElementById('qList').addEventListener('drop', async function (e) {
+    e.preventDefault();
+    var b = e.target.closest('.q-item'); if (!b || dragId == null) return;
+    var overId = Number(b.dataset.id);
+    if (overId === dragId) return;
+    var from = questions.findIndex(function (q) { return q.id === dragId; });
+    var to = questions.findIndex(function (q) { return q.id === overId; });
+    questions.splice(to, 0, questions.splice(from, 1)[0]);
+    renderList();
+    try {
+      await api('POST', '/admin/studies/' + STUDY_ID + '/questions/reorder', { ids: questions.map(function (q) { return q.id; }) });
+      saved('Order saved');
+    } catch (e2) { fail(e2); }
+    dragId = null;
+  });
+
+  renderList(); renderEditor(); renderRules();
+})();
+</script>
+
+<%- include('../partials/footer') %>

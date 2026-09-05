@@ -1,0 +1,29 @@
+<%#
+  Bottom tab bar for the respondent app.
+
+  Fixed to the bottom because that is where a thumb rests, and because the app
+  is a WebView -- without persistent navigation the only way back is the
+  browser gesture, which many respondents will not find. `pb-[env(...)]`
+  clears the iOS home indicator; without it the last tab sits under it.
+%>
+<nav class="fixed left-0 right-0 bottom-0 z-40 border-t border-slate-200 dark:border-night-line bg-white/95 dark:bg-night-raised/95 backdrop-blur"
+     style="padding-bottom: env(safe-area-inset-bottom, 0px)">
+  <div class="max-w-2xl mx-auto grid grid-cols-4">
+    <%
+      const tabs = [
+        { key: 'home',     label: 'Home',     icon: 'home',      href: '/r/' + respondent.unique_token },
+        { key: 'diary',    label: 'Diary',    icon: 'clipboard', href: '/r/' + respondent.unique_token + '/entries' },
+        { key: 'activity', label: 'Activity', icon: 'chart',     href: '/r/' + respondent.unique_token + '/activity' },
+        { key: 'profile',  label: 'Profile',  icon: 'user',      href: '/r/' + respondent.unique_token + '/profile' },
+      ];
+      const active = typeof tab !== 'undefined' ? tab : 'home';
+    %>
+    <% tabs.forEach(t => { %>
+      <a href="<%= t.href %>" aria-current="<%= t.key === active ? 'page' : 'false' %>"
+         class="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium <%= t.key === active ? 'text-signal' : 'text-slate-400 dark:text-night-muted' %>">
+        <%- icon(t.icon, 'w-6 h-6') %>
+        <span><%= t.label %></span>
+      </a>
+    <% }) %>
+  </div>
+</nav>

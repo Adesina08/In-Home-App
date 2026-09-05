@@ -1,0 +1,69 @@
+<%- include('../partials/header', { title: 'Profile — Inicio Diary', user: null, fieldMode: true, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<div class="max-w-2xl mx-auto pb-28">
+  <div class="flex items-center justify-between gap-3 pt-1 pb-5">
+    <div class="flex items-center gap-2.5">
+      <img src="/public/icons/logo-header.png" alt="" class="h-8 w-auto" />
+      <span class="font-display text-xl font-bold tracking-tight text-slate-900 dark:text-night-ink">Profile</span>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-4 rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised p-5 mb-4">
+    <span class="w-16 h-16 rounded-full bg-signal text-white flex items-center justify-center font-display text-xl font-bold shrink-0">
+      <%= (respondent.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase() %>
+    </span>
+    <span class="min-w-0">
+      <span class="block font-display text-xl font-bold tracking-tight text-slate-900 dark:text-night-ink truncate"><%= respondent.name || 'Respondent' %></span>
+      <%# The respondent code, not the phone number. It is what staff quote on a
+          support call, and it is not a secret the way a contact detail is. %>
+      <span class="block font-mono text-sm text-slate-500 dark:text-night-muted mt-0.5"><%= respondent.respondent_code %></span>
+    </span>
+  </div>
+
+  <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised divide-y divide-slate-100 dark:divide-night-line mb-4">
+    <div class="px-4 py-3.5 flex items-center justify-between gap-3">
+      <span class="text-sm text-slate-500 dark:text-night-muted">Study</span>
+      <span class="text-sm font-medium text-slate-900 dark:text-night-ink text-right"><%= study.name %></span>
+    </div>
+    <div class="px-4 py-3.5 flex items-center justify-between gap-3">
+      <span class="text-sm text-slate-500 dark:text-night-muted">Status</span>
+      <span class="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-verified-soft dark:bg-verified/15 text-verified"><%= respondent.activation_status %></span>
+    </div>
+    <div class="px-4 py-3.5 flex items-center justify-between gap-3">
+      <span class="text-sm text-slate-500 dark:text-night-muted">Reminders</span>
+      <span class="text-sm font-medium text-slate-900 dark:text-night-ink"><%= respondent.preferred_channel === 'whatsapp' ? 'WhatsApp' : 'On this device' %></span>
+    </div>
+  </div>
+
+  <div class="rounded-2xl border border-slate-200 dark:border-night-line bg-white dark:bg-night-raised divide-y divide-slate-100 dark:divide-night-line mb-4">
+    <button type="button" data-theme-toggle aria-pressed="false"
+            class="w-full px-4 py-4 flex items-center gap-3.5 text-left">
+      <span class="w-10 h-10 rounded-full bg-slate-100 dark:bg-night-sunken text-slate-500 dark:text-night-muted flex items-center justify-center shrink-0"><%- icon('sun', 'w-5 h-5') %></span>
+      <span class="flex-1 font-medium text-slate-900 dark:text-night-ink" data-theme-label>Dark mode</span>
+      <span class="text-slate-300 dark:text-night-muted"><%- icon('chevron-right', 'w-5 h-5') %></span>
+    </button>
+    <a href="/r/<%= respondent.unique_token %>/help" class="px-4 py-4 flex items-center gap-3.5">
+      <span class="w-10 h-10 rounded-full bg-slate-100 dark:bg-night-sunken text-slate-500 dark:text-night-muted flex items-center justify-center shrink-0"><%- icon('help', 'w-5 h-5') %></span>
+      <span class="flex-1 font-medium text-slate-900 dark:text-night-ink">Help &amp; study guide</span>
+      <span class="text-slate-300 dark:text-night-muted"><%- icon('chevron-right', 'w-5 h-5') %></span>
+    </a>
+    <% if (typeof signedIn !== 'undefined' && signedIn) { %>
+      <a href="/me" class="px-4 py-4 flex items-center gap-3.5">
+        <span class="w-10 h-10 rounded-full bg-slate-100 dark:bg-night-sunken text-slate-500 dark:text-night-muted flex items-center justify-center shrink-0"><%- icon('clipboard', 'w-5 h-5') %></span>
+        <span class="flex-1 font-medium text-slate-900 dark:text-night-ink">My other studies</span>
+        <span class="text-slate-300 dark:text-night-muted"><%- icon('chevron-right', 'w-5 h-5') %></span>
+      </a>
+    <% } %>
+  </div>
+
+  <%# No "delete my account" button. Withdrawal is a research decision with
+      consent and incentive consequences, so it routes to a person rather than
+      silently removing someone mid-study. %>
+  <p class="text-xs text-slate-400 dark:text-night-muted px-1 leading-relaxed">
+    To stop taking part or have your information deleted, contact the research team &mdash;
+    the address is in the consent wording you agreed to.
+  </p>
+</div>
+
+<%- include('../partials/respondent_tabs', { respondent: respondent, tab: 'profile' }) %>
+<%- include('../partials/footer') %>

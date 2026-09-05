@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard — INICIO</title>
+  <link rel="stylesheet" href="/public/tailwind.css" />
+  <link rel="icon" href="/public/icons/icon-192.png" />
+  <style>
+    :root{--navy:#08254a;--navy2:#0b315f;--blue:#1468ff;--line:#dfe7f0;--muted:#6b7a90;--text:#13213a;}
+    *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#f5f8fc;color:var(--text)}
+    .dash-shell{min-height:100vh;display:grid;grid-template-columns:224px minmax(0,1fr)}
+    .side{background:linear-gradient(180deg,#061d3a 0%,#082b55 100%);color:white;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;padding:18px 12px 16px}
+    .brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px}.brand img{height:34px;width:auto}.brand-title{font-size:19px;font-weight:800;letter-spacing:.03em}.brand-sub{font-size:10px;color:#b8c9df;margin-top:-2px}
+    .nav{display:grid;gap:5px}.nav a{display:flex;align-items:center;gap:11px;color:#e7eef8;text-decoration:none;padding:11px 12px;border-radius:9px;font-size:14px}.nav a:hover{background:rgba(255,255,255,.08)}.nav a.active{background:#1261d8;color:#fff;font-weight:700;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+    .nav svg{width:18px;height:18px}.side-spacer{flex:1}.study-box{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:13px}.study-box .live{color:#58d78c;font-weight:700;font-size:12px}.study-box .title{font-size:12px;font-weight:700;margin-top:6px}.study-box .meta{font-size:11px;color:#c8d5e7;margin-top:4px}
+    .main{min-width:0}.topbar{height:62px;background:#07264b;color:white;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-left:1px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:20}.study-picker{display:flex;align-items:center;gap:9px}.study-picker label{font-size:13px;color:#d8e4f2}.study-picker select{width:min(420px,48vw);background:#0a315e;color:white;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:9px 36px 9px 12px;font-size:13px}.admin-box{display:flex;align-items:center;gap:10px;font-size:13px}.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#4169e1,#8b5cf6);font-weight:800}
+    .content{padding:18px 22px 28px;max-width:1600px;margin:0 auto}.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}.page-head h1{font-size:27px;line-height:1.1;margin:0;font-weight:800;letter-spacing:-.02em}.page-head p{margin:5px 0 0;color:#5f6f83;font-size:13px}.head-actions{display:flex;gap:8px}.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid #d5deea;background:#fff;color:#24344c;border-radius:8px;padding:9px 12px;text-decoration:none;font-size:12px;font-weight:700}.btn.primary{background:#0f4f9f;color:#fff;border-color:#0f4f9f}
+    .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:12px}.card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(24,39,75,.035)}.kpi{padding:15px;min-height:126px;display:flex;flex-direction:column;justify-content:space-between}.kpi-top{display:flex;align-items:center;gap:10px}.iconb{width:40px;height:40px;border-radius:50%;display:grid;place-items:center}.iconb svg{width:20px;height:20px}.b-blue{background:#e8f1ff;color:#1468ff}.b-green{background:#eaf8ef;color:#22a84a}.b-orange{background:#fff0e5;color:#f97316}.b-red{background:#ffe9ea;color:#ef4444}.b-purple{background:#f0ebff;color:#7c3aed}.k-label{font-size:12px;font-weight:700}.k-num{font-size:29px;font-weight:800;letter-spacing:-.03em;margin-top:7px}.k-foot{font-size:11px;color:#6b7a90}.positive{color:#16a34a}.danger{color:#dc2626}.warn{color:#d97706}
+    .row3{display:grid;grid-template-columns:1.08fr .98fr 1.12fr;gap:12px;margin-bottom:12px}.panel{padding:16px}.panel-title{font-size:15px;font-weight:800;margin-bottom:13px}.progress-row{margin-bottom:13px}.progress-head{display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px}.track{height:7px;border-radius:99px;background:#edf1f6;overflow:hidden}.fill{height:100%;border-radius:99px}.green{background:#25b85a}.orange{background:#ff7b13}.blue{background:#2b6ee8}.health-grid{display:grid;grid-template-columns:minmax(0,1fr) 132px;gap:14px}.statusbox{background:#fff8df;border-radius:10px;padding:13px;text-align:center}.statusbox .big{font-size:18px;font-weight:800;color:#d99000}.statusbox .small{font-size:10px;color:#667085}.attention{border:1px solid #e8edf3;border-radius:9px;overflow:hidden}.att{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:12px}.att+.att{border-top:1px solid #eef2f6}.att-ico{width:30px;height:30px;border-radius:8px;display:grid;place-items:center}.att strong{display:block;font-size:12px}.att span{font-size:10px;color:#6b7280}.mini-link{font-size:10px;font-weight:700;text-decoration:none;color:#135fd0;border:1px solid #cfe0ff;padding:7px 8px;border-radius:7px;white-space:nowrap}.funnel{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;align-items:stretch}.f-step{background:#edf4ff;border:1px solid #d7e6ff;border-radius:8px;padding:13px 7px;text-align:center}.f-step .lab{font-size:10px;color:#53657a}.f-step .val{font-size:19px;font-weight:800;margin-top:7px}.f-step .pct{font-size:9px;color:#6e7d90;margin-top:6px}
+    .row-bottom{display:grid;grid-template-columns:.78fr 1.08fr 1.34fr;gap:12px;margin-bottom:12px}.risk-wrap{display:flex;gap:20px;align-items:center}.ring{width:122px;height:122px;border-radius:50%;position:relative;background:conic-gradient(#22c55e 0 calc(var(--g)*1%),#f59e0b calc(var(--g)*1%) calc((var(--g) + var(--a))*1%),#ef4444 calc((var(--g) + var(--a))*1%) 100%);flex:0 0 auto}.ring:after{content:'';position:absolute;inset:24px;background:white;border-radius:50%}.ring-center{position:absolute;inset:0;z-index:2;display:grid;place-content:center;text-align:center}.ring-center b{font-size:20px}.ring-center span{font-size:9px;color:#718096}.legend{display:grid;gap:8px;font-size:11px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}.table{width:100%;border-collapse:collapse}.table th{text-align:left;font-size:9px;color:#718096;text-transform:uppercase;letter-spacing:.04em;padding:0 7px 8px}.table td{font-size:11px;padding:8px 7px;border-top:1px solid #eef2f6}.pill{display:inline-block;padding:3px 6px;border-radius:6px;font-size:9px;font-weight:800}.pill-red{background:#fee2e2;color:#dc2626}.pill-amber{background:#ffedd5;color:#d97706}.pill-green{background:#dcfce7;color:#15803d}.qc-action{border:1px solid #bfdbfe;color:#1d4ed8;background:#fff;border-radius:6px;padding:4px 7px;text-decoration:none;font-size:9px;font-weight:700}
+    .activity{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}.activity-item{display:flex;align-items:flex-start;gap:9px}.activity-item svg{width:22px;height:22px}.activity-item b{font-size:20px;display:block;line-height:1}.activity-item span{font-size:10px;color:#667085;display:block;margin-top:5px}.exports{display:flex;justify-content:flex-end;gap:7px;margin-top:12px;flex-wrap:wrap}
+    @media(max-width:1180px){.kpis{grid-template-columns:repeat(3,1fr)}.row3,.row-bottom{grid-template-columns:1fr 1fr}.row3>.card:last-child,.row-bottom>.card:last-child{grid-column:1/-1}}
+    @media(max-width:860px){.dash-shell{display:block}.side{position:static;height:auto;padding:10px}.brand,.study-box{display:none}.nav{display:flex;overflow-x:auto}.nav a{white-space:nowrap}.topbar{position:static;padding:0 12px}.content{padding:14px}.kpis{grid-template-columns:1fr 1fr}.row3,.row-bottom{grid-template-columns:1fr}.row3>.card:last-child,.row-bottom>.card:last-child{grid-column:auto}.activity{grid-template-columns:1fr 1fr}.health-grid{grid-template-columns:1fr}.page-head{flex-direction:column}}
+    @media(max-width:520px){.kpis{grid-template-columns:1fr}.funnel{grid-template-columns:1fr 1fr}.risk-wrap{flex-direction:column;align-items:flex-start}.study-picker label{display:none}.study-picker select{width:62vw}}
+  </style>
+</head>
+<body>
+<%
+  const compliancePct = expected > 0 ? Math.round((completed / expected) * 100) : 0;
+  const incompletePct = expected > 0 ? Math.round((missed / expected) * 100) : 0;
+  const riskTotal = riskCounts.green + riskCounts.amber + riskCounts.red;
+  const greenPct = riskTotal ? Math.round((riskCounts.green / riskTotal) * 100) : 0;
+  const amberPct = riskTotal ? Math.round((riskCounts.amber / riskTotal) * 100) : 0;
+  const redPct = riskTotal ? Math.round((riskCounts.red / riskTotal) * 100) : 0;
+  const criticalShown = openFlags.filter(f => f.severity === 'critical' || f.severity === 'high').length;
+  const stages = [['invited','Invited'],['screened','Screened'],['registered','Registered'],['activated','Activated'],['active','Active']];
+  const funnelMax = Math.max(...stages.map(([k]) => funnelMap[k] || 0),1);
+  const initials = (user && user.name ? user.name : 'Admin').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
+%>
+<div class="dash-shell">
+  <aside class="side">
+    <div class="brand"><img src="/public/icons/logo-header.png" alt="INICIO"><div><div class="brand-title">INICIO</div><div class="brand-sub">In-Home Consumption MVP</div></div></div>
+    <nav class="nav">
+      <a class="active" href="/admin"><%- icon('home') %><span>Dashboard</span></a>
+      <a href="/admin/studies"><%- icon('clipboard') %><span>Studies</span></a>
+      <a href="/admin/qc?study=<%= study.id %>"><%- icon('shield') %><span>QC Worklist</span></a>
+      <a href="/admin/ai-summary"><%- icon('trend') %><span>AI Summary</span></a>
+      <a href="/admin/whatsapp-outbox"><%- icon('chat') %><span>Messages</span></a>
+      <a href="/admin/users"><%- icon('users') %><span>Users & Roles</span></a>
+      <a href="/admin/studies/<%= study.id %>"><%- icon('cog') %><span>Settings</span></a>
+      <a href="/help"><%- icon('help') %><span>Help</span></a>
+    </nav>
+    <div class="side-spacer"></div>
+    <div class="study-box"><div class="live">● <%= study.status === 'live' ? 'Live fieldwork' : study.status %></div><div class="title"><%= study.name %></div><div class="meta"><%= study.market || 'Current market' %><% if(study.diary_mode){ %> · <%= study.diary_mode %> diary<% } %></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="study-picker"><label>Study:</label><select onchange="window.location='/admin?study='+this.value"><% studies.forEach(s=>{ %><option value="<%= s.id %>" <%= s.id===study.id?'selected':'' %>><%= s.name %></option><% }) %></select></div>
+      <div class="admin-box"><div class="avatar"><%= initials %></div><span><%= user && user.name ? user.name : 'Admin' %></span><a href="/logout" style="color:#dbe7f6;text-decoration:none"><%- icon('logout','w-4 h-4') %></a></div>
+    </div>
+
+    <main class="content">
+      <div class="page-head"><div><h1>Admin Dashboard</h1><p>Real-time overview of fieldwork performance and study health</p></div><div class="head-actions"><a class="btn" href="/admin/qc?study=<%= study.id %>"><%- icon('shield','w-4 h-4') %> QC Worklist</a><a class="btn primary" href="/admin/studies/<%= study.id %>"><%- icon('cog','w-4 h-4') %> Study Config</a></div></div>
+
+      <section class="kpis">
+        <div class="card kpi"><div><div class="kpi-top"><div class="iconb b-blue"><%- icon('users') %></div><div class="k-label">Respondents</div></div><div class="k-num"><%= totalRespondents %></div></div><div class="k-foot">Current study sample</div></div>
+        <div class="card kpi"><div><div class="kpi-top"><div class="iconb b-green"><%- icon('check-circle') %></div><div class="k-label">Diary Compliance</div></div><div class="k-num"><%= compliancePct %>%</div></div><div class="k-foot positive"><%= completed %> of <%= expected %> submitted</div></div>
+        <div class="card kpi"><div><div class="kpi-top"><div class="iconb b-orange"><%- icon('clipboard') %></div><div class="k-label">Completed Diaries</div></div><div class="k-num"><%= completed %></div></div><div class="k-foot">Submitted records</div></div>
+        <div class="card kpi"><div><div class="kpi-top"><div class="iconb b-red"><%- icon('warning') %></div><div class="k-label">Incomplete Diaries</div></div><div class="k-num"><%= missed %></div></div><div class="k-foot danger"><%= incompletePct %>% of diary records</div></div>
+        <div class="card kpi"><div><div class="kpi-top"><div class="iconb b-purple"><%- icon('stop') %></div><div class="k-label">Screened Out</div></div><div class="k-num"><%= screenedOut %></div></div><div class="k-foot">Recruitment exclusions</div></div>
+      </section>
+
+      <section class="row3">
+        <div class="card panel"><div class="panel-title">Fieldwork Health</div><div class="health-grid"><div>
+          <div class="progress-row"><div class="progress-head"><span>Diary completion</span><b><%= compliancePct %>%</b></div><div class="track"><div class="fill <%= compliancePct>=80?'green':compliancePct>=60?'orange':'blue' %>" style="width:<%= Math.min(compliancePct,100) %>%"></div></div></div>
+          <div class="progress-row"><div class="progress-head"><span>Respondent risk — green</span><b><%= greenPct %>%</b></div><div class="track"><div class="fill green" style="width:<%= greenPct %>%"></div></div></div>
+          <div class="progress-row"><div class="progress-head"><span>Recruitment active</span><b><%= Math.round(((funnelMap.active||0)/funnelMax)*100) %>%</b></div><div class="track"><div class="fill blue" style="width:<%= Math.round(((funnelMap.active||0)/funnelMax)*100) %>%"></div></div></div>
+        </div><div class="statusbox"><div class="small">Overall Status</div><div class="big"><%= riskCounts.red>0?'RED':riskCounts.amber>0?'AMBER':'GREEN' %></div><div class="small" style="margin-top:13px">Main risk</div><div style="font-size:11px;font-weight:700;margin-top:4px"><%= missed>0?'Diary completion':criticalShown>0?'QC review':'No major issue' %></div></div></div></div>
+
+        <div class="card panel"><div class="panel-title">Needs Attention</div><div class="attention">
+          <div class="att"><div class="att-ico b-red"><%- icon('warning','w-4 h-4') %></div><div><strong><%= criticalShown %> high-priority QC flags shown</strong><span>Review respondent-level exceptions</span></div><a class="mini-link" href="/admin/qc?study=<%= study.id %>">Review now</a></div>
+          <div class="att"><div class="att-ico b-orange"><%- icon('clipboard','w-4 h-4') %></div><div><strong><%= missed %> incomplete diary records</strong><span>Follow up where completion is overdue</span></div><a class="mini-link" href="/admin/qc?study=<%= study.id %>">View</a></div>
+          <div class="att"><div class="att-ico b-blue"><%- icon('users','w-4 h-4') %></div><div><strong><%= screenedOut %> screened-out records</strong><span>Keep recruitment quality visible</span></div><a class="mini-link" href="/admin/studies/<%= study.id %>">Study</a></div>
+        </div></div>
+
+        <div class="card panel"><div class="panel-title">Recruitment Funnel</div><div class="funnel"><% stages.forEach(([k,l])=>{ const v=funnelMap[k]||0; %><div class="f-step"><div class="lab"><%= l %></div><div class="val"><%= v %></div><div class="pct"><%= Math.round((v/funnelMax)*100) %>% of max stage</div></div><% }) %></div><div style="text-align:right;margin-top:12px"><a class="mini-link" href="/admin/studies/<%= study.id %>">View study</a></div></div>
+      </section>
+
+      <section class="row-bottom">
+        <div class="card panel"><div class="panel-title">Respondent Risk</div><div class="risk-wrap"><div class="ring" style="--g:<%= greenPct %>;--a:<%= amberPct %>"><div class="ring-center"><b><%= riskTotal %></b><span>Total</span></div></div><div class="legend"><div><span class="dot" style="background:#22c55e"></span>Green <b><%= riskCounts.green %></b> (<%= greenPct %>%)</div><div><span class="dot" style="background:#f59e0b"></span>Amber <b><%= riskCounts.amber %></b> (<%= amberPct %>%)</div><div><span class="dot" style="background:#ef4444"></span>Red <b><%= riskCounts.red %></b> (<%= redPct %>%)</div></div></div><div style="margin-top:13px"><a class="mini-link" href="/admin/qc?study=<%= study.id %>">Open QC Worklist</a></div></div>
+
+        <div class="card panel"><div class="panel-title">Interviewer Performance</div><div style="overflow:auto"><table class="table"><thead><tr><th>Interviewer</th><th>Recruited</th><th>Activated</th><th>Rate</th></tr></thead><tbody><% interviewers.slice(0,6).forEach(i=>{ const rate=i.recruited?Math.round((i.activated/i.recruited)*100):0; %><tr><td><b><%= i.name %></b></td><td><%= i.recruited %></td><td><%= i.activated %></td><td><span class="pill <%= rate>=80?'pill-green':rate>=60?'pill-amber':'pill-red' %>"><%= rate %>%</span></td></tr><% }) %><% if(!interviewers.length){ %><tr><td colspan="4" style="color:#94a3b8">No interviewer users yet</td></tr><% } %></tbody></table></div></div>
+
+        <div class="card panel"><div style="display:flex;justify-content:space-between;align-items:center"><div class="panel-title">Latest QC Flags</div><a class="mini-link" href="/admin/qc?study=<%= study.id %>">View all</a></div><div style="overflow:auto"><table class="table"><thead><tr><th>Severity</th><th>Respondent</th><th>Issue</th><th>Raised</th><th>Action</th></tr></thead><tbody><% openFlags.slice(0,5).forEach(f=>{ %><tr><td><span class="pill <%= f.severity==='critical'||f.severity==='high'?'pill-red':f.severity==='medium'?'pill-amber':'pill-green' %>"><%= f.severity %></span></td><td><%= f.respondent_code %></td><td><%= f.flag_type.replace(/_/g,' ') %></td><td><%= f.created_time || '—' %></td><td><a class="qc-action" href="/admin/qc?study=<%= study.id %>">Review</a></td></tr><% }) %><% if(!openFlags.length){ %><tr><td colspan="5" style="color:#94a3b8">No open QC flags.</td></tr><% } %></tbody></table></div></div>
+      </section>
+
+      <section class="card panel"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><div class="panel-title">Fieldwork Snapshot</div><div class="activity"><div class="activity-item" style="color:#1468ff"><%- icon('clipboard') %><div><b><%= expected %></b><span>Diary records</span></div></div><div class="activity-item" style="color:#22a84a"><%- icon('check-circle') %><div><b><%= completed %></b><span>Submitted</span></div></div><div class="activity-item" style="color:#f97316"><%- icon('warning') %><div><b><%= missed %></b><span>Incomplete</span></div></div><div class="activity-item" style="color:#ef4444"><%- icon('shield') %><div><b><%= openFlags.length %></b><span>QC flags shown</span></div></div><div class="activity-item" style="color:#7c3aed"><%- icon('users') %><div><b><%= totalRespondents %></b><span>Respondents</span></div></div></div></div><div class="exports"><a class="btn" href="/admin/export/respondents.csv?study=<%= study.id %>">Respondents CSV</a><a class="btn" href="/admin/export/diary.csv?study=<%= study.id %>">Diary CSV</a><a class="btn" href="/admin/export/qc.csv?study=<%= study.id %>">QC CSV</a></div></div></section>
+    </main>
+  </div>
+</div>
+
+<%# ---- Fieldwork progress, risk donut, activity feed (approved comps) ---- %>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-4">Fieldwork Progress</div>
+    <% if (!weekly.length) { %>
+      <%# An unconfigured study has no calendar. Drawing an empty one would make
+          it look like a failing study rather than an unstarted one. %>
+      <p class="text-sm text-slate-500 dark:text-night-muted">Set the study start and end dates to see weekly progress.</p>
+    <% } else { %>
+      <% weekly.forEach(w => { %>
+        <div class="mb-3.5 last:mb-0">
+          <div class="flex items-baseline justify-between text-sm mb-1">
+            <span class="font-medium text-slate-700 dark:text-night-ink"><%= w.label %></span>
+            <span class="font-mono text-slate-500 dark:text-night-muted"><%= w.future ? '—' : w.pct + '%' %></span>
+          </div>
+          <div class="text-[11px] font-mono text-slate-400 dark:text-night-muted mb-1.5"><%= w.range %></div>
+          <div class="h-2 rounded-full bg-slate-100 dark:bg-night-sunken overflow-hidden">
+            <div class="h-full rounded-full bg-signal" style="width: <%= w.future ? 0 : w.pct %>%"></div>
+          </div>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-4">Respondent Risk</div>
+    <div class="relative"><canvas id="riskDonut" height="180"></canvas></div>
+    <div class="mt-4 space-y-2">
+      <% const bands = [['green','Low risk','#047857'],['amber','Medium risk','#B45309'],['red','High risk','#B91C1C']]; %>
+      <% bands.forEach(function (b) { %>
+        <div class="flex items-center gap-2.5 text-sm">
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background: <%= b[2] %>"></span>
+          <span class="flex-1 text-slate-600 dark:text-night-muted"><%= b[1] %></span>
+          <span class="font-mono text-slate-900 dark:text-night-ink"><%= riskCounts[b[0]] || 0 %></span>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-4">Recent Activity</div>
+    <% if (!recentActivity.length) { %>
+      <p class="text-sm text-slate-500 dark:text-night-muted">Nothing has happened on this study yet.</p>
+    <% } else { %>
+      <% recentActivity.forEach(function (a) { %>
+        <div class="flex items-start gap-3 py-2.5 border-b border-slate-100 dark:border-night-line last:border-0">
+          <span class="w-2 h-2 rounded-full mt-1.5 shrink-0 <%= a.kind === 'flag' ? 'bg-unverified' : a.kind === 'draft' ? 'bg-slate-300' : 'bg-signal' %>"></span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm text-slate-700 dark:text-night-ink leading-snug"><%= a.text %></span>
+            <span class="block font-mono text-[11px] text-slate-400 dark:text-night-muted mt-0.5"><%= String(a.at).replace('T',' ').slice(0,16) %></span>
+          </span>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+</div>
+
+<script src="/public/vendor/chart.umd.js"></script>
+<script>
+  (function () {
+    var el = document.getElementById('riskDonut');
+    if (!el || !window.Chart) return;
+    var counts = [<%= riskCounts.green || 0 %>, <%= riskCounts.amber || 0 %>, <%= riskCounts.red || 0 %>];
+    if (!counts.some(Boolean)) { el.parentElement.innerHTML =
+      '<p class="text-sm text-slate-500 py-8 text-center">No respondents classified yet.</p>'; return; }
+    new Chart(el, {
+      type: 'doughnut',
+      data: { labels: ['Low', 'Medium', 'High'],
+              datasets: [{ data: counts, backgroundColor: ['#047857', '#B45309', '#B91C1C'], borderWidth: 0 }] },
+      options: { cutout: '68%', plugins: { legend: { display: false } } },
+    });
+  })();
+</script>
+</body>
+</html>

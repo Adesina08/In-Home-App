@@ -1,0 +1,297 @@
+<%- include('../partials/header', { title: study.name + ' — Client KPIs', user }) %>
+<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
+
+<% if (error) { %>
+  <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">
+    <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= error %></span>
+  </div>
+<% } %>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+  <!-- ============ Existing KPIs ============ -->
+  <div class="xl:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden h-fit">
+    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+      <div class="font-semibold text-slate-800 flex items-center gap-2">
+        <%- icon('trend', 'w-4 h-4 text-brand-500') %> Launch KPIs
+      </div>
+      <span class="text-xs text-slate-400">
+        Computed from <%= entryCount %> submitted <%= entryCount === 1 ? 'entry' : 'entries' %>
+      </span>
+    </div>
+
+    <div class="divide-y divide-slate-100">
+      <% kpis.forEach(k => { const c = computed.get(k.id); %>
+        <div class="px-5 py-4 flex items-start justify-between gap-4 flex-wrap <%= k.enabled ? '' : 'opacity-60' %>">
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-slate-800"><%= k.label %></div>
+            <div class="text-xs text-slate-500 mt-0.5"><%= describeKpi(k) %></div>
+            <% if (c && c.basis) { %>
+              <div class="text-[11px] text-slate-400 mt-1"><%= c.basis %></div>
+            <% } %>
+          </div>
+
+          <div class="flex items-center gap-4 shrink-0">
+            <%# The live value. A KPI that reads "—" here will read "—" on the
+                client's dashboard too, which is the thing worth catching now
+                rather than after it has been presented. %>
+            <div class="text-right min-w-[70px]">
+              <div class="text-xl font-bold <%= c && c.value !== null ? 'text-slate-900' : 'text-slate-300' %> tabular-nums">
+                <%= c ? c.display : '—' %>
+              </div>
+              <% if (!k.metric) { %>
+                <div class="text-[10px] uppercase tracking-wide text-slate-400">built-in</div>
+              <% } %>
+            </div>
+
+            <form method="POST" action="/admin/studies/<%= study.id %>/kpis/<%= k.id %>/toggle">
+              <button class="text-xs px-3 py-1 rounded-full font-medium <%= k.enabled ? 'badge-green' : 'bg-slate-100 text-slate-500' %>"><%= k.enabled ? 'On' : 'Off' %></button>
+            </form>
+
+            <% if (k.metric) { %>
+              <form method="POST" action="/admin/studies/<%= study.id %>/kpis/<%= k.id %>/delete"
+                    onsubmit="return confirm('Remove this KPI from the client dashboard?');">
+                <button class="text-slate-300 hover:text-red-500 transition" title="Delete KPI"><%- icon('trash', 'w-4 h-4') %></button>
+              </form>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
+
+      <% if (!kpis.length) { %>
+        <div class="px-5 py-10 text-center text-slate-400 text-sm">No KPIs yet — build one on the right.</div>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- ============ Builder ============ -->
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+    <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+      <%- icon('plus', 'w-4 h-4 text-brand-500') %> Build a KPI
+    </div>
+    <p class="text-xs text-slate-500 mb-4 leading-relaxed">
+      Built from this study's own questions, and computed over submitted entries only —
+      drafts, practice and screened-out entries are excluded.
+    </p>
+
+    <form method="POST" action="/admin/studies/<%= study.id %>/kpis" class="space-y-4 text-sm" id="kpiBuilder">
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">What it's called</label>
+        <input name="label" required placeholder="e.g. Brand A share of occasions"
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        <p class="text-[11px] text-slate-400 mt-1">This is the label the client sees on their dashboard.</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">What it measures</label>
+        <select name="metric" id="kpiMetric" required
+                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <option value="">Choose…</option>
+          <% Object.entries(metrics).forEach(([key, m]) => { %>
+            <option value="<%= key %>" data-needs-question="<%= m.needsQuestion ? '1' : '0' %>"
+                    data-needs-option="<%= m.needsOption ? '1' : '0' %>"
+                    data-types="<%= m.questionTypes.join(',') %>"><%= m.label %></option>
+          <% }) %>
+        </select>
+        <p class="text-[11px] text-slate-400 mt-1" id="kpiMetricHelp"></p>
+      </div>
+
+      <div id="kpiQuestionBlock" class="hidden">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Which question</label>
+        <select name="question_id" id="kpiQuestion"
+                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+          <option value="">Choose…</option>
+          <% questions.forEach(q => { %>
+            <option value="<%= q.id %>" data-type="<%= q.type %>" data-options="<%= (q.options_json || '[]').replace(/"/g, '&quot;') %>">
+              <%= q.text.length > 70 ? q.text.slice(0, 67) + '…' : q.text %>
+            </option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div id="kpiOptionBlock" class="hidden">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Which answer(s) count</label>
+        <div id="kpiOptions" class="space-y-1.5 max-h-44 overflow-y-auto border border-slate-200 rounded-xl p-3"></div>
+        <p class="text-[11px] text-slate-400 mt-1">Tick more than one to combine them, e.g. all of a brand's variants.</p>
+      </div>
+
+      <div id="kpiUnitBlock" class="hidden">
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Unit <span class="font-normal text-slate-400">(optional)</span></label>
+        <input name="unit" placeholder="e.g. bottles"
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      </div>
+
+      <!-- Cross-question conditions -->
+      <div class="pt-3 border-t border-slate-100">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <label class="block text-sm font-medium text-slate-600">Only count entries where…</label>
+          <button type="button" id="kpiAddCondition"
+                  class="text-xs font-medium text-brand-600 hover:text-brand-700 transition">+ Add</button>
+        </div>
+        <p class="text-[11px] text-slate-400 mb-2.5">
+          Optional. Narrows the KPI to a subset — "among entries logged at home", say. Several conditions must all be true.
+        </p>
+        <div id="kpiConditions" class="space-y-2"></div>
+      </div>
+
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
+        <%- icon('plus', 'w-4 h-4') %> Add KPI
+      </button>
+    </form>
+  </div>
+</div>
+
+<script type="application/json" id="kpiMetricHelpData"><%- JSON.stringify(
+  Object.fromEntries(Object.entries(metrics).map(([k, m]) => [k, m.help]))
+).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="kpiOperators"><%- JSON.stringify(operators).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="kpiQuestionsData"><%- JSON.stringify(
+  questions.map(q => ({ id: q.id, text: q.text, type: q.type, options: (() => { try { return JSON.parse(q.options_json || '[]'); } catch (e) { return []; } })() }))
+).replace(/</g, '\\u003c') %></script>
+
+<script>
+(function () {
+  const HELP = JSON.parse(document.getElementById('kpiMetricHelpData').textContent);
+  const OPERATORS = JSON.parse(document.getElementById('kpiOperators').textContent);
+  const QUESTIONS = JSON.parse(document.getElementById('kpiQuestionsData').textContent);
+
+  const metricSel = document.getElementById('kpiMetric');
+  const metricHelp = document.getElementById('kpiMetricHelp');
+  const qBlock = document.getElementById('kpiQuestionBlock');
+  const qSel = document.getElementById('kpiQuestion');
+  const optBlock = document.getElementById('kpiOptionBlock');
+  const optWrap = document.getElementById('kpiOptions');
+  const unitBlock = document.getElementById('kpiUnitBlock');
+
+  function selectedMetricOption() {
+    return metricSel.options[metricSel.selectedIndex];
+  }
+
+  function refreshMetric() {
+    const opt = selectedMetricOption();
+    const metric = metricSel.value;
+    metricHelp.textContent = HELP[metric] || '';
+
+    const needsQuestion = opt && opt.dataset.needsQuestion === '1';
+    const needsOption = opt && opt.dataset.needsOption === '1';
+    const types = opt && opt.dataset.types ? opt.dataset.types.split(',').filter(Boolean) : [];
+
+    qBlock.classList.toggle('hidden', !needsQuestion);
+    // A required control inside a hidden block blocks submission with no
+    // visible prompt -- the same trap that killed the diary form's Submit.
+    qSel.required = !!needsQuestion;
+    unitBlock.classList.toggle('hidden', metric !== 'average' && metric !== 'count_entries');
+
+    // Only offer questions the metric can actually be computed from: asking
+    // for the average of a free-text question would produce a permanent dash.
+    let firstAllowed = null;
+    Array.from(qSel.options).forEach((o) => {
+      if (!o.value) return;
+      const ok = !types.length || types.includes(o.dataset.type);
+      o.hidden = !ok;
+      o.disabled = !ok;
+      if (ok && firstAllowed === null) firstAllowed = o.value;
+    });
+    const current = Array.from(qSel.options).find((o) => o.value === qSel.value);
+    if (!qSel.value || (current && current.disabled)) qSel.value = '';
+
+    refreshOptions(needsOption);
+  }
+
+  function refreshOptions(needsOption) {
+    optBlock.classList.toggle('hidden', !needsOption || !qSel.value);
+    optWrap.innerHTML = '';
+    if (!needsOption || !qSel.value) return;
+    const q = QUESTIONS.find((x) => String(x.id) === String(qSel.value));
+    if (!q || !q.options.length) {
+      optWrap.innerHTML = '<div class="text-xs text-slate-400">This question has no fixed options.</div>';
+      return;
+    }
+    q.options.forEach((o) => {
+      const id = 'kpiopt_' + Math.random().toString(36).slice(2);
+      const row = document.createElement('label');
+      row.className = 'flex items-center gap-2 text-sm text-slate-700 cursor-pointer';
+      row.innerHTML =
+        '<input type="checkbox" name="option_value" class="h-4 w-4 accent-brand-700 rounded" id="' + id + '">' +
+        '<span></span>';
+      row.querySelector('input').value = o;
+      row.querySelector('span').textContent = o;
+      optWrap.appendChild(row);
+    });
+  }
+
+  metricSel.addEventListener('change', refreshMetric);
+  qSel.addEventListener('change', function () {
+    const opt = selectedMetricOption();
+    refreshOptions(opt && opt.dataset.needsOption === '1');
+  });
+
+  // ---- conditions ----
+  const condWrap = document.getElementById('kpiConditions');
+  document.getElementById('kpiAddCondition').addEventListener('click', function () {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-[1fr_auto] gap-2 items-start border border-slate-200 rounded-xl p-2.5';
+
+    const qs = document.createElement('select');
+    qs.name = 'cond_question';
+    qs.className = 'w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs mb-2';
+    qs.innerHTML = '<option value="">Question…</option>' +
+      QUESTIONS.map((q) => '<option value="' + q.id + '">' + escapeHtml(q.text.length > 50 ? q.text.slice(0, 47) + '…' : q.text) + '</option>').join('');
+
+    const ops = document.createElement('select');
+    ops.name = 'cond_operator';
+    ops.className = 'w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs mb-2';
+    ops.innerHTML = Object.entries(OPERATORS).map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join('');
+
+    const val = document.createElement('input');
+    val.name = 'cond_value';
+    val.placeholder = 'value';
+    val.className = 'w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs';
+
+    const left = document.createElement('div');
+    left.appendChild(qs); left.appendChild(ops); left.appendChild(val);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'text-slate-300 hover:text-red-500 transition text-xs px-1';
+    remove.textContent = '✕';
+    remove.addEventListener('click', function () { row.remove(); });
+
+    row.appendChild(left); row.appendChild(remove);
+    condWrap.appendChild(row);
+
+    // Offer the question's own options as a datalist so a condition value is
+    // picked rather than typed -- a typo'd value silently matches nothing,
+    // and a KPI reading 0% with no explanation is worse than no KPI.
+    qs.addEventListener('change', function () {
+      const q = QUESTIONS.find((x) => String(x.id) === String(qs.value));
+      const listId = 'condlist_' + Math.random().toString(36).slice(2);
+      const existing = left.querySelector('datalist');
+      if (existing) existing.remove();
+      if (q && q.options.length) {
+        const dl = document.createElement('datalist');
+        dl.id = listId;
+        q.options.forEach((o) => {
+          const opt = document.createElement('option');
+          opt.value = o;
+          dl.appendChild(opt);
+        });
+        left.appendChild(dl);
+        val.setAttribute('list', listId);
+      } else {
+        val.removeAttribute('list');
+      }
+    });
+  });
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  refreshMetric();
+})();
+</script>
+
+<%- include('../partials/study_nav', { study, tab }) %>
+
+<%- include('../partials/footer') %>

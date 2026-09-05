@@ -1,0 +1,20 @@
+{
+  "appId": "com.inicio.inhome",
+  "appName": "Inicio Diary",
+  "webDir": "www",
+  "server": {
+    "url": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net/mobile/login",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "backgroundColor": "#1F3864",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    }
+  }
+}

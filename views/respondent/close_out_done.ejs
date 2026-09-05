@@ -1,0 +1,12 @@
+<%- include('../partials/header', { title: 'All done — Inicio Diary', user: null, fieldMode: true }) %>
+
+<div class="max-w-md mx-auto pt-16 text-center pb-10">
+  <span class="w-16 h-16 rounded-full bg-verified-soft dark:bg-verified/15 text-verified flex items-center justify-center mx-auto mb-5"><%- icon('check-circle', 'w-7 h-7') %></span>
+  <h1 class="font-display text-2xl font-bold tracking-tight text-slate-900 dark:text-night-ink mb-2">Thank you</h1>
+  <p class="text-sm text-slate-500 dark:text-night-muted leading-relaxed">
+    Your diary for <%= study.name %> is now complete. We appreciate the time you put into this
+    &mdash; it genuinely helps.
+  </p>
+</div>
+
+<%- include('../partials/footer') %>

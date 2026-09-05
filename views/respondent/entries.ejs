@@ -1,0 +1,67 @@
+<%- include('../partials/header', { title: 'My diary — Inicio Diary', user: null, fieldMode: true, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<%# Every entry, newest first. Home shows three; this is the full record, and
+    it is the screen a respondent opens to check whether something saved. %>
+<div class="max-w-2xl mx-auto pb-28">
+  <div class="flex items-center justify-between gap-3 pt-1 pb-5">
+    <div class="flex items-center gap-2.5">
+      <img src="/public/icons/logo-header.png" alt="" class="h-8 w-auto" />
+      <span class="font-display text-xl font-bold tracking-tight text-slate-900 dark:text-night-ink">My diary</span>
+    </div>
+    <button type="button" data-theme-toggle aria-pressed="false"
+            class="w-10 h-10 rounded-full border border-slate-200 dark:border-night-line flex items-center justify-center text-slate-500 dark:text-night-muted">
+      <%- icon('sun', 'w-5 h-5') %>
+    </button>
+  </div>
+
+  <div class="flex gap-2 mb-5 overflow-x-auto pb-1">
+    <% const filters = [['all','All'],['submitted','Submitted'],['draft','Drafts']]; %>
+    <% filters.forEach(([k, label]) => { %>
+      <a href="?status=<%= k %>"
+         class="shrink-0 px-4 py-2 rounded-full text-sm font-medium border
+         <%= (filter || 'all') === k ? 'bg-signal text-white border-signal' : 'border-slate-200 dark:border-night-line text-slate-600 dark:text-night-muted' %>">
+        <%= label %>
+        <span class="font-mono ml-1 opacity-70"><%= k === 'all' ? entries.length : entries.filter(e => e.status === k).length %></span>
+      </a>
+    <% }) %>
+  </div>
+
+  <% const shown = (filter && filter !== 'all') ? entries.filter(e => e.status === filter) : entries; %>
+  <% if (!shown.length) { %>
+    <div class="rounded-2xl border border-dashed border-slate-300 dark:border-night-line px-5 py-12 text-center">
+      <div class="font-display font-bold text-slate-800 dark:text-night-ink">Nothing here yet</div>
+      <div class="text-sm text-slate-500 dark:text-night-muted mt-1 mb-5">Your entries will appear here as you log them.</div>
+      <a href="/r/<%= respondent.unique_token %>/diary/new" class="inline-flex items-center gap-2 bg-signal text-white rounded-xl px-5 py-3 font-semibold text-sm">
+        Log an occasion <%- icon('arrow-right', 'w-4 h-4') %>
+      </a>
+    </div>
+  <% } else { %>
+    <div class="space-y-2.5">
+      <% shown.forEach(e => { %>
+        <div class="rounded-2xl border bg-white dark:bg-night-raised px-4 py-3.5 flex items-center gap-3.5
+          <%= e.awaiting_check ? 'border-unverified/40' : 'border-slate-200 dark:border-night-line' %>">
+          <span class="w-11 h-11 rounded-xl bg-slate-100 dark:bg-night-sunken text-slate-500 dark:text-night-muted flex items-center justify-center shrink-0">
+            <%- icon({ video: 'video', audio: 'mic' }[e.entry_mode] || 'clipboard', 'w-5 h-5') %>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-mono text-sm font-semibold text-slate-900 dark:text-night-ink">
+              <%= String(e.occurrence_time || e.entry_time || '').replace('T',' ').slice(0,16) || '—' %>
+            </span>
+            <span class="block text-xs text-slate-500 dark:text-night-muted mt-0.5">
+              <%= e.media_count %> item<%= e.media_count === 1 ? '' : 's' %> attached<% if (e.is_practice) { %> · practice<% } %>
+            </span>
+          </span>
+          <span class="text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0
+            <%= e.status === 'draft' ? 'bg-signal-soft dark:bg-signal/15 text-signal'
+              : e.awaiting_check ? 'bg-unverified-soft dark:bg-unverified/15 text-unverified'
+              : 'bg-verified-soft dark:bg-verified/15 text-verified' %>">
+            <%= e.status === 'draft' ? 'Draft' : e.awaiting_check ? 'Being checked' : 'Submitted' %>
+          </span>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+
+<%- include('../partials/respondent_tabs', { respondent: respondent, tab: 'diary' }) %>
+<%- include('../partials/footer') %>

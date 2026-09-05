@@ -1,0 +1,25 @@
+<%- include('../partials/header', { title: 'Entry submitted — Inicio Diary', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<div class="max-w-md mx-auto px-4 py-10">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 text-center">
+    <div class="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+      <%- icon('check', 'w-7 h-7') %>
+    </div>
+    <h1 class="text-lg font-bold text-slate-900 mb-2">Thanks — that's logged</h1>
+    <p class="text-sm text-slate-500 leading-relaxed mb-6">
+      Your video has been saved as this occasion's record. Nothing else is needed from you —
+      the team reviews the video and fills in the details.
+    </p>
+    <% if (practice) { %>
+      <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5">
+        This was a practice entry. It won't be counted in the study results.
+      </p>
+    <% } %>
+    <a href="/r/<%= respondent.unique_token %>"
+       class="block w-full bg-brand text-white rounded-xl py-3 text-sm font-semibold">Back to my diary</a>
+    <a href="/r/<%= respondent.unique_token %>/diary/new"
+       class="block w-full border border-slate-300 text-slate-700 rounded-xl py-3 text-sm font-medium mt-2.5">Log another occasion</a>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

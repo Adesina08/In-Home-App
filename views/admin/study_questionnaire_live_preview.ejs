@@ -1,0 +1,166 @@
+<%- include('../partials/header', { title: study.name + ' — Preview', user }) %>
+
+<div class="flex items-center justify-between mb-4">
+  <div class="flex items-center gap-2">
+    <%- icon('eye', 'w-5 h-5 text-brand-500') %>
+    <div>
+      <h1 class="text-lg font-bold text-slate-900">Respondent Preview</h1>
+      <p class="text-xs text-slate-500">Exactly what a respondent sees, including live skip logic. Nothing here is saved.</p>
+    </div>
+  </div>
+  <a href="/admin/studies/<%= study.id %>/questionnaire#questionnaire" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
+    <%- icon('x', 'w-3.5 h-3.5') %> Close Preview
+  </a>
+</div>
+
+<div class="mb-5 flex items-center gap-2 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200">
+  <%- icon('warning', 'w-4 h-4 shrink-0') %>
+  <span>Preview mode — try answering questions below to test skip logic. Nothing you enter is saved, and this can't be submitted.</span>
+</div>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-slate-900 rounded-[2.25rem] p-2.5 shadow-xl">
+    <div class="bg-slate-50 rounded-[1.75rem] overflow-hidden">
+      <div class="bg-brand-700 text-white text-center text-xs font-semibold py-2">INICIO — <%= study.name %></div>
+      <div class="p-4 max-h-[75vh] overflow-y-auto" id="previewScroll">
+        <% if (!questions.length) { %>
+          <div class="text-sm text-slate-400 text-center py-10">No active questions yet — build the questionnaire first.</div>
+        <% } %>
+        <div id="terminatedNotice" class="hidden flex items-start gap-2 bg-white border border-slate-200 rounded-xl p-3 mb-4">
+          <%- icon('stop', 'w-4 h-4 mt-0.5 text-slate-500 shrink-0') %>
+          <div class="text-xs text-slate-600">A "Terminate survey" rule matched — a real respondent would see an end-of-entry message here instead of the questions below.</div>
+        </div>
+        <form id="previewForm" class="space-y-5" onsubmit="return false;">
+          <% let lastSection = undefined; %>
+          <% questions.forEach(q => { %>
+            <% if (q.section !== lastSection) { lastSection = q.section; %>
+              <% if (q.section) { %>
+                <div class="section-heading pt-4 first:pt-0" data-section="<%= q.section %>">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-brand-600">Section: <%= q.section %></div>
+                </div>
+              <% } %>
+            <% } %>
+            <div class="q-wrap border-t border-slate-200 pt-4 first:border-t-0 first:pt-0" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>" data-section="<%= q.section || '' %>">
+              <label class="block text-sm font-medium text-slate-700 mb-2">
+                <%- q.text ? renderPipeHtml(q.text, { respondent: previewRespondent, study }) : '(untitled question)' %> <% if (q.required) { %><span class="text-red-500">*</span><% } %>
+              </label>
+
+              <% if (q.type === 'single') { %>
+                <div class="space-y-2">
+                  <% q.options.forEach(opt => { %>
+                    <label class="flex items-center gap-3 text-sm rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 transition">
+                      <input type="radio" name="q_<%= q.id %>" value="<%= opt %>" class="cond-input h-4 w-4 accent-brand-700" data-qid="<%= q.id %>" />
+                      <%= opt %>
+                    </label>
+                  <% }) %>
+                  <% if (!q.options.length) { %><div class="text-xs text-amber-600">No options set yet</div><% } %>
+                </div>
+              <% } else if (q.type === 'multi') { %>
+                <div class="space-y-2">
+                  <% q.options.forEach(opt => { %>
+                    <label class="flex items-center gap-3 text-sm rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 transition">
+                      <input type="checkbox" name="q_<%= q.id %>[]" value="<%= opt %>" class="cond-input h-4 w-4 accent-brand-700" data-qid="<%= q.id %>" />
+                      <%= opt %>
+                    </label>
+                  <% }) %>
+                  <% if (!q.options.length) { %><div class="text-xs text-amber-600">No options set yet</div><% } %>
+                </div>
+              <% } else if (q.type === 'numeric') { %>
+                <input type="number" class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white" data-qid="<%= q.id %>" placeholder="0" <%= q.min_value!==null ? 'min='+q.min_value : '' %> <%= q.max_value!==null ? 'max='+q.max_value : '' %> />
+              <% } else if (q.type === 'text') { %>
+                <textarea class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white" data-qid="<%= q.id %>" rows="2" placeholder="Respondent's answer"></textarea>
+              <% } else if (q.type === 'date') { %>
+                <input type="datetime-local" class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white" data-qid="<%= q.id %>" />
+              <% } else if (q.type === 'photo') { %>
+                <div class="flex items-center gap-2 justify-center text-sm text-slate-400 border-2 border-dashed border-slate-300 rounded-xl px-4 py-5 bg-white">📷 Photo upload</div>
+              <% } else if (q.type === 'video') { %>
+                <div class="flex items-center gap-2 justify-center text-sm text-slate-400 border-2 border-dashed border-slate-300 rounded-xl px-4 py-5 bg-white">🎥 Video upload (brand detection)</div>
+              <% } else if (q.type === 'audio') { %>
+                <div class="flex items-center gap-2 justify-center text-sm text-slate-400 border-2 border-dashed border-slate-300 rounded-xl px-4 py-5 bg-white">🎤 Spoken answer (press &amp; hold to record)</div>
+              <% } %>
+            </div>
+          <% }) %>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- code -> id map for {q:CODE} pipe tokens (see public/js/piping.js) -->
+<script type="application/json" id="pipe-code-map"><%- JSON.stringify(
+  questions.reduce((acc, q) => { if (q.code) acc[q.code] = q.id; return acc; }, {})
+).replace(/</g, "\\u003c") %></script>
+<script src="/public/js/piping.js"></script>
+<script>
+  const RULES = <%- JSON.stringify(rules) %>;
+
+  function getConditionValue(qid) {
+    const radios = document.querySelectorAll(`input[type=radio][data-qid="${qid}"]:checked`);
+    if (radios.length) return radios[0].value;
+    const checks = document.querySelectorAll(`input[type=checkbox][data-qid="${qid}"]:checked`);
+    if (checks.length) return Array.from(checks).map(c => c.value).join('|');
+    const other = document.querySelector(`.cond-input[data-qid="${qid}"]:not([type=radio]):not([type=checkbox])`);
+    return other ? other.value : '';
+  }
+
+  function setSectionVisible(section, visible) {
+    document.querySelectorAll(`.q-wrap[data-section="${CSS.escape(section)}"]`).forEach(w => {
+      w.style.display = visible ? '' : 'none';
+    });
+    const heading = document.querySelector(`.section-heading[data-section="${CSS.escape(section)}"]`);
+    if (heading) heading.style.display = visible ? '' : 'none';
+  }
+
+  function matchesCondition(val, rule) {
+    const ruleValues = String(rule.value || '').split('|');
+    switch (rule.operator) {
+      case 'not_equals': return val !== rule.value;
+      case 'in': return ruleValues.includes(val);
+      case 'not_in': return !ruleValues.includes(val);
+      case 'includes': {
+        const valValues = String(val || '').split('|').filter(Boolean);
+        return ruleValues.some((rv) => valValues.includes(rv));
+      }
+      case 'equals':
+      default: return val === rule.value;
+    }
+  }
+
+  function evaluateSkipLogic() {
+    const defaultHiddenQ = new Set(RULES.filter(r => r.action === 'show' && r.target_question_id).map(r => r.target_question_id));
+    const defaultHiddenSections = new Set(RULES.filter(r => r.action === 'show' && r.target_section).map(r => r.target_section));
+    document.querySelectorAll('.q-wrap').forEach(w => {
+      const qid = parseInt(w.dataset.qid, 10);
+      const inHiddenSection = w.dataset.section && defaultHiddenSections.has(w.dataset.section);
+      w.style.display = (defaultHiddenQ.has(qid) || inHiddenSection) ? 'none' : '';
+    });
+    document.querySelectorAll('.section-heading').forEach(h => {
+      h.style.display = defaultHiddenSections.has(h.dataset.section) ? 'none' : '';
+    });
+    let terminated = false;
+    RULES.forEach(rule => {
+      const val = getConditionValue(rule.condition_question_id);
+      const matches = matchesCondition(val, rule);
+      if (rule.action === 'terminate') {
+        if (matches) terminated = true;
+        return;
+      }
+      if (rule.target_section) {
+        setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);
+        return;
+      }
+      const wrap = document.getElementById('q-wrap-' + rule.target_question_id);
+      if (!wrap) return;
+      if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';
+      if (rule.action === 'hide') wrap.style.display = matches ? 'none' : '';
+    });
+    document.getElementById('terminatedNotice').classList.toggle('hidden', !terminated);
+    document.getElementById('previewForm').style.display = terminated ? 'none' : '';
+  }
+
+  document.addEventListener('input', evaluateSkipLogic);
+  document.addEventListener('change', evaluateSkipLogic);
+  evaluateSkipLogic();
+</script>
+
+<%- include('../partials/footer') %>

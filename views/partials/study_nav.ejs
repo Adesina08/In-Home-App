@@ -1,0 +1,43 @@
+<!-- Back / Next through the study setup, in the order of lib/studyTabs.js.
+     The tab strip at the top is for jumping around once you know the app; this
+     is for the first time through, when what you need to know is simply what
+     comes after the screen you just filled in.
+
+     It does not submit anything. Every study screen saves with its own button,
+     and a Next that silently saved a half-filled form would be worse than one
+     that doesn't -- so this navigates, and the page's own Save stays the only
+     thing that writes. -->
+<div class="flex items-center justify-between gap-3 mt-8 pt-5 border-t border-slate-200">
+  <% const nav = studyTabNeighbours(tab); %>
+  <div>
+    <% if (nav.prev) { %>
+      <a href="<%= studyTabHref(study.id, nav.prev.key) %>" data-study-nav="back"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        &larr; <span class="text-slate-400 font-normal hidden sm:inline">Back to</span> <%= nav.prev.short %>
+      </a>
+    <% } else { %>
+      <a href="/admin/studies" data-study-nav="back"
+         class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition">
+        &larr; <span class="text-slate-400 font-normal hidden sm:inline">Back to</span> All studies
+      </a>
+    <% } %>
+  </div>
+  <div>
+    <% if (nav.next) { %>
+      <a href="<%= studyTabHref(study.id, nav.next.key) %>" data-study-nav="next"
+         class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        <span class="text-brand-200 font-normal hidden sm:inline">Next:</span> <%= nav.next.short %>
+        <%- icon('arrow-right', 'w-4 h-4') %>
+      </a>
+    <% } else { %>
+      <a href="/admin" data-study-nav="next"
+         class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        <span class="text-brand-200 font-normal hidden sm:inline">Finish:</span> Dashboard
+        <%- icon('arrow-right', 'w-4 h-4') %>
+      </a>
+    <% } %>
+  </div>
+</div>
+<p class="text-[11px] text-slate-400 mt-2.5 text-center">
+  Save this screen first — moving on doesn't save anything for you.
+</p>

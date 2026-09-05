@@ -1,0 +1,51 @@
+<%- include('../partials/header', { title: 'System Settings — Inicio Diary', user }) %>
+
+<%#
+  Platform-wide operational settings. Superadmin-only, and deliberately not on
+  a study's own Settings page: the scheduler is one Node process serving every
+  study, so how often it checks for anything due is necessarily a platform
+  choice, not a per-study one. A study's own reminder TIMES stay where they
+  already were, in Study Settings -- this is the different, coarser thing
+  underneath them.
+%>
+<div class="max-w-xl">
+  <div class="mb-6">
+    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Platform</div>
+    <h1 class="text-2xl font-bold text-slate-900">System Settings</h1>
+    <p class="text-slate-500 text-sm mt-1">Operational settings for the whole platform, not any one study.</p>
+  </div>
+
+  <% if (saved) { %>
+    <div class="mb-5 rounded-xl border border-verified/30 bg-verified-soft px-4 py-3 text-sm text-verified">
+      Saved. The scheduler will pick this up on its next cycle &mdash; no restart needed.
+    </div>
+  <% } %>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6">
+    <div class="font-semibold text-slate-800 mb-1">Background check interval</div>
+    <p class="text-sm text-slate-500 mb-4 leading-relaxed">
+      How often the platform checks whether any reminder or end-of-diary validation is due, across every
+      study. This used to be fixed by an Azure environment variable that only someone with infrastructure
+      access could change &mdash; it's a setting now, not a deployment detail.
+    </p>
+
+    <form method="POST" action="/admin/system-settings" class="flex items-end gap-3">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Minutes between checks</label>
+        <input type="number" name="scheduler_interval_minutes" value="<%= currentMinutes %>"
+               min="<%= minMinutes %>" max="<%= maxMinutes %>" required
+               class="w-32 rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-brand-400" />
+      </div>
+      <button class="bg-brand-700 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-brand-600 transition">Save</button>
+    </form>
+    <p class="text-xs text-slate-400 mt-3">Allowed range: <%= minMinutes %>\u2013<%= maxMinutes %> minutes.</p>
+  </div>
+
+  <p class="text-xs text-slate-400 mt-5 leading-relaxed">
+    This does not change any study's own reminder times (first/second reminder, quiet hours) &mdash; those
+    stay in each study's own Settings &amp; Thresholds. This is how often the platform wakes up to check
+    whether any of those times, across every study, have now arrived.
+  </p>
+</div>
+
+<%- include('../partials/footer') %>

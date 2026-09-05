@@ -1,0 +1,17 @@
+export const colors = {
+  navy: "#0B2A52",
+  navy2: "#153B6B",
+  blue: "#1769FF",
+  blueSoft: "#EAF2FF",
+  bg: "#F5F8FC",
+  card: "#FFFFFF",
+  text: "#12213A",
+  muted: "#6F7F95",
+  border: "#DFE7F1",
+  green: "#20A85B",
+  greenSoft: "#EAF8F0",
+  amber: "#E99A11",
+  amberSoft: "#FFF6DF",
+  red: "#E04B4B",
+  redSoft: "#FDECEC",
+};

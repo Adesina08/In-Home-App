@@ -1,0 +1,132 @@
+<%- include('../partials/header', { title: study.name + ' — Review Import', user }) %>
+<%- include('../partials/study_tabs', { study, tab }) %>
+
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2"><%- icon('upload', 'w-5 h-5 text-brand-500') %> Review Import — <span class="font-normal text-slate-500"><%= imp.source_filename %></span></h1>
+    <p class="text-sm text-slate-500 mt-1">Nothing is added to your study until you click Commit below. Uncheck any row you don't want, fix anything the parser got wrong, then commit.</p>
+  </div>
+</div>
+
+<% if (fileWarnings && fileWarnings.length) { %>
+  <div class="mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200 space-y-1">
+    <% fileWarnings.forEach(w => { %><div class="flex items-start gap-2"><%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= w %></span></div><% }) %>
+  </div>
+<% } %>
+
+<form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/preview/<%= imp.id %>/commit">
+<div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+
+  <div class="xl:col-span-3 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-3 py-2.5">✓</th><th class="py-2.5">Code</th><th class="py-2.5 min-w-[220px]">Question text</th>
+        <th class="py-2.5">Type</th><th class="py-2.5 min-w-[160px]">Options</th><th class="py-2.5">Section</th><th class="py-2.5">Req?</th>
+        <th class="py-2.5">Min</th><th class="py-2.5">Max</th>
+      </tr></thead>
+      <tbody>
+      <% rows.forEach((r, i) => { %>
+        <tr class="import-row border-t border-slate-100 hover:bg-slate-50/70 align-top" data-idx="<%= i %>">
+          <td class="px-3 py-2.5"><input type="checkbox" class="f-include h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" name="rows[<%= i %>][include]" <%= r.text ? 'checked' : '' %> onchange="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-code w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][code]" value="<%= r.code||'' %>" oninput="renderPreview()" /></td>
+          <td class="py-2.5"><textarea class="f-text w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2" name="rows[<%= i %>][text]" oninput="renderPreview()"><%= r.text||'' %></textarea></td>
+          <td class="py-2.5">
+            <select class="f-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][type]" onchange="renderPreview()">
+              <% VALID_TYPES.forEach(t => { %><option value="<%= t %>" <%= r.type===t?'selected':'' %>><%= t %></option><% }) %>
+            </select>
+          </td>
+          <td class="py-2.5"><input class="f-options w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][options]" value="<%= (r.options||[]).join(', ') %>" oninput="renderPreview()" placeholder="A, B, C" /></td>
+          <td class="py-2.5"><input class="f-section w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][section]" value="<%= r.section||'' %>" oninput="renderPreview()" placeholder="e.g. Purchase" /></td>
+          <td class="py-2.5 text-center"><input type="checkbox" class="f-required h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" name="rows[<%= i %>][required]" <%= r.required ? 'checked' : '' %> onchange="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-min w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][min]" value="<%= r.min_value ?? '' %>" oninput="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-max w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][max]" value="<%= r.max_value ?? '' %>" oninput="renderPreview()" /></td>
+        </tr>
+        <% if (r.condition_raw) { %>
+          <tr class="bg-brand-50/50">
+            <td></td>
+            <td colspan="8" class="px-2 py-1.5 text-xs text-brand-700">
+              <%- icon('arrow-right', 'w-3.5 h-3.5 inline align-text-bottom') %>
+              Condition: "<%= r.condition_raw %>" — <%= r.is_section_anchor ? 'will become a skip rule for the whole "' + (r.section||'') + '" section' : 'will become a skip rule for this question, on commit' %>
+            </td>
+          </tr>
+        <% } %>
+        <% if (r.warnings && r.warnings.length) { %>
+          <tr class="bg-amber-50/60">
+            <td></td>
+            <td colspan="8" class="px-2 py-1.5 text-xs text-amber-700"><% r.warnings.forEach(w => { %>⚠️ <%= w %> &nbsp; <% }) %></td>
+          </tr>
+        <% } %>
+      <% }) %>
+      </tbody>
+    </table>
+    <div class="p-4 flex items-center gap-3 border-t border-slate-100">
+      <button type="submit" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        <%- icon('check', 'w-4 h-4') %> Commit Checked Rows to Questionnaire
+      </button>
+      <span id="includeCount" class="text-sm text-slate-500 self-center"></span>
+    </div>
+  </div>
+
+  <div class="xl:col-span-2">
+    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 sticky top-4">
+      <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2"><%- icon('eye', 'w-4 h-4 text-brand-500') %> Live Form Preview</div>
+      <p class="text-xs text-slate-400 mb-4">This is what the respondent diary screen will look like with the checked rows above.</p>
+      <div id="livePreview" class="space-y-4 max-h-[70vh] overflow-y-auto pr-1"></div>
+    </div>
+  </div>
+</div>
+</form>
+
+<form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/preview/<%= imp.id %>/discard" class="mt-4">
+  <button class="inline-flex items-center gap-1.5 text-sm text-red-600 font-medium hover:underline" onclick="return confirm('Discard this import? Nothing will be added.')"><%- icon('x', 'w-3.5 h-3.5') %> Discard Import</button>
+</form>
+
+<script>
+function renderPreview() {
+  const container = document.getElementById('livePreview');
+  const rows = document.querySelectorAll('.import-row');
+  let html = '';
+  let count = 0;
+  rows.forEach(row => {
+    const include = row.querySelector('.f-include').checked;
+    if (!include) return;
+    count++;
+    const text = row.querySelector('.f-text').value || '(no question text)';
+    const type = row.querySelector('.f-type').value;
+    const options = row.querySelector('.f-options').value.split(',').map(s => s.trim()).filter(Boolean);
+    const required = row.querySelector('.f-required').checked;
+
+    html += `<div class="border-t pt-3 first:border-t-0 first:pt-0">
+      <label class="block text-sm font-medium text-slate-700 mb-1">${escapeHtml(text)} ${required ? '<span class=\\"text-red-500\\">*</span>' : ''}</label>`;
+
+    if (type === 'single') {
+      html += options.map(o => `<label class="flex items-center gap-2 text-sm text-slate-600"><input type="radio" disabled /> ${escapeHtml(o)}</label>`).join('');
+      if (!options.length) html += '<div class="text-xs text-amber-600">No options set</div>';
+    } else if (type === 'multi') {
+      html += options.map(o => `<label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" disabled /> ${escapeHtml(o)}</label>`).join('');
+      if (!options.length) html += '<div class="text-xs text-amber-600">No options set</div>';
+    } else if (type === 'numeric') {
+      html += '<input type="number" disabled class="w-full border border-slate-200 bg-slate-50 rounded px-3 py-2 text-sm" />';
+    } else if (type === 'text') {
+      html += '<textarea disabled rows="2" class="w-full border border-slate-200 bg-slate-50 rounded px-3 py-2 text-sm"></textarea>';
+    } else if (type === 'date') {
+      html += '<input type="datetime-local" disabled class="w-full border border-slate-200 bg-slate-50 rounded px-3 py-2 text-sm" />';
+    } else if (type === 'photo') {
+      html += '<div class="text-sm text-slate-400 border border-dashed border-slate-300 rounded px-3 py-2">📷 Photo upload</div>';
+    } else if (type === 'video') {
+      html += '<div class="text-sm text-slate-400 border border-dashed border-slate-300 rounded px-3 py-2">🎥 Video upload (brand detection queued)</div>';
+    } else if (type === 'audio') {
+      html += '<div class="text-sm text-slate-400 border border-dashed border-slate-300 rounded px-3 py-2">🎤 Spoken answer (transcription queued)</div>';
+    }
+    html += '</div>';
+  });
+  container.innerHTML = html || '<div class="text-sm text-slate-400">No rows checked yet.</div>';
+  document.getElementById('includeCount').textContent = count + ' question' + (count === 1 ? '' : 's') + ' will be added';
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+renderPreview();
+</script>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,592 @@
+<%- include('../partials/header', { title: 'Log Consumption — INICIO', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+
+<div class="max-w-2xl mx-auto pb-24 sm:pb-0">
+  <div class="flex items-center justify-between mb-4 px-1">
+    <div>
+      <div class="text-brand-700 font-bold">INICIO</div>
+      <div class="text-slate-500 text-sm"><%= study.name %> <% if (practice) { %><span class="ml-2 text-xs px-2.5 py-1 rounded-full font-medium badge-amber">Practice entry — not used in production analysis</span><% } %></div>
+    </div>
+    <a href="/r/<%= respondent.unique_token %>" class="text-sm text-slate-400 hover:text-slate-600 shrink-0">← Back</a>
+  </div>
+
+  <div id="restoreBanner" style="display:none" class="mb-4 bg-amber-50 text-amber-800 text-sm rounded-xl p-3 border border-amber-200 items-center justify-between gap-3 sm:flex mx-1 sm:mx-0 shadow-card">
+    <span>We found unsaved answers from earlier on this device.</span>
+    <span class="flex gap-2 mt-2 sm:mt-0 shrink-0">
+      <button type="button" id="restoreBtn" class="text-xs bg-amber-600 text-white rounded-lg px-3 py-1.5 font-semibold hover:bg-amber-700 transition">Restore</button>
+      <button type="button" id="discardBtn" class="text-xs border border-amber-300 rounded-lg px-3 py-1.5 hover:bg-amber-100/60 transition">Discard</button>
+    </span>
+  </div>
+
+  <% if (typeof mode !== 'undefined' && mode === 'video') { %>
+    <div class="mb-4 flex items-start gap-2.5 bg-violet-50 text-violet-800 text-sm rounded-xl p-3.5 border border-violet-200 mx-1 sm:mx-0 shadow-card">
+      <%- icon('video', 'w-5 h-5 mt-0.5 shrink-0') %>
+      <div>
+        <div class="font-semibold mb-0.5">Video attached ✓</div>
+        <div class="text-violet-700"><%= typeof aiNote !== 'undefined' && aiNote ? aiNote : 'Your video is attached as evidence. Please answer the questions below.' %></div>
+      </div>
+    </div>
+  <% } %>
+
+  <%# novalidate on purpose. With native validation on, an invalid form is
+      blocked by the browser and NO submit event is dispatched at all -- so
+      there is no hook to explain the problem from, and if the offending
+      control is hidden or off-screen the browser can't render its bubble
+      either. The result was a Submit button that did nothing, silently. We
+      validate in JS below (and again on the server, which is the real
+      guarantee) so there is always something to say. %>
+  <form method="POST" action="/r/<%= respondent.unique_token %>/diary" enctype="multipart/form-data" id="diaryForm" novalidate class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-4 sm:p-6 space-y-6">
+    <input type="hidden" name="_practice" value="<%= practice ? '1' : '0' %>" />
+    <input type="hidden" name="_mode" value="<%= typeof mode !== 'undefined' ? mode : 'standard' %>" />
+    <% if (typeof pendingMedia !== 'undefined' && pendingMedia) { %>
+      <input type="hidden" name="_pending_media_path" value="<%= pendingMedia.path %>" />
+      <input type="hidden" name="_pending_media_mimetype" value="<%= pendingMedia.mimetype %>" />
+    <% } %>
+
+    <%# Returned by the server when a submission was rejected (see
+        lib/answerValidation.js). Distinct from the client-side notice below:
+        this one survives the round trip and names every problem at once. %>
+    <% if (typeof problems !== 'undefined' && problems && problems.length) { %>
+      <div class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+        <div>
+          <div class="font-semibold mb-1">
+            <%= problems.length === 1 ? "One answer needs fixing" : problems.length + " answers need fixing" %>
+          </div>
+          <ul class="list-disc list-inside space-y-0.5">
+            <% problems.forEach(function (p) { %>
+              <li><%= p.text %> — <%= p.message %></li>
+            <% }) %>
+          </ul>
+        </div>
+      </div>
+    <% } %>
+
+    <%# Shown when the browser refuses to submit. Without it the only feedback
+        is the native validation bubble, which can't render on a control that
+        is off-screen or hidden -- so the button looks broken. %>
+    <div id="diaryValidationNotice" class="hidden items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3">
+      <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span id="diaryValidationText"></span>
+    </div>
+
+    <div id="terminatedNotice" class="hidden flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
+      <span class="w-9 h-9 rounded-xl bg-slate-200 text-slate-500 flex items-center justify-center shrink-0"><%- icon('stop', 'w-4 h-4') %></span>
+      <div>
+        <div class="text-sm font-semibold text-slate-700">That's everything we need for this entry</div>
+        <div class="text-xs text-slate-500 mt-0.5">Based on your answer above, the rest of this diary entry doesn't apply. Tap "Save &amp; Finish" below — no need to answer anything else.</div>
+      </div>
+    </div>
+
+    <div id="diaryQuestionsArea" class="space-y-6">
+    <div>
+      <label class="block text-sm font-medium text-slate-600 mb-1.5">When did this occasion happen?</label>
+      <input type="datetime-local" name="occurrence_time" required class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      <p class="text-xs text-slate-400 mt-1">You can log something that happened up to <%= study.back_entry_hours %>h ago; later than that and the entry is flagged for review.</p>
+    </div>
+
+    <% const pf = typeof prefill !== 'undefined' && prefill ? prefill : {}; %>
+    <% let lastSection = undefined; %>
+    <% questions.forEach(q => { %>
+      <% const pv = q.code && pf[q.code] !== undefined ? pf[q.code] : null; %>
+      <% const qProblem = (typeof problems !== 'undefined' && problems ? problems : []).find(function (p) { return p.questionId === q.id; }); %>
+      <% if (q.section !== lastSection) { lastSection = q.section; %>
+        <% if (q.section) { %>
+          <div class="section-heading pt-5 first:pt-0" data-section="<%= q.section %>">
+            <div class="text-xs font-semibold uppercase tracking-wide text-brand-600">Section: <%= q.section %></div>
+          </div>
+        <% } %>
+      <% } %>
+      <%# data-required/data-qtype let the submit guard below enforce question
+          types the browser can't: a checkbox group has no `required`
+          attribute of its own, so a required multi-select was marked with an
+          asterisk the form never actually asked for. %>
+      <div class="q-wrap border-t border-slate-100 pt-5<%= qProblem ? ' bg-red-50/40 -mx-2 px-2 rounded-xl' : '' %>" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>" data-qtype="<%= q.type %>" data-required="<%= q.required ? '1' : '0' %>" data-section="<%= q.section || '' %>">
+        <label class="block text-base sm:text-sm font-medium text-slate-700 mb-2">
+          <%- renderPipeHtml(q.text, { respondent, study }) %> <% if(q.required){ %><span class="text-red-500">*</span><% } %>
+          <% if (qProblem) { %><span class="block text-xs font-normal text-red-600 mt-1"><%= qProblem.message %></span><% } %>
+          <% if (pv !== null) { %><span class="ml-1.5 text-xs font-medium text-violet-600 bg-violet-50 rounded-full px-2 py-0.5 align-middle">AI-detected — verify</span><% } %>
+        </label>
+
+        <% if (q.type === 'single') { %>
+          <div class="space-y-2">
+            <% q.options.forEach((opt, oi) => { %>
+              <label class="flex items-center gap-3 text-base sm:text-sm rounded-xl border border-slate-200 px-4 py-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 active:bg-slate-50 transition">
+                <input type="radio" name="q_<%= q.id %>" value="<%= opt %>" <%= pv === opt ? 'checked' : '' %> <%= q.required ? 'required' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
+                <%= opt %>
+              </label>
+            <% }) %>
+          </div>
+        <% } else if (q.type === 'multi') { %>
+          <div class="space-y-2">
+            <% const pvArr = Array.isArray(pv) ? pv : (pv ? [pv] : []); %>
+            <% q.options.forEach(opt => { %>
+              <label class="flex items-center gap-3 text-base sm:text-sm rounded-xl border border-slate-200 px-4 py-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 active:bg-slate-50 transition">
+                <input type="checkbox" name="q_<%= q.id %>[]" value="<%= opt %>" <%= pvArr.includes(opt) ? 'checked' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
+                <%= opt %>
+              </label>
+            <% }) %>
+          </div>
+        <% } else if (q.type === 'numeric') { %>
+          <input type="number" name="q_<%= q.id %>" value="<%= pv !== null ? pv : '' %>" <%= q.min_value!==null ? 'min='+q.min_value : '' %> <%= q.max_value!==null ? 'max='+q.max_value : '' %> <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" inputmode="decimal" />
+        <% } else if (q.type === 'text') { %>
+          <textarea name="q_<%= q.id %>" <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" rows="3"><%= pv !== null ? pv : '' %></textarea>
+        <% } else if (q.type === 'date') { %>
+          <input type="datetime-local" name="q_<%= q.id %>" <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" />
+        <% } else if (q.type === 'photo') { %>
+          <button type="button" class="camera-capture-trigger w-full flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 transition" data-kind="photo" data-target="photo_q_<%= q.id %>" data-label="photo_q_<%= q.id %>_label">
+            📷 <span id="photo_q_<%= q.id %>_label">Tap to open camera</span>
+          </button>
+          <input type="file" id="photo_q_<%= q.id %>" name="photo_q_<%= q.id %>" accept="image/*" class="hidden" />
+          <p class="text-xs text-slate-400 mt-1">Opens your camera — you can't attach an existing photo from your gallery.</p>
+        <% } else if (q.type === 'video') { %>
+          <button type="button" class="camera-capture-trigger w-full flex items-center gap-3 justify-center text-sm text-slate-500 border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 hover:border-brand-300 hover:bg-slate-50 active:bg-slate-50 transition" data-kind="video" data-target="video_q_<%= q.id %>" data-label="video_q_<%= q.id %>_label">
+            🎥 <span id="video_q_<%= q.id %>_label">Tap to open camera</span>
+          </button>
+          <input type="file" id="video_q_<%= q.id %>" name="video_q_<%= q.id %>" accept="video/*" class="hidden" />
+          <p class="text-xs text-slate-400 mt-1">Opens your camera to record live — used for brand detection on the packaging/product shown, see Admin → Media Review.</p>
+        <% } else if (q.type === 'audio') { %>
+          <%# Spoken answer to THIS question (spec 3.2 "Audio / voice"), reusing the
+              same press-and-hold recorder as the end-of-entry voice note. Distinct
+              from the voice-note entry mode, which attaches one summary to the
+              whole record rather than to a particular question. %>
+          <div class="voice-note-recorder" data-target="audio_q_<%= q.id %>"></div>
+          <input type="file" id="audio_q_<%= q.id %>" name="audio_q_<%= q.id %>" accept="audio/*" class="hidden" />
+          <p class="text-xs text-slate-400 mt-1">Press and hold the microphone to answer out loud, like a WhatsApp voice message.</p>
+        <% } %>
+      </div>
+    <% }) %>
+
+    <% if (typeof mode !== 'undefined' && mode === 'audio') { %>
+      <div class="border-t border-slate-100 pt-5">
+        <label class="flex items-center gap-2 text-base sm:text-sm font-medium text-slate-700 mb-2"><%- icon('mic', 'w-4 h-4 text-sky-600') %> Voice Note (optional)</label>
+        <div id="voiceNoteRecorder" class="voice-note-recorder" data-target="audioNoteInput"></div>
+        <input type="file" id="audioNoteInput" name="audio_note" accept="audio/*" class="hidden" />
+        <p class="text-xs text-slate-400 mt-1">Hold the mic button to record, like a WhatsApp voice note — slide left to cancel, slide up to lock hands-free. We'll keep it as a QC note alongside your answers above, see Admin → Media Review.</p>
+      </div>
+    <% } %>
+    </div><!-- /#diaryQuestionsArea -->
+
+    <%# The recorder powers BOTH the end-of-entry voice note (audio mode) and any
+        per-question audio answers, so it has to load whenever either is present --
+        it used to be inside the audio-mode block only. %>
+    <% if ((typeof mode !== 'undefined' && mode === 'audio') || questions.some(function (q) { return q.type === 'audio'; })) { %>
+      <script src="/public/js/voice-note-recorder.js"></script>
+    <% } %>
+
+    <div id="diaryFooterButtons" class="hidden sm:flex gap-3 pt-2">
+      <button type="submit" name="_action" value="draft" class="border border-slate-300 rounded-lg px-5 py-2.5 text-sm hover:bg-slate-100">Save Draft</button>
+      <button type="submit" name="_action" value="submit" class="bg-brand text-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-brand-light">Submit Diary Entry</button>
+    </div>
+    <div id="diaryTerminatedFooter" class="hidden sm:flex gap-3 pt-2" style="display:none">
+      <button type="submit" name="_action" value="submit" class="bg-brand text-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-brand-light">Save &amp; Finish</button>
+    </div>
+  </form>
+</div>
+
+<!-- Mobile sticky action bar -->
+<div id="mobileFooterButtons" class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 flex gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+  <button type="submit" form="diaryForm" name="_action" value="draft" class="flex-1 border border-slate-300 rounded-lg py-3 text-sm font-medium">Save Draft</button>
+  <button type="submit" form="diaryForm" name="_action" value="submit" class="flex-1 bg-brand text-white rounded-lg py-3 text-sm font-semibold">Submit</button>
+</div>
+<div id="mobileTerminatedFooter" class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" style="display:none">
+  <button type="submit" form="diaryForm" name="_action" value="submit" class="w-full bg-brand text-white rounded-lg py-3 text-sm font-semibold">Save &amp; Finish</button>
+</div>
+
+<!-- Maps a question's human-readable code (what a {q:CODE} pipe token is written
+     against) to its id (what the form fields are actually named by), so
+     public/js/piping.js can find the source answer for each piped span. -->
+<script type="application/json" id="pipe-code-map"><%- JSON.stringify(
+  questions.reduce((acc, q) => { if (q.code) acc[q.code] = q.id; return acc; }, {})
+).replace(/</g, "\\u003c") %></script>
+<script src="/public/js/piping.js"></script>
+<script>window.INICIO_RESPONDENT_TOKEN = "<%= respondent.unique_token %>";</script>
+<script src="/public/js/camera-capture.js"></script>
+<script>
+  const RULES = <%- JSON.stringify(rules) %>;
+
+  function getConditionValue(qid) {
+    const radios = document.querySelectorAll(`input[type=radio][data-qid="${qid}"]:checked`);
+    if (radios.length) return radios[0].value;
+    const checks = document.querySelectorAll(`input[type=checkbox][data-qid="${qid}"]:checked`);
+    if (checks.length) return Array.from(checks).map(c => c.value).join('|');
+    // Only fall through to reading .value directly for text/numeric/date-style inputs --
+    // an unchecked radio/checkbox still has a static "value" attribute, so without this
+    // exclusion an untouched single/multi question would misreport its first option as
+    // the answer instead of "no answer yet".
+    const other = document.querySelector(`.cond-input[data-qid="${qid}"]:not([type=radio]):not([type=checkbox])`);
+    return other ? other.value : '';
+  }
+
+  function setSectionVisible(section, visible) {
+    document.querySelectorAll(`.q-wrap[data-section="${CSS.escape(section)}"]`).forEach(w => {
+      w.style.display = visible ? '' : 'none';
+      setRequiredEnabled(w, visible);
+    });
+    const heading = document.querySelector(`.section-heading[data-section="${CSS.escape(section)}"]`);
+    if (heading) heading.style.display = visible ? '' : 'none';
+  }
+
+  // rule.value is "|"-joined when a condition lists more than one value (e.g.
+  // "Show if Q1 equals A or B"), matching the same "|" convention getConditionValue()
+  // already uses for a multi-select answer's several checked values.
+  function matchesCondition(val, rule) {
+    const ruleValues = String(rule.value || '').split('|');
+    switch (rule.operator) {
+      case 'not_equals': return val !== rule.value;
+      case 'in': return ruleValues.includes(val);
+      case 'not_in': return !ruleValues.includes(val);
+      case 'includes': {
+        const valValues = String(val || '').split('|').filter(Boolean);
+        return ruleValues.some((rv) => valValues.includes(rv));
+      }
+      case 'equals':
+      default: return val === rule.value;
+    }
+  }
+
+  // "Terminate survey" rules are given a UI treatment here for instant
+  // feedback as the respondent answers -- hide the rest of the form and swap
+  // in a single "Save & Finish" button. The real decision (what actually
+  // gets stored) is re-checked server-side in routes/respondent.js against
+  // the submitted answers, since this client-side script can't be trusted on
+  // its own to decide something that changes stored data.
+  function applyTermination(matched) {
+    const notice = document.getElementById('terminatedNotice');
+    const area = document.getElementById('diaryQuestionsArea');
+    const footer = document.getElementById('diaryFooterButtons');
+    const termFooter = document.getElementById('diaryTerminatedFooter');
+    const mobileFooter = document.getElementById('mobileFooterButtons');
+    const mobileTermFooter = document.getElementById('mobileTerminatedFooter');
+    notice.classList.toggle('hidden', !matched);
+    area.style.display = matched ? 'none' : '';
+    // These four all pair a base "hidden at this breakpoint" utility class
+    // with a "flex/shown at that breakpoint" one (e.g. "hidden sm:flex") --
+    // toggling the plain "hidden" class can't reliably win against that
+    // responsive class at the breakpoint where both apply, since Tailwind's
+    // generated stylesheet may order them either way. An inline style always
+    // wins regardless of that ordering: set to 'none' to force-hide at every
+    // breakpoint, or cleared (‘’) to fall back to the element's own
+    // responsive show/hide classes.
+    footer.style.display = matched ? 'none' : '';
+    termFooter.style.display = matched ? '' : 'none';
+    mobileFooter.style.display = matched ? 'none' : '';
+    mobileTermFooter.style.display = matched ? '' : 'none';
+    setRequiredEnabled(area, !matched);
+  }
+
+  // A hidden-but-required field silently blocks native form submission: the
+  // browser refuses to submit and cannot focus an invisible control to show
+  // its "please fill this in" prompt, so the button appears to do nothing at
+  // all. Every place that hides part of the form has to clear `required` on
+  // the way out and restore it on the way back in -- which is why this is one
+  // helper rather than repeated inline, having already been missed once for
+  // skip-logic-hidden questions.
+  function setRequiredEnabled(root, enabled) {
+    if (!root) return;
+    if (enabled) {
+      root.querySelectorAll('[data-was-required]').forEach((el) => {
+        el.required = true;
+        delete el.dataset.wasRequired;
+      });
+    } else {
+      root.querySelectorAll('[required]').forEach((el) => {
+        el.dataset.wasRequired = '1';
+        el.required = false;
+      });
+    }
+  }
+
+  function evaluateSkipLogic() {
+    // default: visible, unless a 'show' rule targets it (then hidden until matched)
+    const defaultHiddenQ = new Set(RULES.filter(r => r.action === 'show' && r.target_question_id).map(r => r.target_question_id));
+    const defaultHiddenSections = new Set(RULES.filter(r => r.action === 'show' && r.target_section).map(r => r.target_section));
+    document.querySelectorAll('.q-wrap').forEach(w => {
+      const qid = parseInt(w.dataset.qid, 10);
+      const inHiddenSection = w.dataset.section && defaultHiddenSections.has(w.dataset.section);
+      const hidden = defaultHiddenQ.has(qid) || inHiddenSection;
+      w.style.display = hidden ? 'none' : '';
+      setRequiredEnabled(w, !hidden);
+    });
+    document.querySelectorAll('.section-heading').forEach(h => {
+      h.style.display = defaultHiddenSections.has(h.dataset.section) ? 'none' : '';
+    });
+    let terminated = false;
+    RULES.forEach(rule => {
+      const val = getConditionValue(rule.condition_question_id);
+      const matches = matchesCondition(val, rule);
+      if (rule.action === 'terminate') {
+        if (matches) terminated = true;
+        return;
+      }
+      if (rule.target_section) {
+        // A section rule wins over any earlier per-question display for questions in that section.
+        setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);
+        return;
+      }
+      const wrap = document.getElementById('q-wrap-' + rule.target_question_id);
+      if (!wrap) return;
+      if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';
+      if (rule.action === 'hide') wrap.style.display = matches ? 'none' : '';
+      setRequiredEnabled(wrap, wrap.style.display !== 'none');
+    });
+    applyTermination(terminated);
+  }
+
+  document.addEventListener('input', evaluateSkipLogic);
+  document.addEventListener('change', evaluateSkipLogic);
+  evaluateSkipLogic();
+
+  // ---- Local draft autosave (survives a dropped connection or accidental reload) ----
+  const DRAFT_KEY = 'inicio_local_draft:<%= respondent.unique_token %>';
+  const form = document.getElementById('diaryForm');
+
+  // ---- Never let Submit fail silently ----
+  //
+  // The browser blocks submission on an invalid control and tries to show a
+  // bubble beside it. If that control is hidden, zero-size, or scrolled behind
+  // the mobile sticky footer, no bubble appears and the button simply does
+  // nothing -- which reads as "the app is broken" and has no recovery path.
+  //
+  // So: catch the invalid submit, say which question needs an answer, and put
+  // the respondent's cursor on it.
+  const validationNotice = document.getElementById('diaryValidationNotice');
+  const validationText = document.getElementById('diaryValidationText');
+
+  // ---- One press, one entry ----
+  //
+  // A diary submit uploads photos, video and voice notes, so on a slow phone
+  // connection it can take several seconds with nothing visibly happening.
+  // Respondents reasonably conclude the button did not work and press again --
+  // and every press was posting a whole new entry, so one occasion was landing
+  // in the dataset three times.
+  //
+  // Disabling the button alone is not enough: a disabled submitter is not sent
+  // with the form, so the server would lose _action and could not tell a draft
+  // from a submit. The value is copied into a hidden field first, and the
+  // button is left enabled-but-inert for the same reason.
+  let submitLocked = false;
+  function lockSubmit(submitter) {
+    submitLocked = true;
+    const action = (submitter && submitter.value) || 'submit';
+    let hidden = form.querySelector('input[type="hidden"][name="_action"]');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = '_action';
+      form.appendChild(hidden);
+    }
+    hidden.value = action;
+
+    form.querySelectorAll('button[type="submit"]').forEach((b) => {
+      b.setAttribute('aria-disabled', 'true');
+      b.style.opacity = '0.6';
+      b.style.pointerEvents = 'none';
+      if (b.value === action && action !== 'draft') b.textContent = 'Saving\u2026';
+    });
+    showProgress();
+  }
+
+  // A determinate bar, not a spinner. Most media now uploads in the background
+  // as it is captured, so a submit is usually fast -- but when something did
+  // not stage (offline at capture, JS error) the respondent is waiting on real
+  // bytes, and "37%" is the difference between waiting and pressing again.
+  let progressWrap, progressBar;
+  function showProgress() {
+    if (progressWrap) return;
+    progressWrap = document.createElement('div');
+    progressWrap.className = 'fixed left-0 right-0 bottom-0 z-50 bg-white border-t border-slate-200 px-4 py-3';
+    progressWrap.innerHTML =
+      '<div class="max-w-2xl mx-auto">' +
+      '  <div class="flex items-center justify-between text-xs font-medium text-slate-600 mb-1.5">' +
+      '    <span>Sending your entry\u2026</span><span id="diaryPct" class="font-mono">0%</span>' +
+      '  </div>' +
+      '  <div class="h-1.5 rounded-full bg-slate-200 overflow-hidden">' +
+      '    <div id="diaryBar" class="h-full bg-signal rounded-full transition-[width] duration-150" style="width:0%"></div>' +
+      '  </div>' +
+      '  <div class="text-[11px] text-slate-400 mt-1.5">Keep this screen open until it finishes.</div>' +
+      '</div>';
+    document.body.appendChild(progressWrap);
+    progressBar = progressWrap.querySelector('#diaryBar');
+  }
+  function setProgress(pct) {
+    if (!progressWrap) return;
+    progressWrap.querySelector('#diaryPct').textContent = pct + '%';
+    progressBar.style.width = pct + '%';
+  }
+
+  // Submitting through XHR rather than a plain form post, purely so there is an
+  // upload-progress event to read. On any failure the page falls back to a
+  // normal submit, so a browser quirk can never strand a finished entry.
+  form.addEventListener('submit', function (e) {
+    if (!window.XMLHttpRequest || !window.FormData || form.dataset.fallback) return;
+    e.preventDefault();
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action || window.location.href);
+    xhr.upload.onprogress = function (ev) {
+      if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100));
+    };
+    xhr.onload = function () {
+      setProgress(100);
+      // The server answers with a redirect the browser has already followed;
+      // responseURL is where it landed.
+      window.location.href = xhr.responseURL || '/r/' + window.INICIO_RESPONDENT_TOKEN;
+    };
+    xhr.onerror = function () {
+      if (progressWrap) { progressWrap.remove(); progressWrap = null; }
+      unlockSubmit();
+      form.dataset.fallback = '1';
+      form.submit();
+    };
+    xhr.send(new FormData(form, e.submitter));
+  });
+  function unlockSubmit() {
+    submitLocked = false;
+    form.querySelectorAll('button[type="submit"]').forEach((b) => {
+      b.removeAttribute('aria-disabled');
+      b.style.opacity = '';
+      b.style.pointerEvents = '';
+    });
+  }
+  // Coming back via the back button restores the page from cache with the
+  // buttons still locked, which would strand the respondent.
+  window.addEventListener('pageshow', unlockSubmit);
+
+  function questionLabelFor(el) {
+    // A diary question carries its label inside .q-wrap; the entry-level
+    // fields (when it happened, and so on) sit in their own block with a
+    // plain label. Naming the actual field matters -- "one of the questions
+    // above" sends someone hunting through a sixty-question form.
+    const container = el.closest('.q-wrap') || (el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.parentElement : null) || el.parentElement;
+    const label = container && container.querySelector('label');
+    const text = label
+      ? label.textContent.replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim()
+      : '';
+    return text || 'One of the fields above';
+  }
+
+  form.addEventListener('submit', function (e) {
+    if (submitLocked) { e.preventDefault(); return; }
+    // A draft save deliberately accepts a half-finished entry -- that's the
+    // whole point of it -- so it must never be blocked by required fields.
+    if (e.submitter && e.submitter.value === 'draft') {
+      setRequiredEnabled(form, false);
+      lockSubmit(e.submitter);
+      return;
+    }
+    // Only what the respondent can actually see counts. A question hidden by
+    // skip logic was never asked, so demanding an answer to it would be both
+    // wrong and impossible to act on.
+    const isVisible = (el) => {
+      const wrap = el.closest('.q-wrap');
+      if (wrap && getComputedStyle(wrap).display === 'none') return false;
+      return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    };
+
+    // A required multi-select: the browser has no notion of "at least one of
+    // this checkbox group", so it's checked here.
+    const emptyMulti = Array.from(document.querySelectorAll('.q-wrap[data-qtype="multi"][data-required="1"]'))
+      .find((w) => getComputedStyle(w).display !== 'none' && !w.querySelector('input[type="checkbox"]:checked'));
+    if (emptyMulti) {
+      e.preventDefault();
+      const label = emptyMulti.querySelector('label');
+      validationText.textContent =
+        `${(label ? label.textContent.replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim() : 'One of the questions above')} — please choose at least one.`;
+      validationNotice.classList.remove('hidden');
+      validationNotice.classList.add('flex');
+      emptyMulti.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+
+    const invalid = Array.from(form.elements).find(
+      (el) => el.willValidate && !el.checkValidity() && isVisible(el)
+    );
+    if (!invalid) {
+      validationNotice.classList.add('hidden');
+      validationNotice.classList.remove('flex');
+      lockSubmit(e.submitter);
+      return; // let it through -- the server has the final say
+    }
+    e.preventDefault();
+    unlockSubmit();
+
+    const label = questionLabelFor(invalid);
+    validationText.textContent =
+      invalid.validity.rangeUnderflow || invalid.validity.rangeOverflow || invalid.validity.stepMismatch
+        ? `${label} — ${invalid.validationMessage}`
+        : `${label} still needs an answer.`;
+    validationNotice.classList.remove('hidden');
+    validationNotice.classList.add('flex');
+
+    const wrap = invalid.closest('.q-wrap') || invalid;
+    wrap.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    try { invalid.focus({ preventScroll: true }); } catch (err) { /* not focusable */ }
+  });
+
+  function serializeForm() {
+    const data = {};
+    form.querySelectorAll('input, textarea, select').forEach((el) => {
+      if (!el.name || el.type === 'file' || el.type === 'hidden') return;
+      if (el.type === 'radio' || el.type === 'checkbox') {
+        if (el.checked) {
+          data[el.name] = data[el.name] || [];
+          data[el.name].push(el.value);
+        }
+      } else {
+        data[el.name] = el.value;
+      }
+    });
+    return data;
+  }
+
+  function saveDraft() {
+    try {
+      const data = serializeForm();
+      const hasContent = Object.values(data).some((v) => (Array.isArray(v) ? v.length : v));
+      if (hasContent) localStorage.setItem(DRAFT_KEY, JSON.stringify({ data, savedAt: Date.now() }));
+    } catch (e) { /* localStorage unavailable — autosave is a nicety, not required */ }
+  }
+
+  function applyDraft(data) {
+    Object.entries(data).forEach(([name, value]) => {
+      const els = form.querySelectorAll(`[name="${CSS.escape(name)}"]`);
+      els.forEach((el) => {
+        if (el.type === 'radio' || el.type === 'checkbox') {
+          el.checked = Array.isArray(value) && value.includes(el.value);
+        } else if (Array.isArray(value)) {
+          el.value = value[0] || '';
+        } else {
+          el.value = value;
+        }
+      });
+    });
+    evaluateSkipLogic();
+  }
+
+  let saveTimer;
+  form.addEventListener('input', () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 600); });
+  form.addEventListener('change', saveDraft);
+  form.addEventListener('submit', () => { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} });
+
+  // Right after AI video analysis, the server just rendered the freshest state (any
+  // AI pre-fill included) — don't offer to overwrite it with an older local draft.
+  const JUST_ANALYZED_VIDEO = <%- (typeof pendingMedia !== 'undefined' && pendingMedia) ? 'true' : 'false' %>;
+  if (JUST_ANALYZED_VIDEO) { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
+
+  try {
+    const saved = JUST_ANALYZED_VIDEO ? null : JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (saved && saved.data && Date.now() - saved.savedAt < 24 * 60 * 60 * 1000) {
+      const banner = document.getElementById('restoreBanner');
+      banner.style.display = '';
+      document.getElementById('restoreBtn').addEventListener('click', () => {
+        applyDraft(saved.data);
+        banner.style.display = 'none';
+      });
+      document.getElementById('discardBtn').addEventListener('click', () => {
+        localStorage.removeItem(DRAFT_KEY);
+        banner.style.display = 'none';
+      });
+    }
+  } catch (e) { /* ignore malformed/unavailable local draft */ }
+</script>
+
+<%- include('../partials/footer') %>

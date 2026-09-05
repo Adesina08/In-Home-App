@@ -1,0 +1,41 @@
+<%- include('../partials/header', { title: 'Inicio Diary', user: null, defaultTheme: 'light', showThemeToggle: true }) %>
+
+<%# Brought onto the shared header/footer so this screen gets the same fonts,
+    dark-mode contrast fix and floating toggle as every other page, instead of
+    maintaining its own parallel <html>/<head>/<body>. It previously had no
+    theme mechanism at all, so the requested toggle had nothing to hook into. %>
+<div class="max-w-sm w-full mx-auto pt-4 pb-10">
+  <div class="mb-10">
+    <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-14 w-auto mx-auto mb-5" />
+    <h1 class="text-3xl font-bold mt-5 text-center">Inicio Diary</h1>
+    <p class="text-slate-500 mt-2 text-base leading-relaxed text-center">Sign in to your consumption diary.</p>
+  </div>
+
+  <% if (ready) { %>
+    <div class="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">Your account is ready. Sign in with the username and password you created from your invitation.</div>
+  <% } %>
+  <% if (error) { %>
+    <div class="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><%= error %></div>
+  <% } %>
+
+  <form method="POST" action="/mobile/login" class="space-y-5">
+    <div>
+      <label class="block text-sm font-semibold mb-1.5">Username</label>
+      <input name="username" value="<%= username || '' %>" autocomplete="username" autocapitalize="none" required class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your username" />
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-1.5">Password</label>
+      <input type="password" name="password" autocomplete="current-password" required class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your password" />
+    </div>
+    <button class="w-full rounded-2xl bg-brand-700 text-white font-semibold py-4 text-base shadow-sm active:scale-[0.99] transition">Open my diary</button>
+  </form>
+
+  <div class="mt-7 rounded-2xl bg-white border border-slate-200 p-4">
+    <div class="text-sm font-semibold">First time here?</div>
+    <p class="text-xs text-slate-500 mt-1 leading-relaxed">Open the invitation link or scan the QR code you received. Complete the pre-survey, choose how you want to take part, then create your Inicio Diary login.</p>
+  </div>
+
+  <div class="pt-10 text-center text-xs text-slate-400">Inicio Diary &middot; Secure respondent access</div>
+</div>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,35 @@
+<%- include('../partials/header', { title: 'Sign in — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="text-center mb-6">
+      <img src="/public/icons/logo-header.png" alt="INICIO" class="h-9 w-auto mx-auto mb-4" />
+      <h1 class="text-lg font-bold text-slate-900">Sign in to your diary</h1>
+      <p class="text-sm text-slate-500 mt-1">We'll text or email you a code — no password to remember.</p>
+    </div>
+
+    <% if (error) { %>
+      <div class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-4">
+        <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %><span><%= error %></span>
+      </div>
+    <% } %>
+
+    <form method="POST" action="/me/login" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1.5">Phone number or email</label>
+        <input name="contact" required value="<%= contact %>" autocomplete="username" autofocus
+               placeholder="e.g. 0801 234 5678"
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+      </div>
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+        Send me a code <%- icon('arrow-right', 'w-4 h-4') %>
+      </button>
+    </form>
+
+    <div class="mt-5 pt-4 border-t border-slate-100 text-[11px] text-slate-400 leading-relaxed text-center">
+      Given a personal diary link instead? Open that link directly — it works without signing in.
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

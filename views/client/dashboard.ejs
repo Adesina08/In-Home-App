@@ -1,0 +1,221 @@
+<%- include('../partials/header', { title: 'Client Dashboard — INICIO', user }) %>
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Overview</div>
+    <h1 class="text-2xl font-bold text-slate-900">Client Dashboard</h1>
+    <div class="text-slate-500 text-sm mt-1.5 flex items-center gap-2">
+      <% if (studies.length > 1) { %>
+        <span>Study:</span>
+        <select onchange="window.location='/client?study='+this.value" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400">
+          <% studies.forEach(s => { %><option value="<%= s.id %>" <%= s.id===study.id?'selected':'' %>><%= s.name %></option><% }) %>
+        </select>
+      <% } else { %>
+        <span><%= study.name %></span>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-4 mb-8">
+  <% const chipColors = ['brand','sky','emerald','amber','violet','rose'];
+     const kpiIcons = { completion_rate: 'chart-bar', compliance_rate: 'shield', active_respondents: 'users',
+       qc_flag_rate: 'warning', brand_incidence: 'trend', avg_occasions_per_week: 'calendar' };
+     const metricIcons = { percent_choosing: 'trend', average: 'chart-bar', percent_entries: 'chart-bar',
+       count_entries: 'clipboard', percent_respondents: 'users' };
+     kpis.forEach((k, idx) => {
+      // A questionnaire-driven KPI carries its own computed value; the
+      // original six still come from the study-level counts above.
+      const builtIn = { completion_rate: completionRate+'%', compliance_rate: completionRate+'%', active_respondents: activeRespondents,
+        qc_flag_rate: qcFlagRate+'%', brand_incidence: brandConsumption.length, avg_occasions_per_week: avgOccasionsPerWeek };
+      const computed = typeof kpiComputed !== 'undefined' ? kpiComputed.get(k.id) : null;
+      const val = computed ? computed.display : (builtIn[k.kpi_key] !== undefined ? builtIn[k.kpi_key] : '—');
+      const color = chipColors[idx % chipColors.length];
+      const kIcon = kpiIcons[k.kpi_key] || metricIcons[k.metric] || 'chart-bar';
+  %>
+    <div class="bg-white rounded-2xl border border-slate-200/70 p-4 shadow-card hover:shadow-card-hover transition">
+      <div class="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide font-semibold">
+        <span class="w-7 h-7 rounded-lg bg-<%= color %>-50 text-<%= color %>-600 flex items-center justify-center"><%- icon(kIcon, 'w-4 h-4') %></span>
+        <span class="truncate" title="<%= k.label %>"><%= k.label %></span>
+      </div>
+      <div class="text-2xl font-bold text-slate-900 mt-3 tabular-nums"><%= val %></div>
+      <%# The denominator, because "18%" over four entries and over four
+          hundred are very different numbers to act on. %>
+      <% if (computed && computed.basis) { %>
+        <div class="text-[11px] text-slate-400 mt-0.5"><%= computed.basis %></div>
+      <% } %>
+    </div>
+  <% }) %>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Fieldwork Status</div>
+    <div class="text-sm space-y-1">
+      <div class="flex justify-between py-1.5 border-b border-slate-100"><span class="text-slate-600">Total respondents</span><span class="font-semibold text-slate-800"><%= totalRespondents %></span></div>
+      <div class="flex justify-between py-1.5 border-b border-slate-100"><span class="text-slate-600">Active</span><span class="font-semibold text-slate-800"><%= activeRespondents %></span></div>
+      <div class="flex justify-between py-1.5"><span class="text-slate-600">Diary completion</span><span class="font-semibold text-slate-800"><%= completionRate %>%</span></div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('shield', 'w-4 h-4 text-brand-500') %> Compliance / QC</div>
+    <div class="flex items-end gap-4 h-24 mb-2">
+      <% const maxR = Math.max(riskCounts.green, riskCounts.amber, riskCounts.red, 1); %>
+      <div class="flex-1 flex flex-col items-center justify-end h-full">
+        <div class="text-xs font-semibold mb-1 text-slate-700"><%= riskCounts.green %></div>
+        <div class="w-8 bg-emerald-400 rounded-t-lg" style="height: <%= (riskCounts.green/maxR)*100 %>%"></div>
+        <div class="text-xs mt-1 text-slate-500">Green</div>
+      </div>
+      <div class="flex-1 flex flex-col items-center justify-end h-full">
+        <div class="text-xs font-semibold mb-1 text-slate-700"><%= riskCounts.amber %></div>
+        <div class="w-8 bg-amber-400 rounded-t-lg" style="height: <%= (riskCounts.amber/maxR)*100 %>%"></div>
+        <div class="text-xs mt-1 text-slate-500">Amber</div>
+      </div>
+      <div class="flex-1 flex flex-col items-center justify-end h-full">
+        <div class="text-xs font-semibold mb-1 text-slate-700"><%= riskCounts.red %></div>
+        <div class="w-8 bg-red-400 rounded-t-lg" style="height: <%= (riskCounts.red/maxR)*100 %>%"></div>
+        <div class="text-xs mt-1 text-slate-500">Red</div>
+      </div>
+    </div>
+    <div class="text-xs text-slate-500">QC flag rate: <strong class="text-slate-700"><%= qcFlagRate %>%</strong></div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-brand-500') %> Diary Submission Trend</div>
+    <div class="flex items-end gap-1 h-24">
+      <% const maxT = Math.max(...trend.map(t=>t.c), 1); %>
+      <% trend.forEach(t => { %>
+        <div class="flex-1 bg-brand-500/70 rounded-t-lg" style="height: <%= (t.c/maxT)*100 %>%" title="<%= t.day %>: <%= t.c %>"></div>
+      <% }) %>
+      <% if (!trend.length) { %><div class="text-slate-400 text-sm">No submitted diaries yet</div><% } %>
+    </div>
+  </div>
+</div>
+
+<% if (typeof aiInsight !== 'undefined' && aiInsight) { %>
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div class="font-semibold text-slate-800 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-brand-500') %> Summary</div>
+      <div class="flex items-center gap-2">
+        <% if (aiInsight.used_ai_model) { %>
+          <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">AI-generated</span>
+        <% } else { %>
+          <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Rules-based draft — not AI</span>
+        <% } %>
+      </div>
+    </div>
+    <div class="text-sm text-slate-700 leading-relaxed whitespace-pre-line bg-slate-50 border border-slate-200 rounded-xl p-4"><%= aiInsight.narrative %></div>
+    <!-- Spec 4.3: the narrative must be traceable to the period and base it came from. -->
+    <p class="text-[11px] text-slate-400 mt-2.5 leading-relaxed">
+      Covers <%= aiInsight.period_start || aiInsight.period_end ? ((aiInsight.period_start || 'the start of fieldwork') + ' to ' + (aiInsight.period_end || 'today')) : 'all data collected so far' %>,
+      based on <strong><%= aiInsight.base_records %></strong> submitted <%= aiInsight.base_records === 1 ? 'entry' : 'entries' %>
+      from <strong><%= aiInsight.base_respondents %></strong> <%= aiInsight.base_respondents === 1 ? 'respondent' : 'respondents' %>.
+      Prepared by the research team on <%= aiInsight.generated_at %>.
+    </p>
+  </div>
+<% } %>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('chart-bar', 'w-4 h-4 text-brand-500') %> Brand Consumption</div>
+    <% brandConsumption.forEach(b => { %>
+      <div class="flex items-center gap-3 mb-2.5">
+        <div class="w-28 text-xs text-slate-600 truncate"><%= b.brand %></div>
+        <div class="flex-1 bg-slate-100 rounded-full h-3"><div class="bg-brand-600 h-3 rounded-full" style="width: <%= (b.mentions / Math.max(...brandConsumption.map(x=>x.mentions),1))*100 %>%"></div></div>
+        <div class="text-xs text-slate-500 w-8 text-right"><%= b.mentions %></div>
+      </div>
+    <% }) %>
+    <% if (!brandConsumption.length) { %>
+      <div class="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-sm">No brand data yet — add a question with code "brand" in the questionnaire builder.</div>
+    <% } %>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200/70 p-5 shadow-card">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('calendar', 'w-4 h-4 text-brand-500') %> Occasion &amp; Context Mix</div>
+    <% occasionMix.forEach(o => { %>
+      <div class="flex items-center gap-3 mb-2.5">
+        <div class="w-28 text-xs text-slate-600 truncate"><%= o.occasion %></div>
+        <div class="flex-1 bg-slate-100 rounded-full h-3"><div class="bg-emerald-500 h-3 rounded-full" style="width: <%= (o.c / Math.max(...occasionMix.map(x=>x.c),1))*100 %>%"></div></div>
+        <div class="text-xs text-slate-500 w-8 text-right"><%= o.c %></div>
+      </div>
+    <% }) %>
+    <% if (!occasionMix.length) { %>
+      <div class="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-sm">No occasion data yet — add a question with code "occasion" in the questionnaire builder.</div>
+    <% } %>
+  </div>
+</div>
+
+
+<%# ---- Charts + data quality (approved comps) ---- %>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+  <div class="lg:col-span-2 bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink">Respondent activity</div>
+    <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Entries submitted over time</p>
+    <canvas id="trendChart" height="150"></canvas>
+  </div>
+  <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
+    <div class="font-display font-bold text-slate-900 dark:text-night-ink">Occasion mix</div>
+    <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Share of occasions captured</p>
+    <canvas id="occasionChart" height="180"></canvas>
+  </div>
+</div>
+
+<div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5 mt-5 max-w-xl">
+  <div class="font-display font-bold text-slate-900 dark:text-night-ink mb-1">Can I trust it</div>
+  <p class="text-xs text-slate-500 dark:text-night-muted mb-4">Where the answers in this report came from.</p>
+  <div class="font-mono text-lg font-semibold text-slate-900 dark:text-night-ink mb-3"><%= provenance.total %> answers in this report</div>
+  <% var lines = [
+      ['answered by respondents', provenance.respondent],
+      ['AI-assisted, confirmed by research', provenance.aiConfirmed],
+      ['excluded — unresolved or unconfirmed', provenance.excluded]
+     ]; %>
+  <% lines.forEach(function (l) { %>
+    <div class="flex items-baseline gap-3 py-1 text-sm">
+      <span class="font-mono font-semibold w-14 text-right text-slate-900 dark:text-night-ink"><%= l[1] %></span>
+      <span class="text-slate-600 dark:text-night-muted"><%= l[0] %></span>
+    </div>
+  <% }) %>
+  <p class="mt-3 pt-3 border-t border-slate-100 dark:border-night-line text-xs font-medium text-verified">
+    Nothing unverified is included above.
+  </p>
+</div>
+
+<script src="/public/vendor/chart.umd.js"></script>
+<script>
+  (function () {
+    if (!window.Chart) return;
+    var dark = document.documentElement.classList.contains('dark');
+    var grid = dark ? '#1B3556' : '#E2E8F0';
+    var tick = dark ? '#94A3B8' : '#64748B';
+
+    var t = document.getElementById('trendChart');
+    var trend = <%- JSON.stringify(trend || []) %>;
+    if (t && trend.length) {
+      new Chart(t, {
+        type: 'line',
+        data: { labels: trend.map(function (d) { return d.label || d.date; }),
+                datasets: [{ data: trend.map(function (d) { return d.count || d.value || 0; }),
+                             borderColor: '#1D4ED8', backgroundColor: 'rgba(29,78,216,.10)',
+                             fill: true, tension: .35, pointRadius: 2 }] },
+        options: { plugins: { legend: { display: false } },
+                   scales: { x: { grid: { display: false }, ticks: { color: tick, font: { size: 10 } } },
+                             y: { beginAtZero: true, ticks: { precision: 0, color: tick, font: { size: 10 } }, grid: { color: grid } } } },
+      });
+    } else if (t) { t.parentElement.innerHTML += '<p class="text-sm text-slate-500">Not enough data yet.</p>'; }
+
+    var o = document.getElementById('occasionChart');
+    var mix = <%- JSON.stringify(occasionMix || []) %>;
+    if (o && mix.length) {
+      new Chart(o, {
+        type: 'doughnut',
+        data: { labels: mix.map(function (m) { return m.label; }),
+                datasets: [{ data: mix.map(function (m) { return m.count || m.value || 0; }),
+                             backgroundColor: ['#1D4ED8', '#2563EB', '#7C3AED', '#0D9488', '#94A3B8'], borderWidth: 0 }] },
+        options: { cutout: '65%', plugins: { legend: { position: 'bottom', labels: { color: tick, boxWidth: 10, font: { size: 11 } } } } },
+      });
+    } else if (o) { o.parentElement.innerHTML += '<p class="text-sm text-slate-500">Not enough data yet.</p>'; }
+  })();
+</script>
+
+<%- include('../partials/footer') %>

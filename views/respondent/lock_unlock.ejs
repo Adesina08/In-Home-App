@@ -1,0 +1,74 @@
+<%- include('../partials/header', { title: 'Unlock Your Diary — INICIO', user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6 text-center">
+    <div class="w-16 h-16 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-4">
+      <%- icon('shield', 'w-8 h-8') %>
+    </div>
+    <h1 class="text-lg font-bold text-slate-900 mb-1.5">Unlock your diary</h1>
+    <p class="text-sm text-slate-500 mb-6 leading-relaxed">
+      Use your phone's fingerprint, Face ID, or screen lock to continue.
+    </p>
+
+    <button type="button" id="unlockBtn" class="w-full inline-flex items-center justify-center gap-2 bg-brand-700 text-white rounded-xl py-3.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
+      <%- icon('shield', 'w-4 h-4') %> Unlock
+    </button>
+
+    <div id="unlockError" class="hidden mt-4 flex items-start gap-2 bg-red-50 text-red-700 text-sm rounded-xl p-3 border border-red-100 text-left">
+      <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
+      <span id="unlockErrorText">Something went wrong. Please try again.</span>
+    </div>
+
+    <a href="/r/<%= respondent.unique_token %>/help" class="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-brand-700 transition mt-5">
+      <%- icon('help', 'w-3.5 h-3.5') %> Need help?
+    </a>
+  </div>
+</div>
+
+<script src="/public/js/simplewebauthn-browser.js"></script>
+<script>
+  (function () {
+    var unlockBtn = document.getElementById('unlockBtn');
+    var errorEl = document.getElementById('unlockError');
+    var errorTextEl = document.getElementById('unlockErrorText');
+    var next = <%- JSON.stringify(next) %>;
+    var base = <%- JSON.stringify('/r/' + respondent.unique_token + '/lock') %>;
+
+    function showError(msg) {
+      errorTextEl.textContent = msg;
+      errorEl.classList.remove('hidden');
+    }
+
+    async function attemptUnlock() {
+      errorEl.classList.add('hidden');
+      unlockBtn.disabled = true;
+      unlockBtn.textContent = 'Waiting for your fingerprint/Face ID…';
+      try {
+        var optRes = await fetch(base + '/auth-options', { method: 'POST' });
+        if (!optRes.ok) throw new Error('start-failed');
+        var optionsJSON = await optRes.json();
+        var assertion = await window.SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: optionsJSON });
+        var verifyRes = await fetch(base + '/auth-verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(assertion),
+        });
+        var verifyJSON = await verifyRes.json();
+        if (!verifyRes.ok || !verifyJSON.verified) throw new Error('verify-failed');
+        window.location.href = next;
+      } catch (e) {
+        unlockBtn.disabled = false;
+        unlockBtn.textContent = 'Try again';
+        if (e && e.name === 'NotAllowedError') {
+          showError('Cancelled or timed out. Tap "Try again" and follow your device\'s prompt.');
+        } else {
+          showError('Unlock failed. Please try again.');
+        }
+      }
+    }
+
+    unlockBtn.addEventListener('click', attemptUnlock);
+  })();
+</script>
+
+<%- include('../partials/footer') %>
