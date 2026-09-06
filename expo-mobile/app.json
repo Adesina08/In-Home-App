@@ -2,7 +2,7 @@
   "expo": {
     "name": "INICIO Diary",
     "slug": "inicio-diary",
-    "version": "0.1.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "scheme": "inicio",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.inicio.inhome",
-      "versionCode": 1,
+      "versionCode": 2000,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"
@@ -50,7 +50,18 @@
           },
           "imageWidth": 220
         }
-      ]
+      ],
+      "expo-video",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "INICIO uses your camera to record diary evidence with on-screen prompts.",
+          "microphonePermission": "INICIO records your spoken diary answers with your video.",
+          "recordAudioAndroid": true,
+          "barcodeScannerEnabled": false
+        }
+      ],
+      "./plugins/withReleaseSigning"
     ],
     "extra": {
       "apiUrl": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net"

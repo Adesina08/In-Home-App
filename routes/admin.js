@@ -149,6 +149,7 @@ router.get("/", async (req, res) => {
   for (const r of respondentsForRisk) riskCounts[await classifyRisk(r.id)]++;
 
   res.render("admin/dashboard", {
+    participationSummary:(await require("../lib/studyReport").loadStudyReport(study.id)).analytics.compliance,
     study,
     studies,
     funnelMap,
@@ -191,12 +192,12 @@ async function weeklyProgress(study) {
       const t = new Date(String(r.occurrence_time || r.entry_time || "").replace(" ", "T"));
       return t >= from && t < to;
     }).length;
-    // One expected entry per active respondent per day of the week.
-    const target = active * 7;
+    const report=await require("../lib/studyReport").loadStudyReport(study.id,{from:from.toISOString().slice(0,10),to:new Date(to-86400000).toISOString().slice(0,10)});
+    const target = report.analytics.compliance.expected;
     out.push({
       label: `Week ${w + 1}`,
       range: `${from.toISOString().slice(5, 10)} – ${new Date(to - 86400000).toISOString().slice(5, 10)}`,
-      pct: target ? Math.min(100, Math.round((inWeek / target) * 100)) : 0,
+      pct: report.analytics.compliance.rate,
       future: from > new Date(),
     });
   }

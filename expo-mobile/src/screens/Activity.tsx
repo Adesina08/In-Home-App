@@ -117,7 +117,7 @@ export function ActivityScreen({
               <View
                 key={i}
                 className="flex-1 rounded-t-[3px] bg-[#1D4ED8]"
-                style={{ height: `${Math.max(6, (v / maxBar) * 100)}%` }}
+                style={{ height: `${(v / maxBar) * 100}%` }}
               />
             ))}
           </View>

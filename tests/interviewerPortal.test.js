@@ -10,7 +10,8 @@ let directory, server, base, study, own, foreign;
 before(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'inicio-interviewer-tests-'));
   await store.connect({ uri: '', file: path.join(directory, 'data.json') });
-  study = await store.insert('studies', { name: 'Field study', status: 'live', market: 'Nigeria' });
+  study = await store.insert('studies', { name: 'Field study', status: 'live', market: 'Nigeria',screener_questions:[{code:'user',text:'Category user?',options:['Yes','No'],allowed:['Yes']}] });
+  await store.insert('interviewer_assignments',{study_id:study.id,user_id:7,enabled:true});
   await store.insert('consent_versions', { study_id: study.id, status: 'approved', version: 1, body: 'Study consent wording.' });
   own = await store.insert('respondents', { study_id: study.id, interviewer_id: 7, name: 'Own respondent', respondent_code: 'OWN-1', unique_token: 'own-token', activation_status: 'completed' });
   foreign = await store.insert('respondents', { study_id: study.id, interviewer_id: 8, name: 'Private respondent', respondent_code: 'PRIVATE-1', unique_token: 'private-token', activation_status: 'activated' });
@@ -54,9 +55,9 @@ test('registration rejects unavailable studies and missing fields without creati
   assert.equal(await store.count('respondents', {}), beforeCount);
 });
 test('successful registration offers a handover and duplicate contacts show the held screen', async () => {
-  const data = { study_id: study.id, eligible: 1, consent_given: 1, name: 'New test recruit', contact: '08012345678', preferred_channel: 'app' };
+  const data = { study_id: study.id, 'screener[user]':'Yes',consent_version:1,eligible: 1, consent_given: 1, name: 'New test recruit', contact: '08012345678', preferred_channel: 'app' };
   const response = await register(data); assert.equal(response.status, 200);
-  assert.match(await response.text(), /Ready for the handover/);
+  assert.match(await response.text(), /Training and practice/);
   const duplicate = await register(data); assert.match(await duplicate.text(), /research team needs to review this/);
   const held = await store.findOne('respondents', { name: data.name }, { sort: { id: -1 } });
   const share = await fetch(`${base}/respondents/${held.id}`); const html = await share.text();

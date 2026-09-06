@@ -83,6 +83,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  submissionReceipt:(id:number,key:string)=>request<any>(`/mobile/api/respondents/${id}/submissions/${encodeURIComponent(key)}`),
+  participation:(id:number)=>request<any>(`/mobile/api/respondents/${id}/participation`),
+  closeout:(id:number,answers:Record<string,string>)=>request<any>(`/mobile/api/respondents/${id}/closeout`,{method:'POST',body:JSON.stringify({answers})}),
+  mediaConsent:(id:number,given:boolean)=>request<any>(`/mobile/api/respondents/${id}/media-consent`,{method:'POST',body:JSON.stringify({given})}),
+  withdraw:(id:number)=>request<any>(`/mobile/api/respondents/${id}/withdraw`,{method:'POST'}),
   health: () => request<{ ok: boolean }>("/mobile/api/health"),
   login: (username: string, password: string) => request<{ token: string; account: any }>("/mobile/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   requestCode: (contact: string) => request<{ ok: boolean; simulated: boolean; ttlMinutes: number; bypassed?: boolean; token?: string }>("/mobile/api/auth/request-code", { method: "POST", body: JSON.stringify({ contact }) }),
@@ -93,7 +98,7 @@ export const api = {
   profile: () => request<{ profile: RespondentProfile | null; required: boolean; prefillName: string }>("/mobile/api/profile"),
   saveProfile: (values: any) => request<{ profile: RespondentProfile; required: boolean }>("/mobile/api/profile", { method: "PUT", body: JSON.stringify(values) }),
   home: (respondentId: number) => request<any>(`/mobile/api/respondents/${respondentId}/home`),
-  consent: (respondentId: number) => request<{ ok: boolean }>(`/mobile/api/respondents/${respondentId}/consent`, { method: "POST", body: "{}" }),
+  consent: (respondentId: number,version:number) => request<{ ok: boolean }>(`/mobile/api/respondents/${respondentId}/consent`, { method: "POST", body: JSON.stringify({consent_version:version}) }),
   questionnaire: (respondentId: number) => request<any>(`/mobile/api/respondents/${respondentId}/questionnaire`),
   submitDiary: (respondentId: number, form: FormData) => request<{ recordId: number; status: string }>(`/mobile/api/respondents/${respondentId}/diary`, { method: "POST", body: form }),
   videoScript: (respondentId: number) => request<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number }>(`/mobile/api/respondents/${respondentId}/diary/video-script`),

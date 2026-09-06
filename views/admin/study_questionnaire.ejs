@@ -383,7 +383,7 @@
   let questions = DATA.questions; // active only, ordered by order_index
   let rules = DATA.rules;
 
-  const TYPE_LABELS = {
+  const TYPE_LABELS = {scale:'Scale',rank:'Ranking',time:'Time',
     single: 'Single select', multi: 'Multi-select', numeric: 'Numeric',
     text: 'Short/long text', date: 'Date/time', photo: 'Photo', video: 'Video (brand detection)', audio: 'Audio (spoken answer)',
   };
@@ -678,12 +678,12 @@
   }
 
   function typeBodyHtml(q, options) {
-    if (q.type === 'single' || q.type === 'multi') {
+    if (q.type === 'single' || q.type === 'multi' || q.type === 'rank') {
       return `
         <div class="q-options space-y-1.5">${options.map(optionRowHtml).join('')}</div>
         <button type="button" class="q-add-option text-xs font-semibold text-[var(--qb-branch)] hover:underline mt-1.5">+ Add option</button>`;
     }
-    if (q.type === 'numeric') {
+    if (q.type === 'numeric' || q.type === 'scale') {
       return `
         <div class="grid grid-cols-2 gap-2">
           <div><label class="text-xs text-slate-500 qb-mono">MIN</label><input type="number" class="q-min w-full border border-[var(--qb-line)] bg-white rounded px-2.5 py-1.5 text-xs" value="${q.min_value ?? ''}" /></div>
@@ -804,7 +804,7 @@
     const id = Number(row.dataset.id);
     const q = questions.find((x) => x.id === id);
     q.type = select.value;
-    if (q.type === 'single' || q.type === 'multi') {
+    if (q.type === 'single' || q.type === 'multi' || q.type === 'rank') {
       const existing = q.options_json ? JSON.parse(q.options_json) : [];
       if (!existing.length) q.options_json = JSON.stringify(['']);
     }

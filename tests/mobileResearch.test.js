@@ -1,0 +1,37 @@
+const {test,before,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const os=require('node:os');const path=require('node:path');const express=require('express');require('express-async-errors');const store=require('../lib/store');
+let dir,server,url,token,s,r;
+before(async()=>{dir=await fs.mkdtemp(path.join(os.tmpdir(),'inicio-mobile-research-'));process.env.UPLOAD_DIR=dir;process.env.STORAGE_PROVIDER='local';process.env.BRAND_DETECTION_PROVIDER='mock';await store.connect({uri:'',file:path.join(dir,'data.json')});s=await store.insert('studies',{name:'API study',status:'live',mandatory_photo:0,start_date:new Date().toISOString().slice(0,10),back_entry_hours:24});r=await store.insert('respondents',{study_id:s.id,activation_status:'active',consent_status:'given',media_consent:true});await store.insert('questions',{study_id:s.id,id:50,code:'brand',type:'single',text:'Brand?',options_json:'["A","B"]',required:1});token=(await require('../lib/mobileAuth').issueSession({respondentId:r.id})).token;
+ const app=express();app.use(express.json());app.use('/gated/respondents/:id',require('../routes/mobileProfileGate'));app.use('/gated',require('../routes/mobileApi'));app.use('/mobile/api',require('../routes/mobileApi'));app.use(require('../routes/privateMedia'));app.use('/r',(req,res,next)=>{req.session={isNativeApp:true};next();},require('../routes/respondent'));server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));url=`http://127.0.0.1:${server.address().port}`;});
+after(async()=>{await new Promise(resolve=>server.close(resolve));await store.close();await fs.rm(dir,{recursive:true,force:true});});
+const headers=()=>({Authorization:`Bearer ${token}`});
+function packet(id,answer='A',time=new Date().toISOString()){const body=new FormData();for(const [k,v]of Object.entries({submission_id:id,action:'submit',entry_mode:'standard',answers_json:JSON.stringify({'50':answer}),occurrence_time:time,capture_time:time,submit_time:time}))body.append(k,v);body.append('photo_q_99',new Blob([Buffer.from('isolated media evidence')],{type:'image/jpeg'}),'test.jpg');return body;}
+test('native submission preserves one complete record after an identical multipart retry',async()=>{
+ const time=new Date().toISOString();const first=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('mobile_packet_12345','A',time)});assert.equal(first.status,201,await first.clone().text());const receipt=await first.json();const retry=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('mobile_packet_12345','A',time)});assert.equal(retry.status,200);assert.equal((await retry.json()).recordId,receipt.recordId);assert.equal(await store.count('diary_records',{respondent_id:r.id}),1);assert.equal(await store.count('media',{record_id:receipt.recordId}),1);const record=await store.findOne('diary_records',{id:receipt.recordId});for(const field of ['occurrence_time','capture_time','submit_time','sync_time'])assert.ok(record[field]);
+ const conflict=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('mobile_packet_12345','B',time)});assert.equal(conflict.status,409);
+});
+test('invalid native answers are rejected before creating a record',async()=>{const n=await store.count('diary_records');const response=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('invalid_packet_12345','C')});assert.equal(response.status,400);assert.equal(await store.count('diary_records'),n);});
+test('local media is private, permits its respondent and denies other respondents',async()=>{
+ const media=await store.findOne('media');assert.equal((await fetch(url+media.file_path)).status,404);const permitted=await fetch(url+media.file_path,{headers:headers()});assert.equal(permitted.status,200);assert.equal(await permitted.text(),'isolated media evidence');const other=await store.insert('respondents',{study_id:s.id,activation_status:'active',consent_status:'given'});const foreign=(await require('../lib/mobileAuth').issueSession({respondentId:other.id})).token;assert.equal((await fetch(url+media.file_path,{headers:{Authorization:`Bearer ${foreign}`}})).status,404);
+});
+test('training submissions are practice and cannot activate the respondent',async()=>{
+ await store.update('respondents',{id:r.id},{activation_status:'training'});const response=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('practice_packet_12345')});assert.equal(response.status,201);const receipt=await response.json();assert.equal((await store.findOne('diary_records',{id:receipt.recordId})).is_practice,1);assert.equal((await store.findOne('respondents',{id:r.id})).activation_status,'training');
+});
+test('native final validation is gated, validates configured questions, and blocks further entries',async()=>{
+ await store.update('respondents',{id:r.id},{activation_status:'active'});const endpoint=url+`/mobile/api/respondents/${r.id}/closeout`;const post=answers=>fetch(endpoint,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({answers})});assert.equal((await post({})).status,409);
+ await store.update('studies',{id:s.id},{close_out_questions:[{code:'feedback',text:'How was the study?',type:'single',options:['Easy','Difficult'],required:true}]});await store.update('respondents',{id:r.id},{end_validation_status:'pending'});assert.equal((await post({feedback:'Other'})).status,400);assert.equal((await post({feedback:'Easy'})).status,200);const blocked=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('after_closeout_12345')});assert.equal(blocked.status,410);
+});
+
+test('profile gate covers standard and video capture endpoints before any diary data is accepted',async()=>{
+ for(const route of ['/questionnaire','/diary','/diary/analyze-video','/diary/video-script']){const response=await fetch(url+`/gated/respondents/${r.id}`+route,{method:route.includes('script')||route==='/questionnaire'?'GET':'POST',headers:headers()});assert.equal(response.status,428);assert.equal((await response.json()).profileRequired,true);}
+});
+
+test('closed or ended studies stop web diary capture before creating entries',async()=>{
+ await store.update('respondents',{id:r.id},{unique_token:'closure-test',activation_status:'active',end_validation_status:null});
+ for(const patch of [{status:'closed'},{status:'live',end_date:'2026-08-31'}]){
+  await store.update('studies',{id:s.id},patch);
+  for(const method of ['GET','POST']){
+   const response=await fetch(url+'/r/closure-test/diary/new',{method,redirect:'manual'});
+   assert.equal(response.status,302);assert.equal(response.headers.get('location'),'/r/closure-test/close-out');
+  }
+ }
+});

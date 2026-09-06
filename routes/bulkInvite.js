@@ -31,7 +31,7 @@ async function loadStudy(req, res) {
   // Route params are strings; the id column is an integer, so it is coerced
   // here the way SQLite's affinity used to.
   const study = await store.findOne("studies", { id: Number(req.params.id) });
-  if (!study) {
+  if (!study || !await require("../lib/researchOperations").assigned(req.session.user,study.id)) {
     res.status(404).render("error", { message: "Study not found.", user: req.session.user });
     return null;
   }

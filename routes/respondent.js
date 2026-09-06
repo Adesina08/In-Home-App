@@ -205,7 +205,7 @@ router.use("/:token", async (req, res, next) => {
   // below (home, new diary entry, consent, push subscribe...) shows the same
   // end screen instead of whatever was requested. Checked ahead of the
   // biometric lock gate below since there's nothing left to unlock into.
-  if (respondent.activation_status === "disqualified") {
+  if (respondent.activation_status === "disqualified" || respondent.withdrawn_at || respondent.erased_at) {
     return res.render("respondent/disqualified", { respondent });
   }
   // Held by a recruitment QC check (duplicate contact / consent not recorded --
@@ -233,6 +233,10 @@ router.use("/:token", async (req, res, next) => {
   // nudged towards it.
   if (respondent.end_validation_status === "pending" && !req.path.startsWith("/close-out")) {
     return res.redirect(`/r/${req.params.token}/close-out`);
+  }
+  if(req.path.startsWith("/diary")) {
+    const study=await store.findOne("studies",{id:respondent.study_id});
+    if(respondent.end_validation_status === "completed" || study?.status === "closed" || (study?.end_date && study.end_date < store.nowSql().slice(0,10)))return res.redirect(`/r/${req.params.token}/close-out`);
   }
   next();
 });
@@ -328,7 +332,7 @@ router.get("/:token/close-out", async (req, res) => {
     ? await store.findOne("end_validations", { respondent_id: respondent.id }, { sort: { id: -1 } })
     : null;
   res.render("respondent/close_out", {
-    respondent, study, questions: closeOut.QUESTIONS, existing, errors: {}, values: existing ? existing.answers : {},
+    respondent, study, questions: closeOut.questionsFor(study), existing, errors: {}, values: existing ? existing.answers : {},
   });
 });
 
@@ -336,13 +340,16 @@ router.post("/:token/close-out", async (req, res) => {
   const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "This link is not valid.", user: null });
   const study = await store.findOne("studies", { id: respondent.study_id });
+  if(respondent.consent_status!=="given")return res.status(403).render("error",{message:"Study consent is required.",user:null});
+  if(respondent.end_validation_status==='completed')return res.render('respondent/close_out_done',{respondent,study});
+  if(respondent.end_validation_status!=='pending'&&study.status!=='closed'&&!(study.end_date&&study.end_date<store.nowSql().slice(0,10)))return res.status(409).render('error',{message:'Final validation is not due yet.',user:null});
 
   const answers = {};
-  for (const q of closeOut.QUESTIONS) answers[q.code] = (req.body[q.code] || "").trim();
-  const errors = closeOut.validate(answers);
+  for (const q of closeOut.questionsFor(study)) answers[q.code] = (req.body[q.code] || "").trim();
+  const errors = closeOut.validate(answers, study);
   if (Object.keys(errors).length) {
     return res.status(400).render("respondent/close_out", {
-      respondent, study, questions: closeOut.QUESTIONS, existing: null, errors, values: answers,
+      respondent, study, questions: closeOut.questionsFor(study), existing: null, errors, values: answers,
     });
   }
 
@@ -460,7 +467,7 @@ router.get("/:token/diary/new", async (req, res) => {
     // so adding a question in the Builder puts it on screen with no extra
     // configuration -- and changing it to a numeric type takes it off, because
     // the extractor would never have filled it.
-    const { questions: allQuestions } = await loadQuestionnaire(study.id);
+    const { questions: allQuestions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
     const script = buildVideoPrompts(allQuestions);
     return res.render("respondent/diary_video_capture", {
       respondent, study, practice,
@@ -471,8 +478,9 @@ router.get("/:token/diary/new", async (req, res) => {
     });
   }
 
-  const { questions, rules } = await loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   res.render("respondent/diary_form", {
+    occasionNumber:(await store.count("diary_records",{respondent_id:respondent.id,status:"submitted",is_practice:0}))+1,
     respondent, study, questions, rules, practice,
     mode: mode === "audio" ? "audio" : "standard",
     prefill: {}, pendingMedia: null, aiNote: null,
@@ -489,14 +497,14 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   const respondent = await getRespondentByToken(req.params.token);
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
   const study = await store.findOne("studies", { id: respondent.study_id });
-  const { questions, rules } = await loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
   const practice = req.body.practice === "1";
 
   if (!req.file) {
     // Re-rendering the capture screen has to rebuild the teleprompter too,
     // otherwise the retry shows a blank prompt list.
-    const { questions: allQuestions } = await loadQuestionnaire(study.id);
+    const { questions: allQuestions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
     const script = buildVideoPrompts(allQuestions);
     return res.render("respondent/diary_video_capture", {
       respondent, study, practice, error: "Please record or choose a video before continuing.",
@@ -522,7 +530,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
     respondent_id: respondent.id,
     study_id: study.id,
     period_label: now.slice(0, 10),
-    occurrence_time: now,
+    occurrence_time: now,capture_time:now,sync_time:now,
     submit_time: now,
     channel: "app",
     status: "submitted",
@@ -611,12 +619,17 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
   const study = await store.findOne("studies", { id: respondent.study_id });
   const isSubmit = req.body._action === "submit";
-  const isPractice = req.body._practice === "1" ? 1 : 0;
+  const isPractice = respondent.activation_status === "training" || req.body._practice === "1" ? 1 : 0;
   const entryMode = ["standard", "video", "audio"].includes(req.body._mode) ? req.body._mode : "standard";
-  const occurrenceTime = req.body.occurrence_time ? req.body.occurrence_time.replace("T", " ") : new Date().toISOString().slice(0, 19).replace("T", " ");
+  const localTime=req.body.occurrence_time;
+  const offset=Number(req.body.timezone_offset_minutes)||0;
+  const occurrenceTime=localTime?store.toSqlTime(new Date(Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(localTime)?localTime:localTime+'Z')+(/[zZ]|[+-]\d\d:\d\d$/.test(localTime)?0:offset*60000))):store.nowSql();
+  if(!occurrenceTime)return res.status(400).render('error',{message:'Enter a valid occasion date and time.',user:null});
+  req.body.occurrence_time=occurrenceTime.replace(' ','T')+'Z';
   const periodLabel = req.body.period_label || occurrenceTime.slice(0, 10);
 
-  const questions = await store.find("questions", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
+  const questionnaire=await loadQuestionnaire(study.id,{respondentId:respondent.id});
+  const questions=questionnaire.questions.filter(q=>require("../lib/advancedQuestionnaire").scheduled(q,{occurrenceTime:req.body.occurrence_time,occasionNumber:Number(req.body.occasion_number)||1}));
 
   // "Terminate survey" skip rules (see lib/skipLogic.js) are re-evaluated here
   // server-side, against the answers actually submitted, rather than trusted
@@ -666,7 +679,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   //
   // Drafts are exempt on purpose -- see lib/answerValidation.js.
   if (isSubmit && !isTerminated) {
-    const { rules: liveRules } = await loadQuestionnaire(study.id);
+    const { rules: liveRules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
     const problems = validateSubmission({
       questions,
       rules: liveRules,
@@ -710,6 +723,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     study_id: study.id,
     period_label: periodLabel,
     occurrence_time: occurrenceTime,
+    capture_time:store.toSqlTime(req.body.capture_time)||store.nowSql(),sync_time:store.nowSql(),
     submit_time: isSubmit ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
     channel: "app",
     status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"),

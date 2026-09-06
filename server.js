@@ -25,7 +25,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 const uploadsRoot = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
-app.use("/uploads", express.static(uploadsRoot));
+
+app.use("/public/downloads", (req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
 app.use("/public", express.static(path.join(__dirname, "public")));
 // Keep serving the retirement worker for browsers that installed the old PWA.
 // New pages no longer register it; existing registrations fetch this once and
@@ -52,7 +56,7 @@ app.use(
     resave: false,
     saveUninitialized: false,
     store: sessionStore,
-    cookie: { maxAge: 8 * 60 * 60 * 1000, secure: isProduction },
+    cookie: { maxAge: 8 * 60 * 60 * 1000, secure: isProduction, httpOnly:true, sameSite:"lax" },
   })
 );
 
@@ -72,9 +76,10 @@ app.locals.formatCategories = formatCategories;
 app.locals.STUDY_TABS = STUDY_TABS;
 app.locals.studyTabHref = studyTabHref;
 app.locals.studyTabNeighbours = studyTabNeighbours;
-app.locals.mediaUrl = (filePath) => {
-  try { return getMediaUrl(filePath); } catch (e) { return null; }
-};
+app.locals.mediaUrl = filePath => filePath ? `/media/file?path=${encodeURIComponent(filePath)}` : null;
+
+
+app.get("/health/ready",async(req,res)=>{try{await store.count("studies",{});res.json({ok:true});}catch{res.status(503).json({ok:false});}});
 
 app.get("/", (req, res) => {
   if (!req.session.user) return res.redirect("/login");
@@ -104,11 +109,13 @@ app.use((req, res, next) => {
 // `mw` for every request under "/", which is every request in the app -- it
 // would push /join, /invite, /r, /me and /mobile behind the staff login page.
 // These four endpoints guard themselves individually inside the router.
+app.use(require("./routes/privateMedia"));
 app.use("/", require("./routes/invitationLinks"));
 // Superadmin routes are mounted before the general Admin router so their
 // platform-only endpoints are resolved directly and never confused with a
 // normal Admin route.
 app.use("/admin", requireLogin, require("./routes/superadmin"));
+app.use("/admin", requireLogin, require("./routes/research"));
 app.use("/admin", requireLogin, require("./routes/admin"));
 app.use("/interviewer", requireLogin, require("./routes/interviewer"));
 app.use("/client", requireLogin, require("./routes/client"));
@@ -203,6 +210,7 @@ store.connect().then(async () => {
   app.listen(PORT, () => {
     console.log(`Inicio Diary running on http://localhost:${PORT}`);
     require("./lib/scheduler").start();
+    const researchTimer=setInterval(()=>require("./lib/researchOperations").runResearchJobs().catch(e=>console.error("Research jobs failed:",e.message)),60000); researchTimer.unref();
   });
 }).catch((e) => {
   console.error("Could not open the database, so the app did not start:", e.message);

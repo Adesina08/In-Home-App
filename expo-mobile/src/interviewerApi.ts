@@ -54,8 +54,9 @@ export type DashboardRespondent = {
   studyName: string;
 };
 export type Dashboard = {
+  visits:any[];
   interviewer: InterviewerUser;
-  studies: Array<{ id: number; name: string; market: string | null; category: string | null }>;
+  studies: Array<{ id: number; name: string; market: string | null; category: string | null; screenerQuestions:any[]; consent:{version:number;body:string}|null }>;
   mine: DashboardRespondent[];
   counts: { registered: number; activated: number; pending: number };
 };
@@ -70,6 +71,9 @@ export const interviewerApi = {
   dashboard: () => request<Dashboard>("/mobile/api/interviewer/dashboard"),
   respondent: (id: number) =>
     request<{ respondent: any; diaryUrl: string; qr: string | null; messagingLive: boolean }>(`/mobile/api/interviewer/respondents/${id}`),
+  visit:(id:number,status:string,notes:string)=>request<any>(`/mobile/api/interviewer/visits/${id}`,{method:"POST",body:JSON.stringify({status,notes})}),
+  training: (id:number)=>request<any>(`/mobile/api/interviewer/respondents/${id}/training`,{method:"POST",body:JSON.stringify({training_complete:true})}),
+  handover: (id:number)=>request<any>(`/mobile/api/interviewer/respondents/${id}/handover`,{method:"POST"}),
   sendLink: (id: number) =>
     request<{ ok: boolean; simulated: boolean; message: string }>(`/mobile/api/interviewer/respondents/${id}/send-link`, { method: "POST" }),
   register: (body: {
@@ -77,14 +81,17 @@ export const interviewerApi = {
     name: string;
     contact: string;
     eligible: boolean;
+    screener:Record<string,string>;
+    media_consent:boolean;
     consent_given: boolean;
+    consent_version:number;
     preferred_channel: string;
     practice: boolean;
   }) =>
     request<
       | { screenedOut: true; message: string }
       | { held: true; code: string; name: string; respondentId: number; holds: any[] }
-      | { activated: true; code: string; token: string; respondentId: number; diaryUrl: string; qr: string | null }
+      | { activated: boolean; trainingRequired?:boolean; code: string; token: string; respondentId: number; diaryUrl: string; qr: string | null }
     >("/mobile/api/interviewer/register", { method: "POST", body: JSON.stringify(body) }),
   bulkMeta: (studyId: number) =>
     request<{ study: any; defaultCountryCode: string; messagingLive: boolean }>(`/mobile/api/interviewer/studies/${studyId}/bulk/meta`),

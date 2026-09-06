@@ -10,6 +10,7 @@ const { applyRecruitmentHolds } = require("../lib/qc");
 const { nextRespondentCode } = require("../lib/respondentCode");
 const messaging = require("../lib/whatsapp");
 
+const fieldwork=require("../lib/researchOperations");
 const router = express.Router();
 router.use(requireRole("interviewer", "admin"));
 
@@ -17,7 +18,7 @@ router.use(requireRole("interviewer", "admin"));
 // self-onboarding flow so both paths allocate the same way.
 
 router.get("/", async (req, res) => {
-  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
+  const studies = await fieldwork.assignedStudies(req.session.user);
   // JOIN done in JS: every study is fetched (not just the open ones above,
   // since a closed study must still supply its name) and stitched on. The
   // `study_name` alias is kept because the template reads it. It was an inner
@@ -40,11 +41,12 @@ router.get("/", async (req, res) => {
     activated: mine.filter((r) => ["active", "activated"].includes(r.activation_status)).length,
     pending: mine.filter((r) => ["invited", "screened", "registered"].includes(r.activation_status)).length,
   };
-  res.render("interviewer/dashboard", { studies, mine, counts });
+  res.render("interviewer/dashboard", { studies, mine, counts,visits:await store.find("fieldwork_visits",{user_id:req.session.user.id,study_id:{$in:studies.map(s=>s.id)}},{sort:{visit_date:1}}) });
 });
 
+router.post('/visits/:id',async(req,res)=>{try{await fieldwork.visitOutcome(req.session.user,req.params.id,req.body.status,req.body.notes);res.redirect('/interviewer');}catch(e){res.status(400).render('error',{message:e.message});}});
 router.get("/register", async (req, res) => {
-  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
+  const studies = await fieldwork.assignedStudies(req.session.user);
   const studyId = req.query.study || (studies[0] && studies[0].id);
   const study = studies.find((s) => s.id == studyId);
   const consent = study
@@ -60,13 +62,15 @@ router.post("/register", async (req, res) => {
   // on the way into the query and the row; MongoDB stores and matches it as a
   // string, so the id is made a number once, here.
   const studyId = Number(study_id);
-  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
+  const studies = await fieldwork.assignedStudies(req.session.user);
   const study = studies.find(s => s.id === studyId);
   const consent = study ? await store.findOne("consent_versions", { study_id: study.id, status: "approved" }, { sort: { version: -1 } }) : null;
   const fail = message => res.status(400).render("interviewer/register", { studies, study, consent, values: req.body, error: message });
   if (!study) return fail("Choose an available study before registering a respondent.");
-  if (!eligible) return fail("Eligibility was not confirmed. Check the study criteria before continuing.");
+  const screened=fieldwork.screen(study,req.body.screener||{});
+  if(!screened.ok)return fail(screened.error);
   if (!consent) return fail("This study needs approved consent wording before registration can begin.");
+  if(consent_given&&Number(req.body.consent_version)!==consent.version)return fail("Review the latest study consent wording before continuing.");
   if (!String(name || '').trim() || !String(contact || '').trim()) return fail("Enter the respondent’s full name and contact details.");
   const token = uuidv4();
   const code = await nextRespondentCode(studyId);
@@ -83,7 +87,9 @@ router.post("/register", async (req, res) => {
     recruitment_mode: "f2f",
     preferred_channel: preferred_channel || "app",
     consent_status: consent_given ? "given" : "declined",
-    activation_status: "activated",
+    activation_status: "training",
+    screener_answers:req.body.screener||{},screened_at:store.nowSql(),
+    consent_version:consent.version,consent_at:consent_given?store.nowSql():null,consent_recorded_by:req.session.user.id,media_consent:req.body.media_consent==='1',
     unique_token: token,
     interviewer_id: req.session.user.id,
     is_practice: practice ? 1 : 0,
@@ -107,17 +113,7 @@ router.post("/register", async (req, res) => {
     });
   }
 
-  const diaryUrl = respondentDiaryUrl(req, token);
-  // QR generation is a pure image-render, not a network call -- if it ever
-  // did throw, better to still show the activation screen (with a plain
-  // link) than lose the fact that the respondent was successfully registered.
-  let qr = null;
-  try {
-    qr = await qrDataUrl(diaryUrl);
-  } catch (e) {
-    console.error("QR generation failed:", e);
-  }
-  res.render("interviewer/activated", { code, token, respondentId: id, diaryUrl, qr });
+  return res.redirect(`/interviewer/respondents/${id}`);
 });
 
 // ---- Hand a respondent their link ----
@@ -168,6 +164,19 @@ router.get("/respondents/:id", async (req, res) => {
     sent: req.query.sent || null,
     sendError: req.query.sendError || null,
   });
+});
+
+router.post('/respondents/:id/training',async(req,res)=>{
+  const r=await loadOwnRespondent(req,res);if(!r)return;
+  if(!req.body.training_complete)return res.redirect(`/interviewer/respondents/${r.id}?sendError=Complete%20the%20training%20checklist.`);
+  await fieldwork.audit(req.session.user.email,'training',r.study_id,{respondent_id:r.id});
+  await store.update('respondents',{id:r.id},{training_completed_at:store.nowSql(),training_completed_by:req.session.user.id});
+  res.redirect(`/interviewer/respondents/${r.id}`);
+});
+router.post('/respondents/:id/handover',async(req,res)=>{
+  const r=await loadOwnRespondent(req,res);if(!r)return;
+  try{await fieldwork.handover(r,req.session.user.email);res.redirect(`/interviewer/respondents/${r.id}?sent=Handover%20completed.`);}
+  catch(e){res.redirect(`/interviewer/respondents/${r.id}?sendError=${encodeURIComponent(e.message)}`);}
 });
 
 // Generated on demand rather than inlined as a data URI, so the roster page

@@ -6,6 +6,8 @@ export type RegisterForm = {
   studyId: number;
   studyName: string;
   eligible: boolean | null;
+  screener:Record<string,string>;
+  mediaConsent:boolean;
   consentGiven: boolean;
   name: string;
   contact: string;
@@ -22,7 +24,7 @@ export function RegisterWizardScreen({
   onSubmit,
   busy,
 }: {
-  studies: Array<{ id: number; name: string }>;
+  studies: Array<{ id: number; name: string; screenerQuestions:any[]; consent:{version:number;body:string}|null }>;
   onCancel: () => void;
   onSubmit: (form: RegisterForm) => void;
   busy: boolean;
@@ -32,6 +34,7 @@ export function RegisterWizardScreen({
     studyId: studies[0]?.id || 0,
     studyName: studies[0]?.name || "",
     eligible: null,
+    screener:{},mediaConsent:false,
     consentGiven: false,
     name: "",
     contact: "",
@@ -39,6 +42,7 @@ export function RegisterWizardScreen({
     practice: false,
   });
 
+  const study=studies.find(s=>s.id===form.studyId);
   const back = () => (step === 1 ? onCancel() : setStep((s) => s - 1));
   const next = () => setStep((s) => Math.min(5, s + 1));
 
@@ -58,16 +62,12 @@ export function RegisterWizardScreen({
                   <Text className="text-[13px] text-[#0F172A] dark:text-[#F8FAFC]">{form.studyName || "No open studies"}</Text>
                 </View>
               </View>
-              <View>
-                <FieldLabel>Does the respondent meet this study's eligibility criteria?</FieldLabel>
-                <View className="mt-2 gap-2">
-                  <RadioRow label="Yes, eligible" selected={form.eligible === true} onPress={() => setForm((f) => ({ ...f, eligible: true }))} />
-                  <RadioRow label="Not eligible" selected={form.eligible === false} onPress={() => setForm((f) => ({ ...f, eligible: false }))} />
-                </View>
-              </View>
+              {studies.map(s=><RadioRow key={s.id} label={s.name} selected={form.studyId===s.id} onPress={()=>setForm(f=>({...f,studyId:s.id,studyName:s.name,screener:{},consentGiven:false}))}/>)}
+              {(study?.screenerQuestions||[]).map(q=><View key={q.code}><FieldLabel>{q.text}</FieldLabel>{q.options.map((o:string)=><RadioRow key={o} label={o} selected={form.screener[q.code]===o} onPress={()=>setForm(f=>({...f,screener:{...f.screener,[q.code]:o}}))}/>)}</View>)}
+              {!study?.screenerQuestions.length?<Text>Ask the research team to configure the study screener.</Text>:null}
             </Card>
             <View className="flex-1" />
-            <PrimaryButton title="Continue to Consent" onPress={next} icon="arrowRight" disabled={form.eligible === null} />
+            <PrimaryButton title="Continue to Consent" onPress={next} icon="arrowRight" disabled={!study?.screenerQuestions.length||study.screenerQuestions.some(q=>!form.screener[q.code])} />
           </>
         )}
 
@@ -77,7 +77,7 @@ export function RegisterWizardScreen({
             <TitleBlock title="Capture consent" subtitle="Read this aloud, or let the respondent read it themselves." />
             <Card style={{ gap: 14, flex: 1 }}>
               <ScrollView className="min-h-0 flex-1 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 dark:border-[#1B3556] dark:bg-[#081222]">
-                <Text className="text-[11.5px] leading-[17px] text-[#475569] dark:text-[#94A3B8]">{CONSENT_TEXT}</Text>
+                <Text className="text-[11.5px] leading-[17px] text-[#475569] dark:text-[#94A3B8]">{study?.consent?.body||"Approved consent wording is not available."}</Text>
               </ScrollView>
               <CheckRow
                 label="Respondent has given consent (read aloud / shown above)"
@@ -85,7 +85,8 @@ export function RegisterWizardScreen({
                 onPress={() => setForm((f) => ({ ...f, consentGiven: !f.consentGiven }))}
               />
             </Card>
-            <PrimaryButton title="Continue to Register" onPress={next} icon="arrowRight" disabled={!form.consentGiven} />
+            <CheckRow label="Optional: respondent agrees to share study media with authorised client researchers" checked={form.mediaConsent} onPress={()=>setForm(f=>({...f,mediaConsent:!f.mediaConsent}))} />
+            <PrimaryButton title="Continue to Register" onPress={next} icon="arrowRight" disabled={!form.consentGiven||!study?.consent} />
           </>
         )}
 
@@ -168,7 +169,7 @@ export function RegisterWizardScreen({
               <SummaryRow label="Consent" value="Given" tone="green" />
             </Card>
             <View className="flex-1" />
-            <PrimaryButton title="Activate Respondent" onPress={() => onSubmit(form)} icon="checkCircle" loading={busy} />
+            <PrimaryButton title="Save registration for training" onPress={() => onSubmit(form)} icon="checkCircle" loading={busy} />
           </>
         )}
       </Screen>

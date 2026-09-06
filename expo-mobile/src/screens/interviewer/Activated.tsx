@@ -8,6 +8,7 @@ export function InterviewerActivatedScreen({
   qr,
   onSendLink,
   onRegisterAnother,
+  onMyRespondents,
   sending,
 }: {
   code: string;
@@ -15,6 +16,7 @@ export function InterviewerActivatedScreen({
   qr: string | null;
   onSendLink: () => void;
   onRegisterAnother: () => void;
+  onMyRespondents: () => void;
   sending: boolean;
 }) {
   return (
@@ -23,12 +25,10 @@ export function InterviewerActivatedScreen({
         <ResultCard>
           <ResultIcon icon="checkCircle" tone="green" />
           <Text className="font-disp-extrabold text-[18px] text-[#0F172A] dark:text-[#F8FAFC]">
-            Respondent Activated
+            Respondent Registered
           </Text>
           <Text className="my-2 text-center text-[11.5px] leading-[17px] text-[#64748B] dark:text-[#94A3B8]">
-            Code <Text className="font-sans-bold text-[#334155] dark:text-[#F8FAFC]">{code}</Text> is now active. Have
-            the respondent scan below with their own phone — it opens their diary and sets their Face ID / fingerprint
-            lock.
+            Code <Text className="font-sans-bold text-[#334155] dark:text-[#F8FAFC]">{code}</Text> is ready for training. Help the respondent open their diary and submit a practice entry. Then record training and complete handover from My Respondents.
           </Text>
 
           {qr ? (
@@ -48,6 +48,7 @@ export function InterviewerActivatedScreen({
 
           <View className="w-full gap-2">
             <PrimaryButton title="Send them the link" onPress={onSendLink} icon="chat" loading={sending} />
+            <PrimaryButton title="My Respondents · Training & Handover" onPress={onMyRespondents} icon="users" inverse />
             <PrimaryButton title="Register Another" onPress={onRegisterAnother} icon="plus" inverse />
           </View>
         </ResultCard>

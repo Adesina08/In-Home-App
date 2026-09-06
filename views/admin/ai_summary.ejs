@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="/public/reports.css" />
 <script src="/public/js/reports.js" defer></script>
 <div class="report-page">
-  <div class="report-heading"><div><div class="report-kicker">Study intelligence / <%= study.name %></div><h1>Every study has a story.</h1><p class="report-lead">Bring the findings, respondent language and everyday moments together in one AI Summary.</p></div><span class="report-badge"><%= aiConfigured ? 'AI model connected' : 'Rules-based summaries available' %></span></div>
+  <div class="report-heading"><div><div class="report-kicker">Study intelligence / <%= study.name %></div><h1>Every study has a story.</h1><p class="report-lead">Bring the findings, respondent language and everyday moments together in one AI Summary.</p></div><a class="report-button secondary" href="/admin/studies/<%= study.id %>/research#reports">Review & approve reports</a><span class="report-badge"><%= aiConfigured ? 'AI model connected' : 'Rules-based summaries available' %></span></div>
   <% if (error) { %><div class="report-notice error" role="alert"><%= error %></div><% } %>
   <form class="report-toolbar" method="GET" action="/admin/ai-summary">
     <input type="hidden" name="study" value="<%= study.id %>" />

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  AppState,
   ActivityIndicator,
   Alert,
   Image,
@@ -24,14 +25,19 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColorScheme } from "nativewind";
 import { api, getToken, MobileEnrolment, setToken } from "./src/api";
+import { VideoDiaryScreen, VideoDraft } from "./src/screens/VideoDiary";
 import { HomeScreen, DisplayRecord } from "./src/screens/Home";
 import { EntriesScreen } from "./src/screens/Entries";
 import { ActivityScreen } from "./src/screens/Activity";
 import { ProfileScreen } from "./src/screens/Profile";
 import { LoginDoodleField } from "./src/components/Doodles";
 
+import { enqueue, listQueue, syncQueue, removeQueued, packetId, preserveMedia, DiaryPacket } from "./src/diaryQueue";
+
 type ThemeMode = "dark" | "light";
 type Screen =
+  | "participation"
+  | "sync"
   | "loading"
   | "login"
   | "profileGate"
@@ -306,6 +312,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   async function loadMe() {
     const me = await api.me();
+    await AsyncStorage.setItem("inicio.offline.enrolments",JSON.stringify(me.enrolments||[]));
     setEnrolments(me.enrolments || []);
     if ((me.enrolments || []).length === 1) await openStudy(me.enrolments[0], false);
     else setScreen("studies");
@@ -342,9 +349,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       try {
         if (await getToken()) await loadProfileGate();
         else setScreen("login");
-      } catch {
-        await setToken(null);
-        setScreen("login");
+      } catch(e:any) {
+        if(!e.status&&await getToken()){const raw=await AsyncStorage.getItem('inicio.offline.enrolments');const cached=raw?JSON.parse(raw):[];setEnrolments(cached);if(cached.length===1)await openStudy(cached[0],false);else setScreen('studies');}
+        else{await setToken(null);await AsyncStorage.removeItem('inicio.offline.enrolments');setScreen('login');}
       }
     })();
   }, []);
@@ -373,6 +380,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setBusy(true);
     try { await api.logout(); } catch {}
     await setToken(null);
+    await AsyncStorage.removeItem("inicio.offline.enrolments");
     setSelected(null); setHome(null); setEnrolments([]); setError(""); setScreen("login");
     setBusy(false);
   }
@@ -381,7 +389,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     if (setBusyState) setBusy(true);
     setError("");
     try {
-      const data = await api.home(item.respondent.id);
+      let data;try{data=await api.home(item.respondent.id);await AsyncStorage.setItem(`inicio.home.${item.respondent.id}`,JSON.stringify(data));}catch(e:any){if(e.status)throw e;const cached=await AsyncStorage.getItem(`inicio.home.${item.respondent.id}`);if(!cached)throw e;data=JSON.parse(cached);}
       setSelected(item); setHome(data); setScreen("home");
     } catch (e: any) { Alert.alert("Could not open study", e.message); }
     finally { if (setBusyState) setBusy(false); }
@@ -390,7 +398,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   async function acceptConsent() {
     if (!selected) return;
     setBusy(true);
-    try { await api.consent(selected.respondent.id); setHome(await api.home(selected.respondent.id)); }
+    try { await api.consent(selected.respondent.id,home?.consent?.version); setHome(await api.home(selected.respondent.id)); }
     catch (e: any) { Alert.alert("Consent could not be saved", e.message); }
     finally { setBusy(false); }
   }
@@ -399,15 +407,49 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setScreen("diaryMode");
   }
 
+  const [participation,setParticipation]=useState<any>(null);
+  const [closeoutAnswers,setCloseoutAnswers]=useState<Record<string,string>>({});
+  async function openParticipation(){if(!selected)return;try{setParticipation(await api.participation(selected.respondent.id));setScreen("participation");}catch(e:any){Alert.alert("Connection needed",e.message);}}
+  const [pendingEntries,setPendingEntries]=useState<DiaryPacket[]>([]);
+  const [captureTime,setCaptureTime]=useState(new Date().toISOString());
+  const [occurrenceTime,setOccurrenceTime]=useState(new Date().toISOString());
+  const [participationKind,setParticipationKind]=useState('occasion');
+  const [entryKey,setEntryKey]=useState(packetId());
+  const [occasionNumber,setOccasionNumber]=useState(1);
+  useEffect(()=>{if(screen!=='diary'||!draftKey)return;const timer=setTimeout(()=>AsyncStorage.setItem(draftKey,JSON.stringify({answers,media,captureTime,occurrenceTime,entryKey,participationKind})).catch(()=>{}),300);return()=>clearTimeout(timer);},[answers,media,captureTime,occurrenceTime,entryKey,participationKind,screen,draftKey]);
+  async function reviewQueued(packet:DiaryPacket){
+    if(packet.kind!=='standard')return;
+    try{
+      const q=await api.questionnaire(packet.respondentId);const evidence:MediaMap={};
+      for(const m of packet.media){const id=m.field.split('_q_')[1];if(id)evidence[id]=await preserveMedia(m,`draft-${packet.respondentId}`);}
+      const draft={answers:JSON.parse(packet.fields.answers_json||'{}'),media:evidence,captureTime:packet.fields.capture_time,occurrenceTime:packet.fields.occurrence_time,entryKey:packetId(),participationKind:packet.fields.participation_kind||'occasion'};
+      await AsyncStorage.setItem(`inicio.draft.${packet.respondentId}`,JSON.stringify(draft));
+      await removeQueued(packet.respondentId,packet.id);
+      setQuestionnaire(q);setAnswers(draft.answers);setMedia(evidence);setCaptureTime(draft.captureTime);setOccurrenceTime(draft.occurrenceTime);setEntryKey(draft.entryKey);setParticipationKind(draft.participationKind);setOccasionNumber(q.occasionNumber||1);setScreen('diary');setPendingEntries(await listQueue(packet.respondentId));
+    }catch(e:any){Alert.alert('Could not open saved entry',e.message);}
+  }
+  async function refreshSync(manual=false){if(!selected)return;await syncQueue(selected.respondent.id,manual);setPendingEntries(await listQueue(selected.respondent.id));}
+  useEffect(()=>{
+    if(!selected)return;
+    refreshSync().catch(()=>{});
+    const timer=setInterval(()=>refreshSync().catch(()=>{}),30000);
+    const listener=AppState.addEventListener('change',state=>{if(state==='active')refreshSync().catch(()=>{});});
+    return()=>{clearInterval(timer);listener.remove();};
+  },[selected?.respondent.id]);
+
   async function startDiary() {
     if (!selected) return;
     setBusy(true); setProblems([]);
     try {
-      const q = await api.questionnaire(selected.respondent.id);
+      const cacheKey=`inicio.questionnaire.${selected.respondent.id}`;
+      let q;
+      try{q=await api.questionnaire(selected.respondent.id);await AsyncStorage.setItem(cacheKey,JSON.stringify(q));}
+      catch(e:any){if(e.status)throw e;const cached=await AsyncStorage.getItem(cacheKey);if(!cached)throw e;q=JSON.parse(cached);}
       setQuestionnaire(q);
+      setOccasionNumber((q.occasionNumber||1)+(await listQueue(selected.respondent.id)).filter(p=>p.fields.practice!=='1').length);
       const saved = draftKey ? await AsyncStorage.getItem(draftKey) : null;
-      if (saved) { try { setAnswers(JSON.parse(saved).answers || {}); } catch { setAnswers({}); } } else setAnswers({});
-      setMedia({}); setScreen("diary");
+      const draft=saved?JSON.parse(saved):{};
+      setAnswers(draft.answers||{});setMedia(draft.media||{});setCaptureTime(draft.captureTime||new Date().toISOString());setOccurrenceTime(draft.occurrenceTime||new Date().toISOString());setEntryKey(draft.entryKey||packetId());setParticipationKind(draft.participationKind||'occasion');setScreen("diary");
     } catch (e: any) {
       if (e.profileRequired) await loadProfileGate();
       else Alert.alert("Diary unavailable", e.message);
@@ -427,42 +469,20 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     } finally { setBusy(false); }
   }
 
-  async function recordAndSubmitVideo() {
-    if (!selected) return;
+  async function submitRecordedVideo(draft: VideoDraft) {
+    if (!selected) throw new Error('Select your study before submitting.');
     const respondentId = selected.respondent.id;
-    let asset;
-    try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["videos"],
-        cameraType: ImagePicker.CameraType.front,
-        videoMaxDuration: 90,
-        quality: .82,
-      } as any);
-      if (result.canceled || !result.assets?.[0]) return;
-      asset = result.assets[0];
-    } catch (e: any) {
-      Alert.alert("Camera unavailable", e.message || "Could not open the camera.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const ext = asset.fileName?.split(".").pop() || "mp4";
-      const form = new FormData();
-      form.append("video", { uri: asset.uri, name: asset.fileName || `diary-video.${ext}`, type: asset.mimeType || "video/mp4" } as any);
-      await api.analyzeVideo(respondentId, form);
-      setHome(await api.home(respondentId));
-      setVideoScript(null);
-      setScreen("home");
-      Alert.alert("Thanks — that's logged", "Your video has been saved as this occasion's record. Nothing else is needed from you — the team reviews the video and fills in the details.");
-    } catch (e: any) {
-      if (e.profileRequired) await loadProfileGate();
-      else Alert.alert("Could not submit video", e.message || "Please try again.");
-    } finally { setBusy(false); }
+    await enqueue({id:draft.id,respondentId,kind:'video',fields:{capture_time:draft.captureTime,occurrence_time:draft.captureTime,submit_time:new Date().toISOString()},media:[{uri:draft.uri,fileName:draft.fileName,mimeType:draft.mimeType,field:'video'}],state:'pending',attempts:0,createdAt:draft.captureTime});
+    setVideoScript(null);setScreen('sync');
+    refreshSync().catch(()=>{});
+    api.home(respondentId).then(setHome).catch(()=>{});
   }
 
   async function saveDraft() {
     if (!draftKey) return;
-    await AsyncStorage.setItem(draftKey, JSON.stringify({ answers, savedAt: new Date().toISOString() }));
+    const durable:MediaMap={};for(const [id,asset] of Object.entries(media)){durable[id]=await preserveMedia({...asset,field:id},`draft-${selected?.respondent.id}`);}
+    setMedia(durable);
+    await AsyncStorage.setItem(draftKey, JSON.stringify({ answers, media:durable,captureTime,occurrenceTime,entryKey,participationKind,savedAt: new Date().toISOString() }));
     Alert.alert("Draft saved", "Your answers are stored on this device. You can continue later.");
   }
 
@@ -474,7 +494,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   async function pickEvidence(q: any) {
     try {
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: q.type === "video" ? ["videos"] : ["images"], quality: .82, videoMaxDuration: 45 } as any);
-      if (!result.canceled && result.assets?.[0]) setMedia((old) => ({ ...old, [String(q.id)]: result.assets[0] }));
+      if (!result.canceled && result.assets?.[0]) { const saved=await preserveMedia({...result.assets[0],field:String(q.id)},`draft-${selected?.respondent.id}`);setMedia((old) => ({ ...old, [String(q.id)]:saved })); }
     } catch (e: any) { Alert.alert("Camera unavailable", e.message || "Could not open the camera."); }
   }
 
@@ -499,9 +519,10 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     try {
       await audioRecorder.stop();
       if (audioRecorder.uri) {
+        const durable=await preserveMedia({uri:audioRecorder.uri,fileName:`voice-note-${questionId}.m4a`,mimeType:"audio/m4a",field:String(questionId)},`draft-${selected?.respondent.id}`);
         setMedia((old) => ({
           ...old,
-          [String(questionId)]: { uri: audioRecorder.uri as string, fileName: `voice-note-${questionId}.m4a`, mimeType: "audio/m4a" },
+          [String(questionId)]: durable,
         }));
       }
     } catch (e: any) {
@@ -515,20 +536,12 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     if (!selected || !questionnaire) return;
     setBusy(true); setProblems([]);
     try {
-      const form = new FormData();
-      form.append("action", "submit"); form.append("entry_mode", "standard"); form.append("occurrence_time", new Date().toISOString().slice(0, 19)); form.append("answers_json", JSON.stringify(answers));
-      Object.entries(media).forEach(([questionId, asset]) => {
-        const q = questionnaire.questions.find((x: any) => String(x.id) === questionId);
-        const defaultExt = q?.type === "video" ? "mp4" : q?.type === "audio" ? "m4a" : "jpg";
-        const defaultType = q?.type === "video" ? "video/mp4" : q?.type === "audio" ? "audio/m4a" : "image/jpeg";
-        const ext = asset.fileName?.split(".").pop() || defaultExt;
-        const type = asset.mimeType || defaultType;
-        form.append(`${q?.type || "photo"}_q_${questionId}`, { uri: asset.uri, name: asset.fileName || `evidence-${questionId}.${ext}`, type } as any);
-      });
-      await api.submitDiary(selected.respondent.id, form);
-      if (draftKey) await AsyncStorage.removeItem(draftKey);
-      setAnswers({}); setMedia({}); setHome(await api.home(selected.respondent.id)); setScreen("home");
-      Alert.alert("Diary submitted", "Your entry has been saved securely.");
+      if(!Number.isFinite(Date.parse(occurrenceTime)))throw new Error('Enter the occasion time as YYYY-MM-DDTHH:mm:ss with a timezone, for example Z for UTC.');
+      const evidence=Object.entries(media).map(([id,asset])=>{const q=questionnaire.questions.find((q:any)=>String(q.id)===id);return {...asset,field:`${q?.type||'photo'}_q_${id}`,mimeType:asset.mimeType||(q?.type==='audio'?'audio/m4a':q?.type==='video'?'video/mp4':'image/jpeg')};});
+      await enqueue({id:entryKey,respondentId:selected.respondent.id,kind:'standard',fields:{action:'submit',entry_mode:'standard',occurrence_time:occurrenceTime,capture_time:captureTime,submit_time:new Date().toISOString(),answers_json:JSON.stringify(answers),participation_kind:participationKind,practice:questionnaire.study.practiceRequired?'1':'0',occasion_number:String(occasionNumber)},media:evidence,state:'pending',attempts:0,createdAt:new Date().toISOString()});
+      if(draftKey)await AsyncStorage.removeItem(draftKey);
+      setAnswers({});setMedia({});setScreen('sync');await refreshSync();
+      try{setHome(await api.home(selected.respondent.id));}catch{}
     } catch (e: any) {
       if (e.profileRequired) await loadProfileGate();
       else if (e.problems?.length) setProblems(e.problems);
@@ -536,11 +549,14 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     } finally { setBusy(false); }
   }
 
-  const visibleQuestions = useMemo(() => questionnaire?.questions?.filter((q: any) => isVisible(q.id, questionnaire.rules || [], answers)) || [], [questionnaire, answers]);
+  const visibleQuestions = useMemo(() => questionnaire?.questions?.filter((q: any) => isVisible(q.id, questionnaire.rules || [], answers)&&(!q.everyNthOccasion||occasionNumber%q.everyNthOccasion===0)&&((q.fromHourUtc==null||q.toHourUtc==null)||((q.fromHourUtc<q.toHourUtc)?(new Date(occurrenceTime).getUTCHours()>=q.fromHourUtc&&new Date(occurrenceTime).getUTCHours()<q.toHourUtc):(new Date(occurrenceTime).getUTCHours()>=q.fromHourUtc||new Date(occurrenceTime).getUTCHours()<q.toHourUtc)))) || [], [questionnaire, answers,occurrenceTime,occasionNumber]);
   const records = home?.records || [];
   const submitted = records.filter((r: any) => r.status === "submitted" && !r.isPractice).length;
   const drafts = records.filter((r: any) => r.status === "draft").length;
   const respondentName = home?.respondent?.name || selected?.respondent?.name || "";
+
+  if(screen==='participation'&&selected&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Your participation</Text><Card t={t}><Text style={{color:t.text}}>Allow authorised client researchers to view your study photos, video and audio?</Text><ChoiceList t={t} options={[["yes","Yes, share study media"],["no","No, keep media with the research team"]]} value={participation.mediaConsent?'yes':'no'} onChange={async value=>{try{await api.mediaConsent(selected.respondent.id,value==='yes');await openParticipation();}catch(e:any){Alert.alert('Could not save',e.message);}}}/></Card><Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Study rewards</Text>{participation.incentives.length?participation.incentives.map((i:any,index:number)=><Text key={index} style={{color:t.muted}}>{i.milestone} · {i.currency} {i.amount} · {i.status}</Text>):<Text style={{color:t.muted}}>No reward eligibility has been recorded yet.</Text>}</Card>{participation.closeoutDue&&!participation.closeoutCompleted?<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Final study validation</Text>{participation.questions.map((q:any)=><View key={q.code}><Text style={{color:t.text}}>{q.text}{q.required?' *':''}</Text>{q.type==='single'?<ChoiceList t={t} options={q.options.map((o:string)=>[o,o])} value={closeoutAnswers[q.code]||''} onChange={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))}/>:<TextInput value={closeoutAnswers[q.code]||''} onChangeText={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))} style={[styles.input,{color:t.text,borderColor:t.border}]} />}</View>)}<PrimaryButton t={t} title="Submit final validation" onPress={async()=>{try{await api.closeout(selected.respondent.id,closeoutAnswers);await openParticipation();}catch(e:any){Alert.alert('Check your answers',e.message);}}}/></Card>:null}{participation.closeoutCompleted?<Text style={{color:t.green}}>Final validation completed.</Text>:null}<Pressable onPress={()=>Alert.alert('Withdraw from this study?','You will stop participating. The research team will process your data according to the study retention policy.',[{text:'Keep participating',style:'cancel'},{text:'Withdraw',style:'destructive',onPress:async()=>{try{await api.withdraw(selected.respondent.id);await logout();}catch(e:any){Alert.alert('Could not withdraw',e.message);}}}])}><Text style={{color:t.red}}>Withdraw from study</Text></Pressable></ScrollView></AppFrame>;
+  if(screen==='sync')return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Saved on this device</Text><Text style={{color:t.muted}}>Entries remain here until the server confirms receipt. Pending entries retry while the app is open.</Text><PrimaryButton title="Retry sync" t={t} onPress={()=>refreshSync(true)} />{!pendingEntries.length?<Text style={{color:t.text}}>All queued entries have synced.</Text>:pendingEntries.map(p=><Card key={p.id} t={t}><Text style={{color:t.text}}>{p.fields.occurrence_time} · {p.kind}</Text><Text style={{color:t.muted}}>{p.state==='needs_attention'?'Needs attention':'Waiting to sync'} · {p.media.length} saved files</Text>{p.error?<Text style={{color:t.red}}>{p.error}</Text>:null}{p.state==='needs_attention'&&p.kind==='standard'?<Pressable onPress={()=>reviewQueued(p)}><Text style={{color:t.blue}}>Review and edit saved entry</Text></Pressable>:null}<Pressable onPress={()=>Alert.alert('Delete this saved entry?','This removes its answers and media from this device.',[{text:'Keep entry',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await removeQueued(p.respondentId,p.id);await refreshSync();}}])}><Text style={{color:t.red}}>Delete saved entry</Text></Pressable></Card>)}</ScrollView></AppFrame>;
 
   if (screen === "loading") return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator size="large" color={t.blue} /></View></AppFrame>;
 
@@ -559,14 +575,14 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       bucket: r.status === "submitted" ? "submitted" : r.status === "draft" ? "draft" : "review",
     }));
     const daysLogged = new Set(records.map((r: any) => dayLabel(r.occurrenceTime || r.entryTime))).size;
-    const last14 = Array.from({ length: 14 }, (_, i) => Math.max(1, ((i * 7 + submitted * 3) % 5) + 1));
-    const videoCount = Math.max(records.length ? 1 : 0, Math.round(submitted * 0.3));
-    const voiceCount = Math.max(records.length ? 1 : 0, Math.round(submitted * 0.15));
-    const formCount = Math.max(0, submitted - videoCount - voiceCount) || submitted;
+    const last14=Array.from({length:14},(_,i)=>{const day=new Date(Date.now()-(13-i)*86400000).toISOString().slice(0,10);return records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&String(r.occurrenceTime||r.entryTime).slice(0,10)===day).length;});
+    const videoCount=records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&r.entryMode==='video').length;
+    const voiceCount=records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&r.entryMode==='audio').length;
+    const formCount=records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&r.entryMode==='standard').length;
 
     if (screen === "home")
       return (
-        <HomeScreen
+        <View style={{flex:1}}><Pressable accessibilityRole="button" onPress={()=>setScreen("sync")} style={{padding:12,backgroundColor:t.card}}><Text style={{color:t.blue}}>Saved on this device · {pendingEntries.length} awaiting sync</Text></Pressable><Pressable onPress={openParticipation} style={{padding:12,backgroundColor:t.card}}><Text style={{color:t.blue}}>Participation, rewards & final validation</Text></Pressable><HomeScreen
           firstName={firstName(respondentName)}
           studyName={home.study.name}
           consentNeeded={!!consentNeeded}
@@ -582,7 +598,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
           onOpenStudies={() => setScreen("studies")}
           onViewAllEntries={() => setScreen("entries")}
           onNavigate={(key) => setScreen(key as Screen)}
-        />
+        /></View>
       );
 
     if (screen === "entries")
@@ -648,7 +664,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
               <Icon glyph="◧" t={t} tone="purple" />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.studyName, { color: t.text, fontSize: 15 }]}>Video <Text style={{ color: t.purple, fontSize: 11, fontWeight: "800" }}>AI-assisted</Text></Text>
-                <Text style={[styles.smallMuted, { color: t.muted, marginTop: 3 }]}>Record using the front camera first. We'll try to pre-fill what we can from your video.</Text>
+                <Text style={[styles.smallMuted, { color: t.muted, marginTop: 3 }]}>Read the prompts while recording with your front camera. Review your video, then submit.</Text>
               </View>
               <Text style={{ color: t.subtle, fontSize: 20 }}>›</Text>
             </Card>
@@ -658,25 +674,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     );
 
   if (screen === "diaryVideo" && selected && videoScript)
-    return (
-      <AppFrame t={t} mode={mode}>
-        <ScrollView contentContainerStyle={styles.page}>
-          <Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Change method</Text></Pressable>
-          <Text style={[styles.screenTitle, { color: t.text }]}>Record with your front camera</Text>
-          <Text style={[styles.screenCopy, { color: t.muted }]}>Tell us about this consumption occasion. Hold the product or packaging where it can be seen. Once you submit, you're done — there's no form to fill in afterwards. The team reviews your video and records the details.</Text>
-          <Card t={t} style={{ gap: 6 }}>
-            <Text style={[styles.sectionTitle, { color: t.text }]}>What you'll be asked</Text>
-            {videoScript.prompts.map((p: any, i: number) => (
-              <Text key={p.id} style={[styles.smallMuted, { color: t.muted }]}>{i + 1}. {p.text}</Text>
-            ))}
-            {videoScript.truncated ? <Text style={{ color: t.amber, fontSize: 11, marginTop: 6 }}>This study has more questions than fit in one recording. Cover what you can — the team fills in the rest from your video.</Text> : null}
-          </Card>
-          <PrimaryButton title={busy ? "Submitting…" : "Record & submit video"} onPress={recordAndSubmitVideo} disabled={busy} t={t} arrow={false} />
-        </ScrollView>
-      </AppFrame>
-    );
+    return <AppFrame t={DARK} mode="dark"><VideoDiaryScreen respondentId={selected.respondent.id} script={videoScript} onBack={() => setScreen("diaryMode")} onSubmit={submitRecordedVideo} /></AppFrame>;
 
-  if (screen === "diary" && selected && questionnaire) return <AppFrame t={DARK} mode="dark"><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 90 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("home")}><Text style={{ color: DARK.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: DARK.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: DARK.text }]}>When did this occasion happen?</Text><View style={[styles.timeCard, { borderColor: DARK.border, backgroundColor: DARK.card }]}><Text style={{ color: "#5D93FF" }}>□</Text><Text style={{ color: DARK.text, fontWeight: "700" }}>Today, {new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</Text></View><Text style={[styles.smallMuted, { color: DARK.muted }]}>You can log something that happened up to 4h ago.</Text><Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: DARK.text }]}>{q.text}{q.required ? <Text style={{ color: DARK.red }}> *</Text> : null}</Text>{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={DARK.subtle} style={[styles.input, styles.textArea, { color: DARK.text, borderColor: DARK.border, backgroundColor: DARK.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: DARK.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: DARK.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: DARK.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={styles.answerChips}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); return <Pressable key={opt} onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? DARK.blueSoft : DARK.card, borderColor: on ? DARK.blue : DARK.border }]}><Text style={{ color: on ? "#9EBBFF" : DARK.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: DARK.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={DARK} /><View style={{ flex: 1 }}><Text style={{ color: DARK.text, fontWeight: "800" }}>{q.type === "video" ? "Record video" : "Take photo"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Opens your camera — no gallery photos.</Text></View><Text style={{ color: DARK.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPressIn={() => startRecording(q.id)} onPressOut={() => stopRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: recordingQuestionId === q.id ? DARK.red : DARK.border }]}><Icon glyph="♩" t={DARK} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? DARK.red : DARK.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… release to stop" : "Press and hold to record"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <Text style={{ color: DARK.green, marginTop: 6, fontSize: 11 }}>✓ Evidence captured</Text> : null}{problem ? <Text style={{ color: DARK.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: DARK.nav, borderTopColor: DARK.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: DARK.border }]}><Text style={{ color: DARK.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: DARK.blue }, busy && { opacity: .5 }]}><Text style={{ color: DARK.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
+  if (screen === "diary" && selected && questionnaire) return <AppFrame t={DARK} mode="dark"><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 90 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("home")}><Text style={{ color: DARK.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: DARK.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: DARK.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:DARK.text,borderColor:DARK.border}]} /><Text style={[styles.smallMuted,{color:DARK.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={DARK} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: DARK.text }]}>{q.text}{q.required ? <Text style={{ color: DARK.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:DARK.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:DARK.text,borderColor:DARK.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={DARK.subtle} style={[styles.input, styles.textArea, { color: DARK.text, borderColor: DARK.border, backgroundColor: DARK.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: DARK.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: DARK.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: DARK.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={styles.answerChips}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); return <Pressable key={opt} onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? DARK.blueSoft : DARK.card, borderColor: on ? DARK.blue : DARK.border }]}><Text style={{ color: on ? "#9EBBFF" : DARK.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: DARK.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={DARK} /><View style={{ flex: 1 }}><Text style={{ color: DARK.text, fontWeight: "800" }}>{q.type === "video" ? "Record video" : "Take photo"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Opens your camera — no gallery photos.</Text></View><Text style={{ color: DARK.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPressIn={() => startRecording(q.id)} onPressOut={() => stopRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: recordingQuestionId === q.id ? DARK.red : DARK.border }]}><Icon glyph="♩" t={DARK} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? DARK.red : DARK.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… release to stop" : "Press and hold to record"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <Text style={{ color: DARK.green, marginTop: 6, fontSize: 11 }}>✓ Evidence captured</Text> : null}{problem ? <Text style={{ color: DARK.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: DARK.nav, borderTopColor: DARK.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: DARK.border }]}><Text style={{ color: DARK.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: DARK.blue }, busy && { opacity: .5 }]}><Text style={{ color: DARK.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
 }
