@@ -27,6 +27,9 @@ router.get("/", async (req, res) => {
   const mine = mineRows
     .filter((r) => studyById.has(r.study_id))
     .map((r) => ({ ...r, study_name: studyById.get(r.study_id).name }));
+  const recruitmentHolds = await store.find("qc_flags", { respondent_id: { $in: mine.map(r => r.id) }, record_id: null, status: "open", flag_type: { $in: ["duplicate_identity", "consent_missing"] } });
+  const heldIds = new Set(recruitmentHolds.map(flag => flag.respondent_id));
+  mine.forEach(r => { r.recruitment_hold = heldIds.has(r.id); });
   // Today's counts and the unfinished handovers, which are the two things an
   // interviewer standing in a doorway actually needs. A respondent who was
   // registered but never handed over cannot start, and nothing surfaced that.
@@ -92,7 +95,7 @@ router.post("/register", async (req, res) => {
   // instead of letting the respondent straight into the sample.
   const holds = await applyRecruitmentHolds(id, {
     studyId,
-    contact,
+    contact: canonicalisedContact,
     consentGiven: !!consent_given,
   });
   if (holds.length) {

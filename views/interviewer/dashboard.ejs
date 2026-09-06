@@ -11,16 +11,16 @@
   <div class="field-roster-tools">
     <label>Find a respondent<input type="search" data-roster-search placeholder="Name, code or contact" /></label>
     <label>Study<select data-roster-study><option value="">All my studies</option><% [...new Map(mine.map(r => [r.study_id,r.study_name]))].forEach(([id,name]) => { %><option value="<%= id %>"><%= name %></option><% }) %></select></label>
-    <label>Status<select data-roster-status><option value="">All statuses</option><% [...new Set(mine.map(r=>r.activation_status))].sort().forEach(status=> { %><option value="<%= status %>"><%= status %></option><% }) %></select></label>
+    <label>Status<select data-roster-status><option value="">All statuses</option><% [...new Set(mine.map(r=>r.recruitment_hold ? 'review' : r.activation_status))].sort().forEach(status=> { %><option value="<%= status %>"><%= status === 'review' ? 'Review needed' : status %></option><% }) %></select></label>
   </div>
   <div class="field-roster-head" aria-hidden="true"><span>Respondent</span><span>Study</span><span>Status</span><span>Next action</span></div>
   <ul aria-label="My respondents">
   <% mine.forEach(r => { const active=['active','activated','completed'].includes(r.activation_status); %>
-    <li class="field-person" data-roster-row data-study="<%= r.study_id %>" data-status="<%= r.activation_status %>" data-search="<%= [r.name,r.respondent_code,r.contact].join(' ').toLowerCase() %>">
+    <li class="field-person" data-roster-row data-study="<%= r.study_id %>" data-status="<%= r.recruitment_hold ? 'review' : r.activation_status %>" data-search="<%= [r.name,r.respondent_code,r.contact].join(' ').toLowerCase() %>">
       <div class="field-person-name"><span class="field-avatar" aria-hidden="true"><%= (r.name||'?').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase() %></span><div><strong><%= r.name || 'Unnamed respondent' %></strong><small><%= r.respondent_code %> · <%= r.contact || 'No contact recorded' %></small><% if(r.is_practice) { %><small>Practice respondent</small><% } %></div></div>
       <div class="field-study-name"><%= r.study_name %></div>
-      <div><span class="field-status <%= active ? 'active' : r.activation_status === 'disqualified' ? 'stopped' : '' %>"><%= r.activation_status || 'Unknown' %></span></div>
-      <a class="report-button secondary" href="/interviewer/respondents/<%= r.id %>" aria-label="Handover details for <%= r.name || r.respondent_code %>">Handover <span aria-hidden="true">→</span></a>
+      <div><span class="field-status <%= r.recruitment_hold ? 'review' : active ? 'active' : r.activation_status === 'disqualified' ? 'stopped' : '' %>"><%= r.recruitment_hold ? 'Review needed' : r.activation_status || 'Unknown' %></span></div>
+      <a class="report-button secondary" href="/interviewer/respondents/<%= r.id %>" aria-label="Handover details for <%= r.name || r.respondent_code %>"><%= r.recruitment_hold ? 'View review' : 'Handover' %> <span aria-hidden="true">→</span></a>
     </li>
   <% }) %>
   </ul>

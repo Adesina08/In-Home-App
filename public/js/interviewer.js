@@ -29,6 +29,7 @@
       status.textContent = 'Link selected. Use your device’s copy command to copy it.';
     }
   }));
+  document.querySelectorAll('.field-bulk .overflow-x-auto').forEach(region => { region.tabIndex = 0; region.setAttribute('role', 'region'); region.setAttribute('aria-label', 'Invitation review table'); });
   document.querySelectorAll('.field-main input,.field-main select').forEach((input,index) => {
     if (input.type === 'hidden' || input.labels?.length) return;
     const label = input.previousElementSibling?.tagName === 'LABEL' ? input.previousElementSibling : null;
