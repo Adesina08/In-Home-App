@@ -3,6 +3,7 @@ import { View, Text, Pressable } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
+import { ScreenDoodleField } from "../components/Doodles";
 
 function Row({
   children,
@@ -85,8 +86,9 @@ export function ProfileScreen({
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[18px] shrink-0" />
+      <View className="h-[40px] shrink-0" />
       <View className="flex-1 gap-[13px] px-[18px] pb-4">
+        <ScreenDoodleField color={isDark ? "#60A5FA" : "#1D4ED8"} withBottom />
         <Text
           className="font-disp-extrabold text-[20px] text-[#0F172A] dark:text-[#F8FAFC]"
           style={{ letterSpacing: -0.2 }}

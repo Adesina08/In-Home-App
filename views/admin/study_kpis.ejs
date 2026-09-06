@@ -1,5 +1,6 @@
-<%- include('../partials/header', { title: study.name + ' — Client KPIs', user }) %>
+<%- include('../partials/header', { title: study.name + ' — Client KPIs', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
+<% if(user.role === 'superadmin') { %><%- include('../partials/page_header', { eyebrow: 'Reporting setup', title: 'Client KPIs', subtitle: 'Define which measures appear in the client dashboard and how they are calculated.' }) %><% } %>
 
 <% if (error) { %>
   <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">
@@ -10,10 +11,10 @@
 <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
 
   <!-- ============ Existing KPIs ============ -->
-  <div class="xl:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden h-fit">
+  <div class="xl:col-span-2 bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-hidden h-fit">
     <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
       <div class="font-semibold text-slate-800 flex items-center gap-2">
-        <%- icon('trend', 'w-4 h-4 text-brand-500') %> Launch KPIs
+        <%- icon('trend', 'w-4 h-4 text-signal') %> Launch KPIs
       </div>
       <span class="text-xs text-slate-400">
         Computed from <%= entryCount %> submitted <%= entryCount === 1 ? 'entry' : 'entries' %>
@@ -65,9 +66,9 @@
   </div>
 
   <!-- ============ Builder ============ -->
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 h-fit">
     <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2">
-      <%- icon('plus', 'w-4 h-4 text-brand-500') %> Build a KPI
+      <%- icon('plus', 'w-4 h-4 text-signal') %> Build a KPI
     </div>
     <p class="text-xs text-slate-500 mb-4 leading-relaxed">
       Built from this study's own questions, and computed over submitted entries only —
@@ -78,14 +79,14 @@
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">What it's called</label>
         <input name="label" required placeholder="e.g. Brand A share of occasions"
-               class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
         <p class="text-[11px] text-slate-400 mt-1">This is the label the client sees on their dashboard.</p>
       </div>
 
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">What it measures</label>
         <select name="metric" id="kpiMetric" required
-                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
           <option value="">Choose…</option>
           <% Object.entries(metrics).forEach(([key, m]) => { %>
             <option value="<%= key %>" data-needs-question="<%= m.needsQuestion ? '1' : '0' %>"
@@ -99,7 +100,7 @@
       <div id="kpiQuestionBlock" class="hidden">
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Which question</label>
         <select name="question_id" id="kpiQuestion"
-                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+                class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
           <option value="">Choose…</option>
           <% questions.forEach(q => { %>
             <option value="<%= q.id %>" data-type="<%= q.type %>" data-options="<%= (q.options_json || '[]').replace(/"/g, '&quot;') %>">
@@ -118,7 +119,7 @@
       <div id="kpiUnitBlock" class="hidden">
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Unit <span class="font-normal text-slate-400">(optional)</span></label>
         <input name="unit" placeholder="e.g. bottles"
-               class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+               class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
       </div>
 
       <!-- Cross-question conditions -->
@@ -126,7 +127,7 @@
         <div class="flex items-center justify-between gap-2 mb-1.5">
           <label class="block text-sm font-medium text-slate-600">Only count entries where…</label>
           <button type="button" id="kpiAddCondition"
-                  class="text-xs font-medium text-brand-600 hover:text-brand-700 transition">+ Add</button>
+                  class="text-xs font-medium text-signal hover:text-signal-bright transition">+ Add</button>
         </div>
         <p class="text-[11px] text-slate-400 mb-2.5">
           Optional. Narrows the KPI to a subset — "among entries logged at home", say. Several conditions must all be true.
@@ -134,7 +135,7 @@
         <div id="kpiConditions" class="space-y-2"></div>
       </div>
 
-      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-brand-600 transition shadow-card">
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-signal text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-signal-bright transition shadow-card">
         <%- icon('plus', 'w-4 h-4') %> Add KPI
       </button>
     </form>
@@ -212,7 +213,7 @@
       const row = document.createElement('label');
       row.className = 'flex items-center gap-2 text-sm text-slate-700 cursor-pointer';
       row.innerHTML =
-        '<input type="checkbox" name="option_value" class="h-4 w-4 accent-brand-700 rounded" id="' + id + '">' +
+        '<input type="checkbox" name="option_value" class="h-4 w-4 accent-signal rounded" id="' + id + '">' +
         '<span></span>';
       row.querySelector('input').value = o;
       row.querySelector('span').textContent = o;

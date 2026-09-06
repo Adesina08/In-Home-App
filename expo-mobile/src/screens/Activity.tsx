@@ -3,6 +3,7 @@ import { View, Text, Pressable } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
+import { ScreenDoodleField } from "../components/Doodles";
 
 function StatCard({
   icon,
@@ -81,8 +82,9 @@ export function ActivityScreen({
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[18px] shrink-0" />
+      <View className="h-[40px] shrink-0" />
       <View className="flex-1 gap-[13px] px-[18px] pb-4">
+        <ScreenDoodleField color={blueIcon} />
         <View className="flex-row items-center justify-between">
           <Text
             className="font-disp-extrabold text-[20px] text-[#0F172A] dark:text-[#F8FAFC]"

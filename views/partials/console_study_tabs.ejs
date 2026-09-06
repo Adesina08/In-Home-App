@@ -1,0 +1,9 @@
+<div class="console-study-heading">
+  <a href="/admin/studies" class="console-back">Studies <span>/</span></a>
+  <div class="console-study-title"><h1><%= study.name %></h1><span class="console-status <%= study.status === 'live' ? 'is-live' : '' %>"><%= study.status %></span></div>
+  <p><%= [study.market, formatCategories(study.category)].filter(Boolean).join(' · ') || 'Study workspace' %> <span>·</span> <%= ({realtime:'Real-time occasions',daily:'Daily diary',weekly:'Weekly diary',monthly:'Monthly diary'})[study.diary_mode] || study.diary_mode %></p>
+  <nav class="console-study-tabs" aria-label="Study navigation">
+    <a href="/admin?study=<%= study.id %>"><%- icon('chart', 'w-4 h-4') %>Overview</a>
+    <% STUDY_TABS.forEach(t => { %><a href="<%= studyTabHref(study.id, t.key) %>" title="<%= t.label %>" class="<%= tab === t.key ? 'is-active' : '' %>" <%- tab === t.key ? 'aria-current="page"' : '' %>><%- icon(t.icon, 'w-4 h-4') %><%= t.short === 'Settings' ? 'Study Settings' : t.short === 'Media' ? 'Media Review' : t.short === 'KPIs' ? 'Client KPIs' : t.short %></a><% }) %>
+  </nav>
+</div>

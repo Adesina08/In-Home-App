@@ -2,17 +2,17 @@
 
 <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
   <div>
-    <div class="text-xs font-semibold uppercase tracking-wide text-brand-600 mb-1">Reusable respondent profiles</div>
+    <div class="text-xs font-semibold uppercase tracking-wide text-signal mb-1">Reusable respondent profiles</div>
     <h1 class="text-2xl font-bold text-slate-900">Respondent Panel</h1>
     <p class="text-sm text-slate-500 mt-1">People are stored once and can be enrolled into multiple studies. Future invitations are only enabled where recontact permission is Yes.</p>
   </div>
-  <div class="rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm text-slate-600">
+  <div class="rounded-[11px] bg-white border border-slate-200 px-4 py-3 text-sm text-slate-600">
     <span class="font-bold text-slate-900"><%= rows.length %></span> matching profile<%= rows.length === 1 ? '' : 's' %>
   </div>
 </div>
 
 <% if (result) { %>
-  <div class="mb-5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800"><%= result %></div>
+  <div class="mb-5 rounded-[11px] border border-signal/20 bg-signal-soft px-4 py-3 text-sm text-signal-deep"><%= result %></div>
 <% } %>
 
 <form method="GET" action="/admin/panel" class="bg-white border border-slate-200 rounded-2xl p-4 mb-5 grid sm:grid-cols-2 lg:grid-cols-6 gap-3">
@@ -58,7 +58,7 @@
   </div>
   <div class="lg:col-span-6 flex gap-2 justify-end">
     <a href="/admin/panel" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Clear</a>
-    <button class="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white">Apply filters</button>
+    <button class="rounded-lg bg-signal px-4 py-2 text-sm font-semibold text-white">Apply filters</button>
   </div>
 </form>
 
@@ -76,12 +76,12 @@
             <option value="<%= study.id %>"><%= study.name %></option>
           <% }) %>
         </select>
-        <button class="rounded-lg bg-brand-700 text-white px-4 py-2 text-sm font-semibold">Invite selected</button>
+        <button class="rounded-lg bg-signal text-white px-4 py-2 text-sm font-semibold">Invite selected</button>
       </div>
     </div>
 
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+      <table data-console-table="panel" data-console-search-label="Search these filtered profiles…" class="w-full text-sm">
         <thead class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
           <tr>
             <th class="px-4 py-3 text-left w-12">Select</th>

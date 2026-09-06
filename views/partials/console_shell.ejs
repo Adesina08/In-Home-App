@@ -1,0 +1,47 @@
+<%
+  const consolePath = typeof currentPath !== 'undefined' ? currentPath : '';
+  const consoleStudy = typeof study !== 'undefined' && study ? study : null;
+  const consoleGroups = [
+    { label: 'Workspace', items: [['/admin/superadmin', 'Overview', 'home'], ['/admin/studies', 'Studies', 'clipboard'], ['/admin', 'Fieldwork Dashboard', 'chart'], ['/admin/panel', 'Respondent Panel', 'users']] },
+    { label: 'Review & insights', items: [['/admin/qc', 'Quality Control', 'shield-check'], ['/admin/ai-summary', 'AI Summary', 'trend'], ['/admin/whatsapp-outbox', 'Message Log', 'chat']] },
+    { label: 'Administration', items: [['/admin/users', 'Users & Access', 'user'], ['/admin/system-settings', 'System Settings', 'settings']] }
+  ];
+  const activeConsoleLink = (href) => consolePath === href || (href !== '/admin' && consolePath.startsWith(href + '/'));
+  const activeConsoleItem = consoleGroups.flatMap(g => g.items).find(([href]) => activeConsoleLink(href));
+  const consoleInitials = (user.name || 'SA').split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  const scopedConsoleHref = (href) => consoleStudy && ['/admin', '/admin/qc', '/admin/ai-summary'].includes(href) ? href + '?study=' + encodeURIComponent(consoleStudy.id) : href;
+%>
+<a class="console-skip" href="#console-main">Skip to content</a>
+<div class="console-layout">
+  <button class="console-scrim" type="button" data-close-nav aria-label="Close navigation" tabindex="-1"></button>
+  <aside class="console-sidebar" id="console-sidebar" aria-label="Main navigation">
+    <a class="console-brand" href="/admin/superadmin" aria-label="Inicio Console home">
+      <img src="/public/icons/logo-header.png" alt="Inicio" width="52" height="32" />
+      <span><strong>inicio<span class="console-brand-dot">.</span></strong><small>RESEARCH CONSOLE</small></span>
+    </a>
+    <div class="console-workspace"><span class="console-workspace-icon"><%- icon('building', 'w-4 h-4') %></span><div><strong>In-home consumption</strong><small>Superadmin workspace</small></div></div>
+    <nav>
+      <% consoleGroups.forEach(group => { %>
+        <div class="console-nav-group"><div class="console-nav-label"><%= group.label %></div>
+          <% group.items.forEach(([href, label, glyph]) => { %>
+            <a class="console-nav-link <%= activeConsoleLink(href) ? 'is-active' : '' %>" href="<%= scopedConsoleHref(href) %>" <%- activeConsoleLink(href) ? 'aria-current="page"' : '' %>><%- icon(glyph, 'w-[18px] h-[18px]') %><span><%= label %></span><% if (activeConsoleLink(href)) { %><span class="console-active-dot"></span><% } %></a>
+          <% }) %>
+        </div>
+      <% }) %>
+    </nav>
+    <div class="console-sidebar-bottom">
+      <a class="console-nav-link" href="/help"><%- icon('help', 'w-[18px] h-[18px]') %>Help & guidance</a>
+      <div class="console-account"><span class="console-avatar"><%= consoleInitials %></span><div><strong><%= user.name %></strong><small>Superadmin</small></div><a href="/logout" aria-label="Log out" title="Log out"><%- icon('logout', 'w-[18px] h-[18px]') %></a></div>
+    </div>
+  </aside>
+  <div class="console-workarea">
+    <header class="console-topbar">
+      <div class="console-breadcrumb"><button type="button" class="console-icon-button console-menu" data-toggle-nav aria-controls="console-sidebar" aria-expanded="false" aria-label="Open navigation"><%- icon('menu', 'w-5 h-5') %></button><a href="/admin/superadmin">Workspace</a><span>/</span><strong><%= activeConsoleItem ? activeConsoleItem[1] : 'Help & guidance' %></strong></div>
+      <div class="console-topbar-actions">
+        <% if (typeof studyPicker !== 'undefined' && studyPicker) { %>
+          <label class="console-study-picker"><%- icon('clipboard', 'w-4 h-4') %><span class="sr-only">Current study</span><select data-study-picker data-action="<%= studyPicker.action %>"><% studyPicker.studies.forEach(s => { %><option value="<%= s.id %>" <%= s.id === studyPicker.current ? 'selected' : '' %>><%= s.name %></option><% }) %></select></label>
+        <% } else { %><span class="console-scope"><%- icon(consoleStudy ? 'clipboard' : 'building', 'w-4 h-4') %><%= consoleStudy ? consoleStudy.name : 'All studies' %></span><% } %>
+        <span class="console-topbar-divider"></span><span class="console-avatar console-avatar-small" title="<%= user.name %>"><%= consoleInitials %></span>
+      </div>
+    </header>
+    <main id="console-main" class="console-main" tabindex="-1">

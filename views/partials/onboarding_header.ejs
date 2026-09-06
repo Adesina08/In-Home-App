@@ -1,0 +1,12 @@
+<% const journeyStudy = typeof study !== 'undefined' && study ? study : null; const phases = ['Study introduction', 'Your details', 'Diary access']; %>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="theme-color" content="#35549c" /><title><%= title %></title><link rel="icon" href="/public/icons/icon-192.png" /><link rel="stylesheet" href="/public/tailwind.css" /><link rel="stylesheet" href="/public/onboarding.css" /><script src="/public/js/onboarding.js" defer></script></head>
+<body class="onboarding-page"><a class="sr-only focus:not-sr-only" href="#onboarding-main">Skip to content</a>
+<header class="onboarding-top"><div class="onboarding-brand"><img src="/public/icons/logo-header.png" alt="" /><span>Inicio Diary<small>Research. Insights. Impact.</small></span></div><span class="onboarding-top-note">Your everyday moments. Meaningful insights.</span></header>
+<div class="onboarding-layout">
+  <aside class="onboarding-aside" aria-label="Study onboarding journey">
+    <div class="onboarding-eyebrow">Welcome to your study</div><h2>Small moments.<br />A bigger picture.</h2><p>Your experiences help us understand everyday life. Let’s get your diary ready.</p>
+    <% if (journeyStudy) { %><div class="onboarding-study"><span>Your study</span><strong><%= journeyStudy.name %></strong><small><%= [journeyStudy.market, journeyStudy.category].filter(Boolean).join(' · ') %></small></div><% } %>
+    <% if (phase) { %><ol class="onboarding-progress"><% phases.forEach((label,i) => { %><li class="<%= i + 1 === phase ? 'current' : '' %>" <%- i + 1 === phase ? 'aria-current="step"' : '' %>><span class="onboarding-step-number"><%= i + 1 %></span><span><strong><%= label %></strong><small><%= ['Discover the study and consent', 'Profile and study questions', 'How it works and your account'][i] %></small></span></li><% }) %></ol><% } %>
+    <p class="onboarding-aside-note">Taking part is your choice. Read the study information before you begin.</p>
+  </aside>
+  <main id="onboarding-main" class="onboarding-main"><div class="onboarding-card"><div class="onboarding-card-label"><%= phase ? phases[phase - 1] : 'Study participation' %><span>Inicio Diary</span></div><div class="onboarding-content">

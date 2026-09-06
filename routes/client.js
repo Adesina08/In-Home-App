@@ -1,170 +1,47 @@
-const express = require("express");
-const store = require("../lib/store");
-const { requireRole } = require("../lib/auth");
-const { classifyRisk } = require("../lib/qc");
-const { latestSummary } = require("../lib/aiSummary");
-const kpiEngine = require("../lib/kpi");
-
+const express = require('express');
+const store = require('../lib/store');
+const { requireRole } = require('../lib/auth');
+const { loadStudyReport, validatePeriod, periodFilter } = require('../lib/studyReport');
+const { computeKpi } = require('../lib/kpi');
 const router = express.Router();
-router.use(requireRole("client", "admin"));
+router.use(requireRole('client', 'admin'));
 
-router.get("/", async (req, res) => {
-  const scopedStudyId = req.session.user.study_id;
-  const studies = scopedStudyId
-    ? [await store.findOne("studies", { id: scopedStudyId })]
-    : await store.find("studies", {}, { sort: { id: 1 } });
-  const studyId = parseInt(req.query.study, 10) || (studies[0] && studies[0].id);
-  const study = studies.find((s) => s.id === studyId) || studies[0];
-  if (!study) return res.render("error", { message: "No study assigned to your account yet.", user: req.session.user });
-
-  const kpis = await store.find("kpi_config", { study_id: study.id, enabled: 1 }, { sort: { id: 1 } });
-  // Questionnaire-driven KPIs are computed here (lib/kpi.js); the original six
-  // are still derived from the study-level counts below. Before this the view
-  // held a hardcoded map of those six, so every KPI an admin added rendered a
-  // permanent em-dash.
-  const kpiComputed = (await kpiEngine.computeAll(study.id, kpis)).results;
-
-  const totalRespondents = await store.count("respondents", { study_id: study.id, is_practice: 0 });
-  const activeRespondents = await store.count("respondents", {
-    study_id: study.id,
-    is_practice: 0,
-    activation_status: { $in: ["active", "activated"] },
-  });
-  const totalDiaries = await store.count("diary_records", { study_id: study.id, is_practice: 0 });
-  const submittedDiaries = await store.count("diary_records", {
-    study_id: study.id,
-    status: "submitted",
-    is_practice: 0,
-  });
-  const completionRate = totalDiaries ? Math.round((submittedDiaries / totalDiaries) * 100) : 0;
-
-  // JOIN done in JS: the study's non-practice respondents, then the open flags
-  // belonging to them. COUNT(DISTINCT qf.record_id) becomes a Set of record ids.
-  const flaggedRespondents = await store.find(
-    "respondents",
-    { study_id: study.id, is_practice: 0 },
-    { projection: { id: 1 } }
-  );
-  const flaggedRespondentIds = new Set(flaggedRespondents.map((r) => r.id));
-  const openFlags = await store.find("qc_flags", { status: "open", record_id: { $ne: null } });
-  const flaggedRecords = new Set(
-    openFlags.filter((f) => flaggedRespondentIds.has(f.respondent_id)).map((f) => f.record_id)
-  ).size;
-  const qcFlagRate = totalDiaries ? Math.round((flaggedRecords / totalDiaries) * 100) : 0;
-
-  const avgOccasionsPerWeek = activeRespondents ? Math.round((submittedDiaries / activeRespondents) * 10) / 10 : 0;
-
-  const respondents = await store.find("respondents", { study_id: study.id, is_practice: 0 }, { projection: { id: 1 } });
-  const riskCounts = { green: 0, amber: 0, red: 0 };
-  // classifyRisk is async now, so the forEach becomes a sequential loop.
-  for (const r of respondents) {
-    riskCounts[await classifyRisk(r.id)]++;
-  }
-
-  // The two tallies below joined responses to diary_records; the submitted,
-  // non-practice records are fetched once here and matched in JS.
-  const submittedRecords = await store.find(
-    "diary_records",
-    { status: "submitted", is_practice: 0 },
-    { projection: { id: 1 } }
-  );
-  const submittedRecordIds = new Set(submittedRecords.map((d) => d.id));
-
-  const brandQ = await store.findOne("questions", { study_id: study.id, code: "brand" });
-  let brandConsumption = [];
-  if (brandQ) {
-    const brandRows = await store.find("responses", { question_id: brandQ.id }, { sort: { id: 1 } });
-    const brandTally = new Map();
-    for (const row of brandRows) {
-      if (!submittedRecordIds.has(row.record_id)) continue;
-      brandTally.set(row.value, (brandTally.get(row.value) || 0) + 1);
-    }
-    // GROUP BY responses.value ORDER BY mentions DESC
-    brandConsumption = [...brandTally.entries()]
-      .map(([brand, mentions]) => ({ brand, mentions }))
-      .sort((a, b) => b.mentions - a.mentions);
-  }
-
-  const occasionQ = await store.findOne("questions", { study_id: study.id, code: "occasion" });
-  let occasionMix = [];
-  if (occasionQ) {
-    const occasionRows = await store.find("responses", { question_id: occasionQ.id }, { sort: { id: 1 } });
-    const occasionTally = new Map();
-    for (const row of occasionRows) {
-      if (!submittedRecordIds.has(row.record_id)) continue;
-      occasionTally.set(row.value, (occasionTally.get(row.value) || 0) + 1);
-    }
-    // GROUP BY responses.value ORDER BY c DESC
-    occasionMix = [...occasionTally.entries()]
-      .map(([occasion, c]) => ({ occasion, c }))
-      .sort((a, b) => b.c - a.c);
-  }
-
-  // GROUP BY substr(entry_time,1,10) ORDER BY day -- done in JS, since the
-  // store has no SQL string functions to group on.
-  const trendRecords = await store.find("diary_records", {
-    study_id: study.id,
-    status: "submitted",
-    is_practice: 0,
-  });
-  const trendTally = new Map();
-  for (const rec of trendRecords) {
-    const day = String(rec.entry_time).slice(0, 10);
-    trendTally.set(day, (trendTally.get(day) || 0) + 1);
-  }
-  const trend = [...trendTally.entries()]
-    .map(([day, c]) => ({ day, c }))
-    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
-
-  // Spec 5.2 "AI insight": the client sees the most recent summary the
-  // research team generated -- read-only, and never generated on their behalf,
-  // so nothing reaches a client that research hasn't looked at first.
-  const aiInsight = await latestSummary(study.id);
-
-  res.render("client/dashboard", {
-    study,
-    studies,
-    kpis,
-    kpiComputed,
-    aiInsight,
-    totalRespondents,
-    activeRespondents,
-    completionRate,
-    qcFlagRate,
-    avgOccasionsPerWeek,
-    riskCounts,
-    brandConsumption,
-    occasionMix,
-    trend,
-    // Answer provenance. Video mode means some answers were produced by the
-    // extractor rather than chosen by a respondent, and a client seeing
-    // "42% chose Maltina" is entitled to know how many of those a person
-    // checked. No competing diary tool can show this, because none of them
-    // tracked it.
-    provenance: await answerProvenance(study),
-  });
-});
-
-/** Split the reported answers by who produced them. */
-async function answerProvenance(study) {
-  if (!study) return { total: 0, respondent: 0, aiConfirmed: 0, excluded: 0 };
-  const records = await store.find("diary_records", { study_id: study.id, status: "submitted", is_practice: 0 });
-  const ids = records.map((r) => r.id);
-  if (!ids.length) return { total: 0, respondent: 0, aiConfirmed: 0, excluded: 0 };
-
-  const responses = await store.find("responses", { record_id: { $in: ids } });
-  const openFlags = await store.find("qc_flags", { status: "open" });
-  const blocked = new Set(openFlags.filter((f) => ids.includes(f.record_id)).map((f) => f.record_id));
-
-  const usable = responses.filter((r) => !blocked.has(r.record_id));
-  return {
-    total: usable.length,
-    respondent: usable.filter((r) => (r.source || "respondent") !== "ai_video").length,
-    aiConfirmed: usable.filter((r) => r.source === "ai_video" && r.verified).length,
-    // Excluded, not counted: an unresolved flag or an unconfirmed AI answer is
-    // not something to report as fact.
-    excluded: responses.length - usable.length + usable.filter((r) => r.source === "ai_video" && !r.verified).length,
+async function loadPage(req, res, next) {
+  const assigned = req.session.user.study_id;
+  const studies = assigned ? [await store.findOne('studies', { id: assigned })].filter(Boolean) : req.session.user.role === 'client' ? [] : await store.find('studies', {}, { sort: { id: 1 } });
+  const requested = req.query.study === undefined ? studies[0]?.id : Number(req.query.study);
+  const study = studies.find(s => s.id === requested);
+  if (!study) return res.status(404).render('error', { message: 'This study is not available to your account.', user: req.session.user });
+  let period;
+  try { period = validatePeriod({ from: req.query.from, to: req.query.to }); }
+  catch (e) { return res.status(400).render('error', { message: e.message, user: req.session.user }); }
+  const report = await loadStudyReport(study.id, period);
+  const [kpis, respondents, totalEntries, insight] = await Promise.all([
+    store.find('kpi_config', { study_id: study.id, enabled: 1 }, { sort: { id: 1 } }),
+    store.find('respondents', { study_id: study.id, is_practice: 0 }),
+    store.count('diary_records', { study_id: study.id, is_practice: 0, ...((period.from || period.to) ? { entry_time: periodFilter(period.from, period.to) } : {}) }),
+    store.findOne('ai_summaries', { study_id: study.id, period_start: period.from || null, period_end: period.to || null }, { sort: { generated_at: -1, id: -1 } }),
+  ]);
+  const completionRate = totalEntries ? Math.round(report.submitted / totalEntries * 100) : 0;
+  const active = respondents.filter(r => ['active', 'activated'].includes(r.activation_status)).length;
+  const firstDay = period.from || report.trend[0]?.day;
+  const lastDay = period.to || report.trend.at(-1)?.day;
+  const weeks = firstDay && lastDay ? Math.max(1, (Date.parse(lastDay) - Date.parse(firstDay)) / 86400000 + 1) / 7 : 0;
+  const builtIn = {
+    completion_rate: `${completionRate}%`, compliance_rate: `${completionRate}%`, active_respondents: active,
+    qc_flag_rate: `${report.submitted ? Math.round(report.flagged / report.submitted * 100) : 0}%`,
+    brand_incidence: report.brands.length,
+    avg_occasions_per_week: active && weeks ? (report.submitted / active / weeks).toFixed(1) : '—',
   };
+  const kpiValues = kpis.map(k => { const result = computeKpi(k, report.entries); return { ...k, display: result?.display ?? builtIn[k.kpi_key] ?? '—', basis: result?.basis || '' }; });
+  res.locals.clientData = { study, studies, report, kpis: kpiValues, insight, completionRate, active, totalRespondents: respondents.length, ...period };
+  next();
 }
-
+router.get(['/', '/insights'], loadPage, (req, res) => res.render('client/dashboard', { ...res.locals.clientData, insights: req.path === '/insights' }));
+router.get('/export', loadPage, (req, res) => {
+  const { report, study, from, to } = res.locals.clientData;
+  const rows = [['Study', study.name], ['Period start', from || 'All dates'], ['Period end', to || 'All dates'], ['Metric', 'Value'], ['Submitted entries', report.submitted], ['Contributors', report.contributors], ['Entries with open QC flags', report.flagged], ['Eligible entries', report.eligible], [], ['Brand answer', 'Mentions'], ...report.brands.map(b => [b.label, b.n]), [], ['Occasion answer', 'Mentions'], ...report.occasions.map(o => [o.label, o.n]), [], ['Day', 'Submitted entries'], ...report.trend.map(t => [t.day, t.n]), [], ['Word', 'Mentions'], ...report.words.map(w => [w.word, w.count])];
+  const cell = value => `"${String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replace(/"/g, '""')}"`;
+  res.attachment(`study-${study.id}-report.csv`).type('text/csv').send('\ufeff' + rows.map(row => row.map(cell).join(',')).join('\r\n'));
+});
 module.exports = router;

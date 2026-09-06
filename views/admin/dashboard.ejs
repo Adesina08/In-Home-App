@@ -1,3 +1,30 @@
+<% if (user.role === 'superadmin') { %>
+<%- include('../partials/header', { title: 'Fieldwork Dashboard — Inicio Console', user, currentPath: '/admin', studyPicker: { studies, current: study.id, action: '/admin?study=' } }) %>
+<%- include('../partials/page_header', { eyebrow: 'Study overview', title: 'Fieldwork Dashboard', subtitle: study.name, actions: '<a href="/admin?study=' + study.id + '" class="console-button">' + icon('refresh','w-4 h-4') + 'Refresh</a><a href="/admin/studies/' + study.id + '" class="console-button is-primary">' + icon('settings','w-4 h-4') + 'Study settings</a>' }) %>
+<% const submissionShare = expected ? Math.round(completed / expected * 100) : null; const stages = [['invited','Invited'],['screened','Screened'],['registered','Registered'],['activated','Activated'],['active','Active']]; const funnelMax = Math.max(1,...stages.map(([key])=>funnelMap[key] || 0)); %>
+<div class="console-metrics">
+  <% [['Respondents',totalRespondents,'users','Current study · excludes practice'],['Submitted entries',completed,'check-circle','All time · excludes practice'],['Draft entries',missed,'pencil','Started but not submitted'],['Open QC flags',totalOpenFlags,'shield-check','All open flags in this study']].forEach(([label,value,glyph,note])=>{ %><div class="console-metric"><div class="console-metric-label"><%= label %><span class="console-metric-icon"><%- icon(glyph,'w-4 h-4') %></span></div><div class="console-metric-value"><%= Number(value).toLocaleString() %></div><div class="console-metric-foot"><%= note %></div></div><% }) %>
+</div>
+<div class="console-columns">
+  <div class="console-stack">
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Participation at a glance</h2><p>All-time diary records · practice entries excluded</p></div><span class="console-status <%= study.status === 'live' ? 'is-live' : '' %>"><%= study.status %></span></div>
+      <div class="console-panel-body"><div class="console-progress-caption"><span>Submitted share of existing records</span><strong><%= submissionShare === null ? 'No records yet' : submissionShare + '%' %></strong></div><div class="console-progress-track"><span style="width:<%= submissionShare || 0 %>%"></span></div><div class="console-actions" style="margin-top:22px;font-size:12px;color:#5f7189"><span><strong style="color:#35549c"><%= completed %></strong> submitted</span><span>·</span><span><%= missed %> drafts</span><span>·</span><span><%= screenedOut %> screened out</span><span>·</span><span><%= expected %> total records</span></div></div>
+    </section>
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Latest quality flags</h2><p>Up to 8 recent open flags in this study</p></div><a href="/admin/qc?study=<%= study.id %>">Open worklist ↗</a></div><div class="overflow-x-auto"><table><thead><tr><th>Respondent</th><th>Issue</th><th>Severity</th><th>Action</th></tr></thead><tbody>
+      <% openFlags.forEach(f=>{ %><tr><td><strong><%= f.respondent_code %></strong><div style="font-size:11px;color:#5f7189;margin-top:4px"><%= f.respondent_name %></div></td><td><%= String(f.flag_type || '').replace(/_/g,' ') %></td><td><span class="console-status <%= ['critical','high'].includes(f.severity) ? 'is-danger' : 'is-alert' %>"><%= f.severity %></span></td><td><a class="console-button" href="/admin/qc?study=<%= study.id %>&flag=<%= f.id %>">Review →</a></td></tr><% }) %>
+    </tbody></table></div><% if(!openFlags.length){ %><div class="console-empty"><%- icon('shield-check','w-7 h-7') %><strong>No open QC flags</strong><p>New quality flags will appear here for review.</p></div><% } %></section>
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Interviewer performance</h2><p>Recruitment and activation in this study</p></div></div><div class="overflow-x-auto"><table><thead><tr><th>Interviewer</th><th>Recruited</th><th>Activated</th><th>Activation rate</th></tr></thead><tbody><% interviewers.forEach(i=>{ %><tr><td><%= i.name %></td><td><%= i.recruited %></td><td><%= i.activated %></td><td><%= i.recruited ? Math.round(i.activated/i.recruited*100)+'%' : '—' %></td></tr><% }) %></tbody></table></div><% if(!interviewers.length){ %><div class="console-empty">No interviewers to show.</div><% } %></section>
+  </div>
+  <div class="console-stack">
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Recruitment status</h2><p>Respondents currently at each stage</p></div></div><% stages.forEach(([key,label])=>{const value=funnelMap[key] || 0; %><div class="console-progress-row"><div class="console-progress-caption"><span><%= label %></span><strong><%= value %></strong></div><div class="console-progress-track"><span style="width:<%= Math.round(value/funnelMax*100) %>%"></span></div></div><% }) %></section>
+    <section class="console-panel"><div class="console-panel-heading"><h2>Respondent risk</h2><a href="/admin/studies/<%= study.id %>/respondents">View ↗</a></div><% [['green','Green'],['amber','Amber'],['red','Red']].forEach(([key,label])=>{ %><div class="console-progress-row"><div class="console-progress-caption" style="margin:0"><span><%= label %></span><span class="console-status <%= key==='green'?'is-live':key==='red'?'is-danger':'is-alert' %>"><%= riskCounts[key] %></span></div></div><% }) %></section>
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Recent activity</h2><p>Current study · timestamps in UTC</p></div></div><% recentActivity.forEach(item=>{ %><div class="console-activity-row"><span class="console-activity-dot"></span><div><strong><%= item.text %></strong><small><%= item.at %></small></div></div><% }) %><% if(!recentActivity.length){ %><div class="console-empty">No activity recorded yet.</div><% } %></section>
+  </div>
+</div>
+<section class="console-panel"><div class="console-panel-heading"><div><h2>Study exports</h2><p>Download the data behind this study.</p></div><div class="console-actions"><% [['respondents','Respondents'],['diary','Diary entries'],['qc','QC flags']].forEach(([key,label])=>{ %><a class="console-button" href="/admin/export/<%= key %>.csv?study=<%= study.id %>"><%- icon('download','w-4 h-4') %><%= label %></a><% }) %></div></div></section>
+<%- include('../partials/footer') %>
+
+<% } else { %>
 <%
   const compliancePct = expected > 0 ? Math.round((completed / expected) * 100) : 0;
   const incompletePct = expected > 0 ? Math.round((missed / expected) * 100) : 0;
@@ -16,6 +43,12 @@
   const severityPill = (s) => (s === 'critical' || s === 'high') ? ['#FCE8E6', '#C0392B'] : s === 'medium' ? ['#FFF4E5', '#B8860B'] : ['#E6F4EA', '#1E7E34'];
   const ratePill = (r) => r >= 80 ? ['#E6F4EA', '#1E7E34'] : r >= 60 ? ['#FFF4E5', '#B8860B'] : ['#FCE8E6', '#C0392B'];
 %>
+<%
+  const dashActions = `
+    <a href="/admin/qc?study=${study.id}" class="bg-white border border-slate-200 rounded-[10px] px-[15px] py-2 text-[12.5px] font-semibold text-slate-600 flex items-center gap-1.5 hover:bg-slate-50 hover:border-slate-300 transition">${icon('refresh','w-[13px] h-[13px]')}Refresh</a>
+    <a href="/admin/studies/${study.id}" class="bg-signal text-white rounded-[10px] px-4 py-2 text-[12.5px] font-semibold flex items-center gap-1.5 hover:bg-signal-bright transition shadow-[0_1px_2px_rgba(29,78,216,.2),0_4px_10px_-2px_rgba(29,78,216,.35)]">${icon('settings','w-[13px] h-[13px]')}Study Config</a>
+  `;
+%>
 <%- include('../partials/header', {
   title: 'Admin Dashboard — INICIO',
   user,
@@ -23,23 +56,14 @@
   studyPicker: { studies, current: study.id, action: '/admin?study=' },
 }) %>
 
-<div class="flex items-start justify-between gap-4 shrink-0">
-  <div>
-    <div class="text-[11px] font-bold text-[#3B82F6] uppercase tracking-wide mb-0.5">Admin</div>
-    <h1 class="font-display text-[22px] font-extrabold text-slate-900 m-0">Admin Dashboard</h1>
-    <p class="text-slate-500 text-[12.5px] mt-[3px]">Real-time overview of fieldwork performance and study health</p>
-  </div>
-  <div class="flex gap-[9px] shrink-0">
-    <a href="/admin/qc?study=<%= study.id %>" class="bg-white border border-slate-200 rounded-[10px] px-[15px] py-2 text-[12.5px] font-semibold text-slate-600 flex items-center gap-1.5 hover:bg-slate-50">
-      <%- icon('refresh', 'w-[13px] h-[13px]') %>Refresh
-    </a>
-    <a href="/admin/studies/<%= study.id %>" class="bg-signal text-white rounded-[10px] px-4 py-2 text-[12.5px] font-semibold flex items-center gap-1.5 hover:bg-signal-bright">
-      <%- icon('settings', 'w-[13px] h-[13px]') %>Study Config
-    </a>
-  </div>
-</div>
+<%- include('../partials/page_header', {
+  eyebrow: 'Admin',
+  title: 'Admin Dashboard',
+  subtitle: 'Real-time overview of fieldwork performance and study health',
+  actions: dashActions,
+}) %>
 
-<div class="grid grid-cols-5 gap-3 shrink-0">
+<div class="grid grid-cols-5 gap-3.5 shrink-0">
   <% const kpis = [
     ['users', 'rgba(29,78,216,.10)', '#1D4ED8', 'Respondents', totalRespondents, 'Current study sample'],
     ['check-circle', 'rgba(30,126,52,.12)', '#1E7E34', 'Diary Compliance', compliancePct + '%', completed + ' of ' + expected + ' submitted'],
@@ -48,19 +72,19 @@
     ['stop', 'rgba(124,58,237,.12)', '#7C3AED', 'Screened Out', screenedOut, 'Recruitment exclusions'],
   ]; %>
   <% kpis.forEach(function ([ic, iconBg, iconColor, label, value, foot]) { %>
-    <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card px-[15px] py-[13px]">
+    <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow px-4 py-[15px]">
       <div class="flex items-center gap-2">
-        <div class="w-[26px] h-[26px] rounded-lg flex items-center justify-center shrink-0" style="background:<%= iconBg %>;color:<%= iconColor %>"><%- icon(ic, 'w-[14px] h-[14px]') %></div>
+        <div class="w-7 h-7 rounded-[9px] flex items-center justify-center shrink-0" style="background:<%= iconBg %>;color:<%= iconColor %>"><%- icon(ic, 'w-[14px] h-[14px]') %></div>
         <div class="text-[9.5px] font-bold text-slate-400 uppercase tracking-wide"><%= label %></div>
       </div>
-      <div class="font-mono text-[25px] font-bold text-slate-900 mt-[7px]"><%= value %></div>
+      <div class="font-mono text-[26px] font-bold text-slate-900 mt-2 tracking-tight"><%= value %></div>
       <div class="text-[10.5px] text-slate-400 mt-0.5"><%= foot %></div>
     </div>
   <% }) %>
 </div>
 
 <div class="grid gap-3.5 shrink-0" style="grid-template-columns:1.15fr 1fr 1fr">
-  <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card p-4">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-[18px]">
     <div class="text-[13px] font-bold text-slate-900 mb-2.5">Fieldwork Health</div>
     <div class="flex gap-3.5 items-stretch">
       <div class="flex-1 flex flex-col gap-2">
@@ -85,7 +109,7 @@
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card p-4">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-[18px]">
     <div class="text-[13px] font-bold text-slate-900 mb-2.5">Needs Attention</div>
     <div class="flex flex-col gap-[9px]">
       <div class="flex items-center gap-2">
@@ -106,7 +130,7 @@
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card p-4">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-[18px]">
     <div class="text-[13px] font-bold text-slate-900 mb-2.5">Recruitment Funnel</div>
     <div class="flex flex-col gap-1.5">
       <% stages.forEach(function ([k, l]) { const v = funnelMap[k] || 0; const pct = Math.round((v / funnelMax) * 100); %>
@@ -121,7 +145,7 @@
 </div>
 
 <div class="grid gap-3.5 flex-1 min-h-0" style="grid-template-columns:0.85fr 1.1fr 1.2fr">
-  <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card p-4">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-[18px]">
     <div class="text-[13px] font-bold text-slate-900 mb-2.5">Respondent Risk</div>
     <div class="flex items-center gap-3.5">
       <div class="relative w-24 h-24 rounded-full shrink-0 flex items-center justify-center" style="background:conic-gradient(<%= donutStops %>)">
@@ -139,7 +163,7 @@
     <a href="/admin/qc?study=<%= study.id %>" class="text-[11.5px] font-bold text-signal inline-block mt-2.5">Open QC Worklist &rarr;</a>
   </div>
 
-  <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card p-4 overflow-hidden flex flex-col">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-[18px] overflow-hidden flex flex-col">
     <div class="text-[13px] font-bold text-slate-900 mb-2.5">Interviewer Performance</div>
     <div class="overflow-auto">
       <table class="w-full border-collapse">
@@ -164,7 +188,7 @@
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card p-4 overflow-hidden flex flex-col">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-[18px] overflow-hidden flex flex-col">
     <div class="flex justify-between items-center mb-2.5">
       <div class="text-[13px] font-bold text-slate-900">Latest QC Flags</div>
       <a href="/admin/qc?study=<%= study.id %>" class="text-[11px] font-bold text-signal">View all</a>
@@ -195,7 +219,7 @@
   </div>
 </div>
 
-<div class="bg-white rounded-2xl border border-[#EDF0F4] shadow-card px-4 py-3 flex items-center justify-between gap-4 shrink-0 flex-wrap">
+<div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card px-5 py-3.5 flex items-center justify-between gap-4 shrink-0 flex-wrap">
   <div class="flex items-center gap-[22px] flex-wrap">
     <div class="text-[11.5px] font-bold text-slate-900">Fieldwork Snapshot</div>
     <% const snap = [
@@ -220,3 +244,5 @@
 </div>
 
 <%- include('../partials/footer') %>
+
+<% } %>

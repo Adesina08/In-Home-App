@@ -1,4 +1,4 @@
-<%- include('../partials/header', { title: study.name + ' — Inicio Diary', user: null, fieldMode: true, defaultTheme: 'light', showThemeToggle: true }) %>
+<%- include('../partials/onboarding_header', { phase: 1, title: study.name + ' — Inicio Diary', user: null, fieldMode: true, defaultTheme: 'light', showThemeToggle: true }) %>
 
 <%#
   The study brief. The single most important screen in recruitment and
@@ -6,11 +6,6 @@
   here, and duration and cadence were not shown anywhere before consent.
 %>
 <div class="max-w-lg mx-auto px-1 pb-10">
-  <div class="text-center pt-4 pb-7">
-    <img src="/public/icons/logo-header.png" alt="" class="h-12 w-auto mx-auto mb-3" />
-    <div class="font-display text-2xl font-bold tracking-tight text-slate-900 dark:text-night-ink">Inicio Diary</div>
-    <div class="text-sm text-signal mt-0.5">Research. Insights. Impact.</div>
-  </div>
 
   <div class="text-center mb-7">
     <span class="w-16 h-16 rounded-full bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center mx-auto mb-4">
@@ -68,4 +63,4 @@
   </p>
 </div>
 
-<%- include('../partials/footer') %>
+<%- include('../partials/onboarding_footer') %>

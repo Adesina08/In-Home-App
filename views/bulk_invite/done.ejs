@@ -1,4 +1,5 @@
-<%- include('../partials/header', { title: 'Invitations sent — ' + study.name, user }) %>
+<%- include(basePath.startsWith('/interviewer/') ? '../partials/interviewer_header' : '../partials/header', { title: 'Invitations sent — ' + study.name, user }) %>
+<% if (basePath.startsWith('/interviewer/')) { %><div class="field-bulk"><% } %>
 
 <div class="max-w-xl mx-auto">
   <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-8">
@@ -44,4 +45,5 @@
   </div>
 </div>
 
-<%- include('../partials/footer') %>
+<% if (basePath.startsWith('/interviewer/')) { %></div><% } %>
+<%- include(basePath.startsWith('/interviewer/') ? '../partials/interviewer_footer' : '../partials/footer') %>

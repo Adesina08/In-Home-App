@@ -35,16 +35,9 @@ router.get("/", async (req, res) => {
   const counts = {
     registered: mine.filter((r) => isToday(r.created_at)).length,
     activated: mine.filter((r) => ["active", "activated"].includes(r.activation_status)).length,
-    pending: mine.filter((r) => !["active", "activated", "disqualified"].includes(r.activation_status)).length,
+    pending: mine.filter((r) => ["invited", "screened", "registered"].includes(r.activation_status)).length,
   };
-  const steps = [
-    { n: 1, title: "Prescreen", detail: "Confirm eligibility and study fit" },
-    { n: 2, title: "Consent", detail: "Explain the study and capture consent" },
-    { n: 3, title: "Register", detail: "Capture respondent information" },
-    { n: 4, title: "Verify", detail: "Verify identity and contact details" },
-    { n: 5, title: "Activate", detail: "Hand over and open the diary" },
-  ];
-  res.render("interviewer/dashboard", { studies, mine, counts, steps });
+  res.render("interviewer/dashboard", { studies, mine, counts });
 });
 
 router.get("/register", async (req, res) => {
@@ -64,26 +57,25 @@ router.post("/register", async (req, res) => {
   // on the way into the query and the row; MongoDB stores and matches it as a
   // string, so the id is made a number once, here.
   const studyId = Number(study_id);
-  if (!eligible) {
-    return res.render("interviewer/register", {
-      studies: await store.find("studies", {}, { sort: { id: 1 } }),
-      study: await store.findOne("studies", { id: studyId }),
-      consent: null,
-      error: "Respondent screened as not eligible. Recruitment stopped (screen stage).",
-    });
-  }
+  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
+  const study = studies.find(s => s.id === studyId);
+  const consent = study ? await store.findOne("consent_versions", { study_id: study.id, status: "approved" }, { sort: { version: -1 } }) : null;
+  const fail = message => res.status(400).render("interviewer/register", { studies, study, consent, values: req.body, error: message });
+  if (!study) return fail("Choose an available study before registering a respondent.");
+  if (!eligible) return fail("Eligibility was not confirmed. Check the study criteria before continuing.");
+  if (!consent) return fail("This study needs approved consent wording before registration can begin.");
+  if (!String(name || '').trim() || !String(contact || '').trim()) return fail("Enter the respondent’s full name and contact details.");
   const token = uuidv4();
   const code = await nextRespondentCode(studyId);
   // Face-to-face registration is the route most likely to receive a number
   // typed as "08012345678" -- an interviewer entering it the way the
   // respondent said it aloud. Canonicalised here against the study's market so
   // it is stored in the one shape Twilio accepts and sign-in searches for.
-  const study = await store.findOne("studies", { id: studyId });
   const canonicalisedContact = canonicalContact(contact, { market: study && study.market });
   const { id } = await store.insert("respondents", {
     study_id: studyId,
     respondent_code: code,
-    name,
+    name: String(name).trim(),
     contact: canonicalisedContact,
     recruitment_mode: "f2f",
     preferred_channel: preferred_channel || "app",
@@ -152,10 +144,14 @@ async function loadOwnRespondent(req, res) {
   respondent.study_name = study.name;
   // An interviewer only ever sees the people they recruited. Admins reach the
   // same screen for support, since they can already see every respondent.
-  if (req.session.user.role !== "admin" && respondent.interviewer_id !== req.session.user.id) {
+  if (!["admin", "superadmin"].includes(req.session.user.role) && respondent.interviewer_id !== req.session.user.id) {
     res.status(404).render("error", { message: "Respondent not found.", user: req.session.user });
     return null;
   }
+  respondent.recruitmentHolds = await store.find("qc_flags", {
+    respondent_id: respondent.id, record_id: null, status: "open",
+    flag_type: { $in: ["duplicate_identity", "consent_missing"] },
+  });
   return respondent;
 }
 

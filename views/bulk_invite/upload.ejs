@@ -1,4 +1,5 @@
-<%- include('../partials/header', { title: 'Bulk invite — ' + study.name, user }) %>
+<%- include(basePath.startsWith('/interviewer/') ? '../partials/interviewer_header' : '../partials/header', { title: 'Bulk invite — ' + study.name, user }) %>
+<% if (basePath.startsWith('/interviewer/')) { %><div class="field-bulk"><% } %>
 
 <div class="mb-5">
   <a href="<%= basePath %>/respondents" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
@@ -74,4 +75,5 @@
   </form>
 </div>
 
-<%- include('../partials/footer') %>
+<% if (basePath.startsWith('/interviewer/')) { %></div><% } %>
+<%- include(basePath.startsWith('/interviewer/') ? '../partials/interviewer_footer' : '../partials/footer') %>

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -27,6 +28,7 @@ import { HomeScreen, DisplayRecord } from "./src/screens/Home";
 import { EntriesScreen } from "./src/screens/Entries";
 import { ActivityScreen } from "./src/screens/Activity";
 import { ProfileScreen } from "./src/screens/Profile";
+import { LoginDoodleField } from "./src/components/Doodles";
 
 type ThemeMode = "dark" | "light";
 type Screen =
@@ -38,7 +40,10 @@ type Screen =
   | "entries"
   | "activity"
   | "profile"
-  | "diary";
+  | "diaryMode"
+  | "diary"
+  | "diaryVideo"
+  | "diaryVideoDone";
 type AnswerMap = Record<string, string | string[]>;
 type MediaAsset = { uri: string; fileName?: string | null; mimeType?: string | null };
 type MediaMap = Record<string, MediaAsset>;
@@ -223,7 +228,11 @@ function Icon({ glyph, t, tone = "blue", size = 18 }: { glyph: string; t: Theme;
 }
 
 function BookMark({ t, large = false }: { t: Theme; large?: boolean }) {
-  return <View style={[styles.bookMark, { backgroundColor: t.blueSoft }, large && { width: 64, height: 50, borderRadius: 14 }]}><Text style={[styles.bookGlyph, { color: "#5D93FF" }, large && { fontSize: 30 }]}>▭</Text></View>;
+  return (
+    <View style={[styles.bookMark, { backgroundColor: t.blueSoft }, large && { width: 72, height: 72, borderRadius: 20 }]}>
+      <Image source={require("./assets/logo.png")} style={large ? { width: 46, height: 46 } : { width: 20, height: 20 }} resizeMode="contain" />
+    </View>
+  );
 }
 
 function PrimaryButton({ title, onPress, disabled = false, t, inverse = false, arrow = true }: any) {
@@ -283,6 +292,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [recordingQuestionId, setRecordingQuestionId] = useState<number | null>(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [problems, setProblems] = useState<any[]>([]);
+  const [videoScript, setVideoScript] = useState<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number } | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
   const draftKey = selected ? `inicio.draft.${selected.respondent.id}` : "";
@@ -385,6 +395,10 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     finally { setBusy(false); }
   }
 
+  function openDiaryModePicker() {
+    setScreen("diaryMode");
+  }
+
   async function startDiary() {
     if (!selected) return;
     setBusy(true); setProblems([]);
@@ -397,6 +411,52 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     } catch (e: any) {
       if (e.profileRequired) await loadProfileGate();
       else Alert.alert("Diary unavailable", e.message);
+    } finally { setBusy(false); }
+  }
+
+  async function startVideoDiary() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const script = await api.videoScript(selected.respondent.id);
+      setVideoScript(script);
+      setScreen("diaryVideo");
+    } catch (e: any) {
+      if (e.profileRequired) await loadProfileGate();
+      else Alert.alert("Video mode unavailable", e.message);
+    } finally { setBusy(false); }
+  }
+
+  async function recordAndSubmitVideo() {
+    if (!selected) return;
+    const respondentId = selected.respondent.id;
+    let asset;
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["videos"],
+        cameraType: ImagePicker.CameraType.front,
+        videoMaxDuration: 90,
+        quality: .82,
+      } as any);
+      if (result.canceled || !result.assets?.[0]) return;
+      asset = result.assets[0];
+    } catch (e: any) {
+      Alert.alert("Camera unavailable", e.message || "Could not open the camera.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const ext = asset.fileName?.split(".").pop() || "mp4";
+      const form = new FormData();
+      form.append("video", { uri: asset.uri, name: asset.fileName || `diary-video.${ext}`, type: asset.mimeType || "video/mp4" } as any);
+      await api.analyzeVideo(respondentId, form);
+      setHome(await api.home(respondentId));
+      setVideoScript(null);
+      setScreen("home");
+      Alert.alert("Thanks — that's logged", "Your video has been saved as this occasion's record. Nothing else is needed from you — the team reviews the video and fills in the details.");
+    } catch (e: any) {
+      if (e.profileRequired) await loadProfileGate();
+      else Alert.alert("Could not submit video", e.message || "Please try again.");
     } finally { setBusy(false); }
   }
 
@@ -484,7 +544,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   if (screen === "loading") return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator size="large" color={t.blue} /></View></AppFrame>;
 
-  if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><Text style={[styles.label, { color: t.muted }]}>Password</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
+  if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><Text style={[styles.label, { color: t.muted }]}>Password</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
 
   if (screen === "profileGate") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"><View style={styles.simpleTop}><Brand t={t} /><Pressable onPress={logout}><Text style={{ color: t.muted, fontWeight: "700" }}>Sign out</Text></Pressable></View><Text style={[styles.screenTitle, { color: t.text }]}>Your details</Text><Text style={[styles.screenCopy, { color: t.muted }]}>Complete your one-time Inicio Diary profile.</Text><Card t={t} style={{ gap: 10 }}><Text style={[styles.label, { color: t.muted }]}>Name</Text><TextInput value={profileForm.name} onChangeText={(v) => setProfileForm((p) => ({ ...p, name: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><FieldError message={profileErrors.name} t={t} /><Text style={[styles.label, { color: t.muted }]}>Where do you currently live?</Text><TextInput value={profileForm.location} onChangeText={(v) => setProfileForm((p) => ({ ...p, location: v }))} placeholder="City / state / area" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><FieldError message={profileErrors.location} t={t} /><Text style={[styles.label, { color: t.muted }]}>Age</Text><TextInput value={profileForm.age} onChangeText={(v) => setProfileForm((p) => ({ ...p, age: v }))} keyboardType="number-pad" style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Gender</Text><ChoiceList options={GENDERS} value={profileForm.gender} onChange={(v) => setProfileForm((p) => ({ ...p, gender: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>Education</Text><ChoiceList options={EDUCATION} value={profileForm.education_level} onChange={(v) => setProfileForm((p) => ({ ...p, education_level: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>Occupation</Text><TextInput value={profileForm.occupation} onChangeText={(v) => setProfileForm((p) => ({ ...p, occupation: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Religion</Text><TextInput value={profileForm.religion} onChangeText={(v) => setProfileForm((p) => ({ ...p, religion: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Marital status</Text><ChoiceList options={MARITAL} value={profileForm.marital_status} onChange={(v) => setProfileForm((p) => ({ ...p, marital_status: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>May Inicio contact you about future research?</Text><ChoiceList options={[["yes", "Yes"], ["no", "No"]]} value={profileForm.recontact_consent} onChange={(v) => setProfileForm((p) => ({ ...p, recontact_consent: v }))} t={t} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Saving…" : "Save profile & continue"} onPress={saveProfile} disabled={busy} t={t} /></Card></ScrollView></KeyboardAvoidingView></AppFrame>;
 
@@ -518,7 +578,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
           totalCount={records.length}
           recentRecords={displayRecords.slice(0, 2)}
           occasionRecords={displayRecords.slice(0, 4)}
-          onStartDiary={startDiary}
+          onStartDiary={openDiaryModePicker}
           onOpenStudies={() => setScreen("studies")}
           onViewAllEntries={() => setScreen("entries")}
           onNavigate={(key) => setScreen(key as Screen)}
@@ -566,6 +626,56 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     );
   }
 
+  if (screen === "diaryMode" && selected)
+    return (
+      <AppFrame t={t} mode={mode}>
+        <ScrollView contentContainerStyle={styles.page}>
+          <Pressable onPress={() => setScreen("home")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable>
+          <Text style={[styles.screenTitle, { color: t.text }]}>How would you like to log this consumption?</Text>
+          <Text style={[styles.screenCopy, { color: t.muted }]}>Choose Standard to answer the diary questions directly, or Video to record first — you're done as soon as you submit.</Text>
+          <Pressable disabled={busy} onPress={startDiary}>
+            <Card t={t} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <Icon glyph="▤" t={t} tone="blue" />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.studyName, { color: t.text, fontSize: 15 }]}>Standard</Text>
+                <Text style={[styles.smallMuted, { color: t.muted, marginTop: 3 }]}>Answer the configured diary questions directly. Audio questions are recorded and sent for transcription.</Text>
+              </View>
+              <Text style={{ color: t.subtle, fontSize: 20 }}>›</Text>
+            </Card>
+          </Pressable>
+          <Pressable disabled={busy} onPress={startVideoDiary}>
+            <Card t={t} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <Icon glyph="◧" t={t} tone="purple" />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.studyName, { color: t.text, fontSize: 15 }]}>Video <Text style={{ color: t.purple, fontSize: 11, fontWeight: "800" }}>AI-assisted</Text></Text>
+                <Text style={[styles.smallMuted, { color: t.muted, marginTop: 3 }]}>Record using the front camera first. We'll try to pre-fill what we can from your video.</Text>
+              </View>
+              <Text style={{ color: t.subtle, fontSize: 20 }}>›</Text>
+            </Card>
+          </Pressable>
+        </ScrollView>
+      </AppFrame>
+    );
+
+  if (screen === "diaryVideo" && selected && videoScript)
+    return (
+      <AppFrame t={t} mode={mode}>
+        <ScrollView contentContainerStyle={styles.page}>
+          <Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Change method</Text></Pressable>
+          <Text style={[styles.screenTitle, { color: t.text }]}>Record with your front camera</Text>
+          <Text style={[styles.screenCopy, { color: t.muted }]}>Tell us about this consumption occasion. Hold the product or packaging where it can be seen. Once you submit, you're done — there's no form to fill in afterwards. The team reviews your video and records the details.</Text>
+          <Card t={t} style={{ gap: 6 }}>
+            <Text style={[styles.sectionTitle, { color: t.text }]}>What you'll be asked</Text>
+            {videoScript.prompts.map((p: any, i: number) => (
+              <Text key={p.id} style={[styles.smallMuted, { color: t.muted }]}>{i + 1}. {p.text}</Text>
+            ))}
+            {videoScript.truncated ? <Text style={{ color: t.amber, fontSize: 11, marginTop: 6 }}>This study has more questions than fit in one recording. Cover what you can — the team fills in the rest from your video.</Text> : null}
+          </Card>
+          <PrimaryButton title={busy ? "Submitting…" : "Record & submit video"} onPress={recordAndSubmitVideo} disabled={busy} t={t} arrow={false} />
+        </ScrollView>
+      </AppFrame>
+    );
+
   if (screen === "diary" && selected && questionnaire) return <AppFrame t={DARK} mode="dark"><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 90 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("home")}><Text style={{ color: DARK.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: DARK.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: DARK.text }]}>When did this occasion happen?</Text><View style={[styles.timeCard, { borderColor: DARK.border, backgroundColor: DARK.card }]}><Text style={{ color: "#5D93FF" }}>□</Text><Text style={{ color: DARK.text, fontWeight: "700" }}>Today, {new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</Text></View><Text style={[styles.smallMuted, { color: DARK.muted }]}>You can log something that happened up to 4h ago.</Text><Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: DARK.text }]}>{q.text}{q.required ? <Text style={{ color: DARK.red }}> *</Text> : null}</Text>{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={DARK.subtle} style={[styles.input, styles.textArea, { color: DARK.text, borderColor: DARK.border, backgroundColor: DARK.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: DARK.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: DARK.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: DARK.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={styles.answerChips}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); return <Pressable key={opt} onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? DARK.blueSoft : DARK.card, borderColor: on ? DARK.blue : DARK.border }]}><Text style={{ color: on ? "#9EBBFF" : DARK.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: DARK.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={DARK} /><View style={{ flex: 1 }}><Text style={{ color: DARK.text, fontWeight: "800" }}>{q.type === "video" ? "Record video" : "Take photo"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Opens your camera — no gallery photos.</Text></View><Text style={{ color: DARK.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPressIn={() => startRecording(q.id)} onPressOut={() => stopRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: recordingQuestionId === q.id ? DARK.red : DARK.border }]}><Icon glyph="♩" t={DARK} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? DARK.red : DARK.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… release to stop" : "Press and hold to record"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <Text style={{ color: DARK.green, marginTop: 6, fontSize: 11 }}>✓ Evidence captured</Text> : null}{problem ? <Text style={{ color: DARK.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: DARK.nav, borderTopColor: DARK.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: DARK.border }]}><Text style={{ color: DARK.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: DARK.blue }, busy && { opacity: .5 }]}><Text style={{ color: DARK.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
@@ -574,13 +684,13 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingTop: padTop },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  page: { paddingHorizontal: 24, paddingTop: 18, paddingBottom: 34, gap: 12 },
+  page: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 34, gap: 12 },
   card: { borderWidth: 1, borderRadius: 18, padding: 14 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   brandName: { fontSize: 15, fontWeight: "900", letterSpacing: .2 },
   bookMark: { width: 36, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   bookGlyph: { fontSize: 22, fontWeight: "900", marginTop: -2 },
-  loginWrap: { minHeight: "100%", paddingHorizontal: 28, paddingTop: 70, paddingBottom: 24, justifyContent: "space-between" },
+  loginWrap: { minHeight: "100%", paddingHorizontal: 28, paddingTop: 92, paddingBottom: 24, justifyContent: "space-between" },
   loginTop: { alignItems: "center" },
   loginTitle: { fontSize: 26, fontWeight: "900", marginTop: 12, letterSpacing: .2 },
   loginSubtitle: { fontSize: 13, marginTop: 4 },

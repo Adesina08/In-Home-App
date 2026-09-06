@@ -3,6 +3,7 @@ import { View, Text, Pressable } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon } from "../icons";
 import { TabBar } from "../components/TabBar";
+import { ScreenDoodleField } from "../components/Doodles";
 
 export type DisplayRecord = {
   id: number | string;
@@ -106,8 +107,9 @@ export function HomeScreen({
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[18px] shrink-0" />
+      <View className="h-[40px] shrink-0" />
       <View className="flex-1 gap-[9px] px-[18px] pb-4">
+        <ScreenDoodleField color={blueIcon} />
         {/* Header */}
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-[6px]">

@@ -1,31 +1,43 @@
-<%- include('../partials/header', { title: 'Superadmin — Inicio Diary', user }) %>
-
-<%# ---- Platform totals (approved comps) ---- %>
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <% var cards = [
-      ['Total studies', platform.studies, 'clipboard'],
-      ['Total respondents', platform.respondents, 'users'],
-      ['Submitted entries', platform.records, 'chart'],
-      ['Open QC flags', platform.openFlags, 'warning']
-     ]; %>
-  <% cards.forEach(function (c) { %>
-    <div class="bg-white dark:bg-night-raised rounded-2xl border border-slate-200/70 dark:border-night-line shadow-card p-5">
-      <span class="w-11 h-11 rounded-xl bg-signal-soft dark:bg-signal/15 text-signal flex items-center justify-center mb-3"><%- icon(c[2], 'w-5 h-5') %></span>
-      <div class="font-mono text-3xl font-semibold text-slate-900 dark:text-night-ink leading-none"><%= c[1] %></div>
-      <div class="text-xs text-slate-500 dark:text-night-muted mt-1.5"><%= c[0] %></div>
-    </div>
+<%- include('../partials/header', { title: 'Overview — Inicio Console', user, currentPath: '/admin/superadmin' }) %>
+<%- include('../partials/page_header', {
+  eyebrow: 'Platform overview', title: 'Your research, in focus.',
+  subtitle: 'A clear view of every study and the work that needs your attention.',
+  actions: '<a href="/admin/studies#create-study" class="console-button is-primary">' + icon('plus', 'w-4 h-4') + 'Create study</a>'
+}) %>
+<%
+const liveStudies = studies.filter(s => s.status === 'live');
+const attentionStudies = studies.filter(s => s.open_flag_count > 0).sort((a,b) => b.open_flag_count - a.open_flag_count);
+%>
+<section class="console-hero" aria-label="Workspace summary">
+  <div><div class="console-hero-label">INICIO · IN-HOME CONSUMPTION</div><h2>From everyday moments to meaningful insight.</h2><p><%= liveStudies.length %> live <%= liveStudies.length === 1 ? 'study' : 'studies' %> across your workspace. Follow participation, review data quality, and keep your research moving.</p></div>
+  <a href="/admin/studies" class="console-button">Explore studies <%- icon('arrow-right', 'w-4 h-4') %></a>
+</section>
+<div class="console-metrics">
+  <% [['Studies',platform.studies,'clipboard',liveStudies.length + ' currently live'],['Respondents',platform.respondents,'users','Enrolments across all studies'],['Submitted entries',platform.records,'chart','All time · includes practice entries'],['Open QC flags',platform.openFlags,'shield-check','Awaiting review or resolution']].forEach(([label,value,glyph,note]) => { %>
+    <div class="console-metric"><div class="console-metric-label"><%= label %><span class="console-metric-icon"><%- icon(glyph,'w-4 h-4') %></span></div><div class="console-metric-value"><%= Number(value).toLocaleString() %></div><div class="console-metric-foot"><%= note %></div></div>
   <% }) %>
 </div>
-
-<div class="flex flex-wrap items-start justify-between gap-4 mb-6">
-  <div>
-    <div class="text-xs font-semibold text-red-600 uppercase tracking-wide mb-0.5">Superadmin</div>
-    <h1 class="text-2xl font-bold text-slate-900">Platform Control Center</h1>
-    <p class="text-slate-500 text-sm mt-1">Full staff access plus permanent study and respondent deletion.</p>
+<div class="console-columns">
+  <section class="console-panel" data-table-tools="portfolio" data-page-size="8">
+    <div class="console-panel-heading"><div><h2>Study portfolio</h2><p>All-time activity across your studies, including practice data.</p></div><a href="/admin/studies">View all <span aria-hidden="true">↗</span></a></div>
+    <div class="console-toolbar"><label class="console-search"><%- icon('search','w-4 h-4') %><input data-table-search type="search" placeholder="Find a study…" aria-label="Search study portfolio" /></label><span class="console-status"><%= studies.length %> studies</span></div>
+    <div class="overflow-x-auto"><table><thead><tr><th>Study</th><th>Status</th><th>Respondents</th><th>Submitted</th><th>Open flags</th></tr></thead><tbody>
+      <% studies.forEach(s => { %><tr data-table-row><td><a class="console-study-cell" href="/admin?study=<%= s.id %>"><span class="console-study-symbol"><%- icon('clipboard','w-[18px] h-[18px]') %></span><span><strong><%= s.name %></strong><small><%= s.market || 'Market not set' %> · <%= formatCategories(s.category) || 'No category' %></small></span></a></td><td><span class="console-status <%= s.status === 'live' ? 'is-live' : '' %>"><%= s.status %></span></td><td><%= s.respondent_count.toLocaleString() %></td><td><%= s.submitted_count.toLocaleString() %></td><td><% if(s.open_flag_count) { %><a class="console-status is-alert" href="/admin/qc?study=<%= s.id %>"><%= s.open_flag_count %> to review</a><% } else { %><span class="text-slate-400">0</span><% } %></td></tr><% }) %>
+    </tbody></table></div>
+    <div class="console-empty" data-table-empty <%- studies.length ? 'hidden' : '' %>><%- icon('clipboard','w-7 h-7') %><strong>No studies to show</strong><p>Create your first study or adjust your search.</p><a href="/admin/studies#create-study" class="console-button">Create study</a></div>
+    <div class="console-table-footer"><span data-table-count><%= studies.length %> studies</span><div class="console-actions"><button type="button" data-table-prev aria-label="Previous page">←</button><span data-table-page>1</span><button type="button" data-table-next aria-label="Next page">→</button></div></div>
+  </section>
+  <div class="console-stack">
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Needs attention</h2><p>Open quality flags by study</p></div><%- icon('warning','w-4 h-4 text-amber-600') %></div>
+      <% attentionStudies.slice(0,5).forEach(s => { %><a class="console-attention-item" href="/admin/qc?study=<%= s.id %>"><%- icon('shield-check','w-4 h-4') %><div><strong><%= s.open_flag_count %> open <%= s.open_flag_count === 1 ? 'flag' : 'flags' %></strong><p><%= s.name %></p></div><span>→</span></a><% }) %>
+      <% if(!attentionStudies.length) { %><div class="console-empty"><%- icon('check-circle','w-7 h-7') %><strong>No open study flags</strong><p>Quality issues will appear here when they are recorded.</p></div><% } %>
+    </section>
+    <section class="console-panel"><div class="console-panel-heading"><h2>Workspace shortcuts</h2></div>
+      <% [['/admin/panel','Respondent Panel','Find people across studies','users'],['/admin/users','Users & Access','Manage your research team','user'],['/admin/system-settings','System Settings','Manage background checks','settings']].forEach(([href,label,note,glyph]) => { %><a href="<%= href %>" class="console-attention-item"><%- icon(glyph,'w-4 h-4') %><div><strong><%= label %></strong><p><%= note %></p></div><span>↗</span></a><% }) %>
+    </section>
   </div>
-  <a href="/admin" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium hover:bg-slate-50 transition">Back to Admin Dashboard</a>
 </div>
-
+<details id="data-management" class="console-panel console-data-management" <%- deleted ? 'open' : '' %>><summary>Advanced data management · studies & respondent deletion</summary><div class="console-panel-body">
 <% if (deleted) { %>
   <div class="mb-5 flex items-start gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl p-3">
     <%- icon('check-circle', 'w-4 h-4 mt-0.5') %>
@@ -33,14 +45,14 @@
   </div>
 <% } %>
 
-<div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6 console-management-grid">
   <section class="xl:col-span-1 space-y-4">
-    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5">
+    <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5">
       <div class="font-semibold text-slate-800 mb-1">Studies</div>
       <p class="text-xs text-slate-500 mb-4">Select a study to manage its respondents.</p>
       <div class="space-y-2">
         <% studies.forEach(s => { %>
-          <a href="/admin/superadmin?study=<%= s.id %>" class="block rounded-xl border px-3.5 py-3 transition <%= selectedStudy && selectedStudy.id === s.id ? 'border-brand-400 bg-brand-50' : 'border-slate-200 hover:bg-slate-50' %>">
+          <a href="/admin/superadmin?study=<%= s.id %>#data-management" class="block rounded-xl border px-3.5 py-3 transition <%= selectedStudy && selectedStudy.id === s.id ? 'border-signal bg-signal-soft' : 'border-slate-200 hover:bg-slate-50' %>">
             <div class="font-semibold text-sm text-slate-800"><%= s.name %></div>
             <div class="text-xs text-slate-500 mt-1"><%= s.respondent_count %> respondents · <%= s.record_count %> diary records</div>
           </a>
@@ -66,7 +78,7 @@
         </form>
       </div>
 
-      <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+      <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-hidden">
         <div class="px-5 py-4 border-b border-slate-100">
           <div class="font-semibold text-slate-800">Respondents — <%= selectedStudy.name %></div>
           <p class="text-xs text-slate-500 mt-1"><%= respondents.length %> respondent enrolments in this study.</p>
@@ -85,7 +97,7 @@
               <% respondents.forEach(r => { %>
                 <tr>
                   <td class="px-5 py-3">
-                    <a href="/admin/studies/<%= selectedStudy.id %>/respondents/<%= r.id %>" class="font-semibold text-brand-700 hover:underline"><%= r.name || '(no name)' %></a>
+                    <a href="/admin/studies/<%= selectedStudy.id %>/respondents/<%= r.id %>" class="font-semibold text-signal hover:underline"><%= r.name || '(no name)' %></a>
                     <div class="font-mono text-[11px] text-slate-400 mt-0.5"><%= r.respondent_code %></div>
                   </td>
                   <td class="py-3 text-slate-600"><%= r.contact || '—' %></td>
@@ -106,9 +118,11 @@
         </div>
       </div>
     <% } else { %>
-      <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-8 text-center text-slate-400">Create a study before using Superadmin data controls.</div>
+      <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-8 text-center text-slate-400">Create a study before using Superadmin data controls.</div>
     <% } %>
   </section>
 </div>
 
+
+</div></details>
 <%- include('../partials/footer') %>

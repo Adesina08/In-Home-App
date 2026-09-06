@@ -1,21 +1,8 @@
-<%- include('../partials/header', { title: "How would you like to take part? — " + study.name, user: null, showThemeToggle: true }) %>
-
-<div class="max-w-lg mx-auto px-1">
-  <div class="flex items-center gap-2.5 pt-2 pb-7">
-    <img src="/public/icons/logo-header.png" alt="" class="h-9 w-auto" />
-    <span>
-      <span class="block font-display text-lg font-bold tracking-tight text-slate-900 dark:text-night-ink">Inicio Diary</span>
-      <span class="block text-xs text-signal">Research Operations Portal</span>
-    </span>
-  </div>
-  <%- include('../partials/onboarding_steps', { step: 3, total: 4 }) %>
-</div>
+<%- include('../partials/onboarding_header', { phase: 3, title: "How would you like to take part? — " + study.name, user: null, showThemeToggle: true }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="text-center mb-6">
-      <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-9 w-auto mx-auto mb-4" />
-      <div class="text-xs font-bold uppercase tracking-wide text-brand-600 mb-1">Step 2 of 3</div>
       <h1 class="text-xl font-bold text-slate-900">How would you like to take part?</h1>
       <p class="text-sm text-slate-500 mt-2"><%= study.name %></p>
     </div>
@@ -85,4 +72,4 @@
   </div>
 </div>
 
-<%- include('../partials/footer') %>
+<%- include('../partials/onboarding_footer') %>

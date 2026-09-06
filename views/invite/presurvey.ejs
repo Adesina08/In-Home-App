@@ -1,9 +1,8 @@
-<%- include('../partials/header', { title: 'Pre-survey — Inicio Diary', user: null, showThemeToggle: true }) %>
+<%- include('../partials/onboarding_header', { phase: 2, title: 'Pre-survey — Inicio Diary', user: null, showThemeToggle: true }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="mb-6">
-      <div class="text-xs font-bold uppercase tracking-wide text-brand-600">Step 1 of 3</div>
       <h1 class="text-2xl font-bold text-slate-900 mt-1">A few questions before we begin</h1>
       <p class="text-sm text-slate-500 mt-2 leading-relaxed">Please complete this short pre-survey for <strong><%= study.name %></strong>. Then you’ll choose how you want to take part.</p>
     </div>
@@ -66,4 +65,4 @@
   </div>
 </div>
 
-<%- include('../partials/footer') %>
+<%- include('../partials/onboarding_footer') %>

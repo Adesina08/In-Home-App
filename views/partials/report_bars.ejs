@@ -1,0 +1,4 @@
+<% if (items.length) { const maximum = Math.max(...items.map(i => i.n), 1); %>
+<div class="report-bars"><% items.slice(0, 8).forEach(item => { %><div><div class="report-bar-label"><span><%= item.label %></span><strong><%= item.n %></strong></div><div class="report-bar-track" aria-hidden="true"><span style="width:<%= item.n / maximum * 100 %>%"></span></div></div><% }) %></div>
+<% if(items.length > 8) { %><details><summary>All <%= items.length %> answers</summary><table class="report-table"><thead><tr><th>Answer</th><th>Count</th></tr></thead><tbody><% items.forEach(item => { %><tr><td><%= item.label %></td><td><%= item.n %></td></tr><% }) %></tbody></table></details><% } %>
+<% } else { %><div class="report-empty"><%= empty %></div><% } %>

@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, Image, KeyboardAvoidingView, Platform } from "react-native";
 import { Icon } from "../../icons";
-import { PrimaryButton } from "./shared";
+import { LoginDoodleField } from "../../components/Doodles";
+import { PrimaryButton, useInterviewerTheme } from "./shared";
 
 export function InterviewerLoginScreen({
   onLogin,
@@ -17,6 +18,7 @@ export function InterviewerLoginScreen({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const isDark = useInterviewerTheme();
 
   return (
     <KeyboardAvoidingView
@@ -24,6 +26,7 @@ export function InterviewerLoginScreen({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View className="flex-1 justify-center gap-5 px-6">
+        <LoginDoodleField variant="interviewer" color={isDark ? "#60A5FA" : "#1D4ED8"} />
         <View className="items-center gap-3">
           <View className="h-24 w-24 items-center justify-center rounded-[28px] bg-[#EEF2FA] dark:bg-[rgba(29,78,216,0.18)]">
             <Image source={require("../../../assets/logo.png")} className="h-16 w-16" resizeMode="contain" />

@@ -158,6 +158,7 @@ router.get("/", async (req, res) => {
     missed,
     screenedOut,
     openFlags,
+    totalOpenFlags: await store.count("qc_flags", { respondent_id: { $in: [...flagRespById.keys()] }, status: "open" }),
     interviewers,
     riskCounts,
     // Weekly fieldwork progress and the recent-activity feed the comps show.
@@ -215,10 +216,10 @@ async function recentActivity(study) {
   const items = [];
   records.slice(0, 6).forEach((r) => items.push({
     kind: r.status === "draft" ? "draft" : "entry",
-    text: `${byId.get(r.respondent_id) || "A respondent"} ${r.status === "draft" ? "saved a draft" : "submitted an entry"}`,
+    text: `${byId.get(r.respondent_id) || "A respondent"} ${r.status === "draft" ? "saved a draft" : r.status === "submitted" ? "submitted an entry" : "recorded a " + String(r.status).replace(/_/g, " ") + " entry"}`,
     at: r.entry_time || r.occurrence_time,
   }));
-  flags.filter((f) => byId.has(f.respondent_id) || f.record_id).slice(0, 4).forEach((f) => items.push({
+  flags.filter((f) => byId.has(f.respondent_id)).slice(0, 4).forEach((f) => items.push({
     kind: "flag",
     text: `QC flag ${f.status === "open" ? "raised" : f.status} — ${String(f.flag_type || "").replace(/_/g, " ")}`,
     at: f.created_time,
@@ -1007,16 +1008,19 @@ router.post("/users/:id/reset-password", async (req, res) => {
 router.get("/ai-summary", async (req, res) => {
   const { study, studies } = await getStudyOrFirst(req);
   if (!study) return res.redirect("/admin/studies");
+  const { loadStudyReport, validatePeriod } = require('../lib/studyReport');
+  const summaries = await aiSummary.listSummaries(study.id);
+  const requested = req.query.summary || req.query.generated;
+  const selected = requested ? summaries.find(s => String(s.id) === String(requested)) : summaries.find(s => (s.period_start || '') === (req.query.from || '') && (s.period_end || '') === (req.query.to || ''));
+  let period = { from: selected ? selected.period_start || '' : req.query.from || '', to: selected ? selected.period_end || '' : req.query.to || '' };
+  let error = req.query.error || (requested && !selected ? 'That summary is not available for this study.' : null);
+  try { validatePeriod(period); } catch (e) { error = e.message; period = { from: '', to: '' }; }
+  const report = await loadStudyReport(study.id, period);
   res.render("admin/ai_summary", {
-    study,
-    studies,
-    summaries: await aiSummary.listSummaries(study.id),
+    study, studies, summaries, selected: selected || null, report,
     aiConfigured: aiSummary.isAiModelConfigured(),
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
-    from: req.query.from || "",
-    to: req.query.to || "",
-    error: req.query.error || null,
-    generated: req.query.generated || null,
+    ...period, error,
   });
 });
 
@@ -1046,7 +1050,7 @@ router.post("/ai-summary/generate", async (req, res) => {
 router.get("/qc", async (req, res) => {
   const { study, studies } = await getStudyOrFirst(req);
   if (!study) return res.redirect("/admin/studies");
-  const statusFilter = req.query.status || "open";
+  const statusFilter = ["open", "reviewed", "resolved", "all"].includes(req.query.status) ? req.query.status : "open";
   // The qc_flags -> respondents JOIN in JS. The "(? = 'all' OR status = ?)"
   // switch becomes a filter key that is simply left off when 'all' is asked
   // for; respondent_code / respondent_name / rid keep their aliases.
@@ -1062,7 +1066,10 @@ router.get("/qc", async (req, res) => {
     const r = qcRespById.get(f.respondent_id);
     return { ...f, respondent_code: r.respondent_code, respondent_name: r.name, rid: r.id };
   });
-  res.render("admin/qc_worklist", { study, studies, flags, statusFilter });
+  const review = req.session.user.role === "superadmin"
+    ? await require("../lib/consoleQc").loadConsoleQc(study, flags, req.query.flag)
+    : {};
+  res.render("admin/qc_worklist", { study, studies, flags, statusFilter, ...review });
 });
 
 router.get("/qc/follow-up", async (req, res) => {

@@ -1,3 +1,4 @@
+<% const inicioConsole = typeof user !== 'undefined' && user && user.role === 'superadmin'; %>
 <!DOCTYPE html>
 <html lang="en" data-default-theme="<%= typeof defaultTheme !== 'undefined' ? defaultTheme : (typeof fieldMode !== 'undefined' && fieldMode ? 'dark' : 'light') %>">
 <head>
@@ -34,6 +35,7 @@
     // weeks is the most-seen bug in the product.
     (function () {
       try {
+        if (<%= inicioConsole ? 'true' : 'false' %>) return;
         var saved = localStorage.getItem('inicio-theme');
         var wantsDark = saved
           ? saved === 'dark'
@@ -74,8 +76,9 @@
     .badge-amber { background:#FFF4E5; color:#B8860B; }
     .badge-red { background:#FCE8E6; color:#C0392B; }
   </style>
+<% if (inicioConsole) { %><link rel="stylesheet" href="/public/console.css" /><script src="/public/js/console.js" defer></script><% } %>
 </head>
-<body data-field="<%= typeof fieldMode !== 'undefined' && fieldMode ? '1' : '' %>" class="bg-slate-50 min-h-screen text-slate-800 antialiased">
+<body data-field="<%= typeof fieldMode !== 'undefined' && fieldMode ? '1' : '' %>" class="bg-slate-50 min-h-screen text-slate-800 antialiased <%= inicioConsole ? 'inicio-console' : '' %>">
 <%# One floating, theme-neutral toggle for pages that don't have their own
     top-right control (onboarding, mobile sign-in) -- gated behind a flag
     rather than shown everywhere, so it never doubles up with the in-flow
@@ -94,47 +97,80 @@
   </style>
 <% } %>
 
-<% if (typeof user !== 'undefined' && user) {
-  const adminLinks = [ ['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield'], ['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','Message Log','chat'], ['/admin/users','Users','users'] ];
-  const navFor = {
-    superadmin: [ ['/admin/superadmin','Control Center','shield'], ['/admin/system-settings','System Settings','settings'], ...adminLinks ],
-    admin: adminLinks,
-    interviewer: [ ['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus'] ],
-    client: [ ['/client','Client Dashboard','chart-bar'] ],
+<% if (inicioConsole) { %>
+<%- include('console_shell') %>
+<% } else if (typeof user !== 'undefined' && user) {
+  // Grouped rather than one flat list: a handful of labelled sections read as
+  // a considered console, not a stack of links in build order.
+  const navGroups = {
+    superadmin: [
+      { label: 'Platform', items: [['/admin/superadmin','Control Center','shield'], ['/admin/system-settings','System Settings','settings']] },
+      { label: 'Fieldwork', items: [['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield-check']] },
+      { label: 'Insights', items: [['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','Message Log','chat']] },
+      { label: 'Access', items: [['/admin/users','Users','users']] },
+    ],
+    admin: [
+      { label: 'Fieldwork', items: [['/admin','Dashboard','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield-check']] },
+      { label: 'Insights', items: [['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','Message Log','chat']] },
+      { label: 'Access', items: [['/admin/users','Users','users']] },
+    ],
+    interviewer: [ { label: '', items: [['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus']] } ],
+    client: [ { label: '', items: [['/client','Client Dashboard','chart-bar']] } ],
   };
-  const links = navFor[user.role] || [];
+  const groups = navGroups[user.role] || [];
   const path = typeof currentPath !== 'undefined' ? currentPath : '';
   const initials = (user.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+  const roleAccent = { superadmin: '#7C3AED', admin: '#3B82F6', interviewer: '#0EA5E9', client: '#10B981' }[user.role] || '#3B82F6';
 %>
-<div class="flex min-h-screen">
-  <%# Fixed dark nav rail -- not tied to the light/dark toggle. Every W_* comp
-      keeps this sidebar the same near-black regardless of the rest of the
-      page, so it is a permanent brand surface, not a `dark:` variant. %>
-  <aside class="w-56 shrink-0 bg-[#0B1220] text-[#8291A6] flex flex-col p-3">
-    <div class="flex items-center gap-2.5 px-2 pb-5 pt-0.5">
-      <div class="w-[26px] h-[26px] rounded-lg bg-signal text-white flex items-center justify-center shrink-0"><%- icon('book', 'w-[15px] h-[15px]') %></div>
-      <div class="font-display font-bold text-[14.5px] text-white tracking-tight leading-none">Inicio Diary</div>
+<div class="flex min-h-screen bg-[#F6F7FA]">
+  <%# Fixed dark nav rail -- a permanent brand surface, not a `dark:` variant. %>
+  <aside class="w-60 shrink-0 flex flex-col p-3" style="background:linear-gradient(180deg,#0D1526 0%,#0A0F1D 100%)">
+    <div class="flex items-center gap-2.5 px-2 pb-5 pt-1.5">
+      <div class="w-8 h-8 rounded-[10px] bg-signal text-white flex items-center justify-center shrink-0 shadow-[0_2px_8px_rgba(29,78,216,0.5)]"><%- icon('book', 'w-[17px] h-[17px]') %></div>
+      <div class="font-display font-bold text-[15px] text-white tracking-tight leading-none">Inicio Diary</div>
     </div>
-    <nav class="flex flex-col gap-0.5">
-      <% links.forEach(([href, label, ic]) => {
-        const active = path === href || (href !== '/admin' && href !== '/interviewer' && href !== '/client' && path.startsWith(href));
-      %>
-        <a href="<%= href %>" class="flex items-center gap-2.5 px-3 py-2.5 rounded-[9px] text-[13px] font-semibold transition <%= active ? 'bg-white/[0.08] text-white shadow-[inset_3px_0_0_0_#3B82F6]' : 'text-[#8291A6] hover:bg-white/5 hover:text-white' %>">
-          <%- icon(ic, 'w-[18px] h-[18px]') %><%= label %>
-        </a>
+
+    <nav class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
+      <% groups.forEach(function (group) { %>
+        <div>
+          <% if (group.label) { %>
+            <div class="px-3 mb-1 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#4B5A75]"><%= group.label %></div>
+          <% } %>
+          <div class="flex flex-col gap-0.5">
+            <% group.items.forEach(function ([href, label, ic]) {
+              const active = path === href || (href !== '/admin' && href !== '/interviewer' && href !== '/client' && path.startsWith(href));
+            %>
+              <a href="<%= href %>" class="group flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition <%= active ? 'bg-white/[0.09] text-white' : 'text-[#8B98AF] hover:bg-white/[0.05] hover:text-white' %>" style="<%= active ? `box-shadow: inset 2.5px 0 0 0 ${roleAccent}` : '' %>">
+                <span class="<%= active ? '' : 'opacity-80 group-hover:opacity-100' %>" style="<%= active ? `color:${roleAccent}` : '' %>"><%- icon(ic, 'w-[17px] h-[17px]') %></span>
+                <%= label %>
+              </a>
+            <% }) %>
+          </div>
+        </div>
       <% }) %>
     </nav>
-    <a href="/help" class="mt-auto flex items-center gap-2.5 px-3 py-2.5 rounded-[9px] text-[13px] font-semibold transition <%= path === '/help' ? 'bg-white/[0.08] text-white shadow-[inset_3px_0_0_0_#3B82F6]' : 'text-[#8291A6] hover:bg-white/5 hover:text-white' %>">
-      <%- icon('help', 'w-[18px] h-[18px]') %>Help
-    </a>
+
+    <div class="pt-3 mt-2 border-t border-white/[0.06] flex flex-col gap-0.5">
+      <a href="/help" class="flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition <%= path === '/help' ? 'bg-white/[0.09] text-white' : 'text-[#8B98AF] hover:bg-white/[0.05] hover:text-white' %>">
+        <%- icon('help', 'w-[17px] h-[17px]') %>Help
+      </a>
+      <div class="flex items-center gap-2.5 px-3 py-2 mt-1">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-bold text-white shrink-0" style="background:<%= roleAccent %>"><%= initials %></div>
+        <div class="min-w-0 leading-tight">
+          <div class="text-[12px] font-semibold text-white truncate"><%= user.name %></div>
+          <div class="text-[10px] text-[#7A87A0] uppercase tracking-wide"><%= user.role %></div>
+        </div>
+      </div>
+    </div>
   </aside>
 
   <div class="flex-1 min-w-0 flex flex-col">
-    <div class="h-[58px] shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 gap-4">
-      <div class="min-w-0">
+    <div class="h-[60px] shrink-0 bg-white/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-6 gap-4 sticky top-0 z-10">
+      <div class="min-w-0 flex items-center gap-3">
         <% if (typeof studyPicker !== 'undefined' && studyPicker) { %>
-          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-[10px] pl-3 pr-2 py-[7px] text-[13px] font-semibold text-slate-700 relative">
-            <select onchange="window.location='<%= studyPicker.action %>'+this.value" class="appearance-none bg-transparent pr-5 outline-none cursor-pointer max-w-[280px] truncate">
+          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-[10px] pl-3 pr-2 py-[7px] text-[13px] font-semibold text-slate-700 relative hover:border-slate-300 transition">
+            <span class="text-slate-400"><%- icon('building', 'w-3.5 h-3.5') %></span>
+            <select onchange="window.location='<%= studyPicker.action %>'+this.value" class="appearance-none bg-transparent pr-5 outline-none cursor-pointer max-w-[260px] truncate">
               <% studyPicker.studies.forEach(function (s) { %>
                 <option value="<%= s.id %>" <%= s.id === studyPicker.current ? 'selected' : '' %>><%= s.name %></option>
               <% }) %>
@@ -144,17 +180,12 @@
         <% } %>
       </div>
       <div class="flex items-center gap-3.5 shrink-0">
-        <div class="w-[30px] h-[30px] rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-[11.5px] font-bold shrink-0"><%= initials %></div>
-        <div class="leading-tight hidden sm:block">
-          <div class="text-[12.5px] font-bold text-slate-900"><%= user.name %></div>
-          <span class="inline-block bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide px-2 py-[1px] rounded-full mt-0.5"><%= user.role %></span>
-        </div>
-        <a href="/logout" title="Log out" class="w-8 h-8 rounded-[9px] border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 shrink-0">
+        <a href="/logout" title="Log out" class="w-8 h-8 rounded-[9px] border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition shrink-0">
           <%- icon('logout', 'w-4 h-4') %>
         </a>
       </div>
     </div>
-    <main class="flex-1 min-h-0 overflow-y-auto px-7 py-[22px] flex flex-col gap-3.5">
+    <main class="flex-1 min-h-0 overflow-y-auto px-7 py-6 flex flex-col gap-4">
 <% } else { %>
 <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
 <% } %>

@@ -1,3 +1,16 @@
+<% if (typeof currentPath !== 'undefined' && /^\/(join|invite)(\/|$)/.test(currentPath)) { %>
+<%- include('partials/onboarding_header', { title: 'Study unavailable — Inicio Diary', phase: 0, study: null }) %>
+<div><h1>This link is unavailable</h1><p style="margin-top:16px;color:#526680"><%= message %></p><p style="margin-top:16px;color:#526680">Please check the invitation with the study team.</p></div>
+<%- include('partials/onboarding_footer') %>
+<% } else if (typeof currentPath !== 'undefined' && /^\/client(\/|$)/.test(currentPath) && user) { %>
+<%- include('partials/client_header', { study: null, query: '', insights: false }) %>
+<section class="report-panel"><div class="report-kicker">Client portal</div><h1>Report unavailable</h1><p class="report-lead"><%= message %></p><a class="report-button secondary" style="margin-top:24px" href="/client">Return to study overview</a></section>
+</main></body></html>
+<% } else if (typeof currentPath !== 'undefined' && /^\/interviewer(\/|$)/.test(currentPath) && user) { %>
+<%- include('partials/interviewer_header', { title: 'Fieldwork notice' }) %>
+<section class="report-panel"><div class="report-kicker">Fieldwork</div><h1>This page is unavailable.</h1><p class="report-lead"><%= message %></p><a class="report-button secondary" style="margin-top:24px" href="/interviewer">Return to my respondents</a></section>
+<%- include('partials/interviewer_footer') %>
+<% } else { %>
 <%- include('partials/header', { title: 'Notice', user: user }) %>
 <div class="min-h-[70vh] flex items-center justify-center -mt-4">
   <div class="max-w-md w-full bg-white border border-slate-200/70 rounded-3xl shadow-pop p-9 text-center">
@@ -11,3 +24,5 @@
   </div>
 </div>
 <%- include('partials/footer') %>
+
+<% } %>

@@ -14,6 +14,8 @@ const { persistUpload } = require("../lib/mediaStorage");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { logAudit } = require("../lib/audit");
+const { buildVideoPrompts } = require("../lib/videoPrompts");
+const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
 
 const router = express.Router();
 const uploadsRoot = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
@@ -177,6 +179,64 @@ router.get("/respondents/:id/questionnaire", requireMobileAuth, async (req, res)
     questions: questions.map((q) => ({ id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], minValue: q.min_value, maxValue: q.max_value })),
     rules: rules.map((r) => ({ id: r.id, targetQuestionId: r.target_question_id, conditionQuestionId: r.condition_question_id, operator: r.operator, value: r.value, action: r.action, terminateScope: r.terminate_scope || null })),
   });
+});
+
+// Teleprompter script for Video mode, derived from this study's own
+// questionnaire (see lib/videoPrompts.js) -- mirrors the web respondent flow.
+router.get("/respondents/:id/diary/video-script", requireMobileAuth, async (req, res) => {
+  const respondent = await ownedRespondent(req, req.params.id);
+  if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
+  if (!diaryGate(respondent, res)) return;
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const { questions } = await loadQuestionnaire(study.id);
+  const script = buildVideoPrompts(questions);
+  res.json(script);
+});
+
+// Video mode: the respondent's part ends here. The video is saved as evidence
+// immediately and AI field-extraction (lib/videoEntryAnalysis.js) runs in the
+// background, exactly like the web respondent flow's /diary/analyze-video.
+router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.single("video"), async (req, res) => {
+  const respondent = await ownedRespondent(req, req.params.id);
+  if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
+  if (!diaryGate(respondent, res)) return;
+  if (!req.file) return res.status(400).json({ error: "Please record a video before continuing." });
+
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const { questions } = await loadQuestionnaire(study.id);
+  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
+  const isPractice = req.body.practice === "1" ? 1 : 0;
+
+  const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
+  const now = store.nowSql();
+  const { id: recordId } = await store.insert("diary_records", {
+    respondent_id: respondent.id,
+    study_id: study.id,
+    period_label: now.slice(0, 10),
+    occurrence_time: now,
+    entry_time: now,
+    submit_time: now,
+    channel: "app",
+    status: "submitted",
+    is_practice: isPractice,
+    entry_mode: "video",
+  });
+  await store.insert("media", { record_id: recordId, media_type: "video", file_path: storedPath });
+
+  analyzeSubmittedVideo({
+    recordId,
+    videoFile: req.file,
+    questions,
+    brands,
+    studyVersion: study.version,
+  }).catch((e) => console.warn(`Background video analysis failed for record ${recordId}: ${e.message}`));
+
+  if (!isPractice) {
+    await store.update("respondents", { id: respondent.id, activation_status: { $ne: "active" } }, { activation_status: "active" });
+  }
+
+  logAudit(respondent.respondent_code, "mobile_diary_video_submit", "diary_records", recordId, { practice: !!isPractice });
+  res.status(201).json({ recordId, status: "submitted" });
 });
 
 router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), async (req, res) => {

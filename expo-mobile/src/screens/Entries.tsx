@@ -3,6 +3,7 @@ import { View, Text, Pressable } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
+import { ScreenDoodleField } from "../components/Doodles";
 import type { DisplayRecord } from "./Home";
 
 function FilterPill({ label, count, active }: { label: string; count: number; active?: boolean }) {
@@ -102,8 +103,9 @@ export function EntriesScreen({
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[18px] shrink-0" />
+      <View className="h-[40px] shrink-0" />
       <View className="flex-1 gap-3 px-[18px] pb-4">
+        <ScreenDoodleField color={isDark ? "#60A5FA" : "#1D4ED8"} />
         <View className="flex-row items-center justify-between">
           <Text
             className="font-disp-extrabold text-[20px] text-[#0F172A] dark:text-[#F8FAFC]"

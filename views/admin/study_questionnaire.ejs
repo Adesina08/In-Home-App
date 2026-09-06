@@ -63,7 +63,7 @@
   .qb-canvas .q-row-chevron.is-open, .qb-canvas .section-toggle-btn.is-open { transform: rotate(90deg); }
 </style>
 
-<div class="qb-canvas">
+<div class="qb-canvas console-questionnaire">
 
 <% if (typeof published !== 'undefined' && published && published !== 'none') { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
@@ -149,7 +149,7 @@
       <div class="bg-[var(--qb-card)] rounded-lg border border-[var(--qb-line)] p-3">
         <div class="flex gap-2">
           <input id="newSectionInput" placeholder="New section title" class="flex-1 min-w-0 border border-[var(--qb-line)] bg-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--qb-signal)] focus:border-[var(--qb-signal)] transition" />
-          <button type="button" id="addSectionBtn" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3 py-2 text-sm font-semibold hover:opacity-90 transition shrink-0"><%- icon('plus', 'w-4 h-4') %></button>
+          <button type="button" id="addSectionBtn" aria-label="Add section" class="inline-flex items-center gap-1.5 bg-[var(--qb-ink)] text-white rounded px-3 py-2 text-sm font-semibold hover:opacity-90 transition shrink-0"><%- icon('plus', 'w-4 h-4') %></button>
         </div>
       </div>
     </aside>

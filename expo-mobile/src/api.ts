@@ -96,4 +96,6 @@ export const api = {
   consent: (respondentId: number) => request<{ ok: boolean }>(`/mobile/api/respondents/${respondentId}/consent`, { method: "POST", body: "{}" }),
   questionnaire: (respondentId: number) => request<any>(`/mobile/api/respondents/${respondentId}/questionnaire`),
   submitDiary: (respondentId: number, form: FormData) => request<{ recordId: number; status: string }>(`/mobile/api/respondents/${respondentId}/diary`, { method: "POST", body: form }),
+  videoScript: (respondentId: number) => request<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number }>(`/mobile/api/respondents/${respondentId}/diary/video-script`),
+  analyzeVideo: (respondentId: number, form: FormData) => request<{ recordId: number; status: string }>(`/mobile/api/respondents/${respondentId}/diary/analyze-video`, { method: "POST", body: form }),
 };

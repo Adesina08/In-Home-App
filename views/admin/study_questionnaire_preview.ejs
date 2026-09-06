@@ -1,9 +1,9 @@
-<%- include('../partials/header', { title: study.name + ' — Review Import', user }) %>
+<%- include('../partials/header', { title: study.name + ' — Review Import', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study, tab }) %>
 
 <div class="flex items-center justify-between mb-4">
   <div>
-    <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2"><%- icon('upload', 'w-5 h-5 text-brand-500') %> Review Import — <span class="font-normal text-slate-500"><%= imp.source_filename %></span></h1>
+    <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2"><%- icon('upload', 'w-5 h-5 text-signal') %> Review Import — <span class="font-normal text-slate-500"><%= imp.source_filename %></span></h1>
     <p class="text-sm text-slate-500 mt-1">Nothing is added to your study until you click Commit below. Uncheck any row you don't want, fix anything the parser got wrong, then commit.</p>
   </div>
 </div>
@@ -17,7 +17,7 @@
 <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/preview/<%= imp.id %>/commit">
 <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
 
-  <div class="xl:col-span-3 bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-x-auto">
+  <div class="xl:col-span-3 bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-x-auto">
     <table class="w-full text-sm">
       <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
         <th class="px-3 py-2.5">✓</th><th class="py-2.5">Code</th><th class="py-2.5 min-w-[220px]">Question text</th>
@@ -27,24 +27,24 @@
       <tbody>
       <% rows.forEach((r, i) => { %>
         <tr class="import-row border-t border-slate-100 hover:bg-slate-50/70 align-top" data-idx="<%= i %>">
-          <td class="px-3 py-2.5"><input type="checkbox" class="f-include h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" name="rows[<%= i %>][include]" <%= r.text ? 'checked' : '' %> onchange="renderPreview()" /></td>
-          <td class="py-2.5"><input class="f-code w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][code]" value="<%= r.code||'' %>" oninput="renderPreview()" /></td>
-          <td class="py-2.5"><textarea class="f-text w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" rows="2" name="rows[<%= i %>][text]" oninput="renderPreview()"><%= r.text||'' %></textarea></td>
+          <td class="px-3 py-2.5"><input type="checkbox" class="f-include h-4 w-4 rounded border-slate-300 text-signal focus:ring-signal/30" name="rows[<%= i %>][include]" <%= r.text ? 'checked' : '' %> onchange="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-code w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][code]" value="<%= r.code||'' %>" oninput="renderPreview()" /></td>
+          <td class="py-2.5"><textarea class="f-text w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" rows="2" name="rows[<%= i %>][text]" oninput="renderPreview()"><%= r.text||'' %></textarea></td>
           <td class="py-2.5">
-            <select class="f-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][type]" onchange="renderPreview()">
+            <select class="f-type border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][type]" onchange="renderPreview()">
               <% VALID_TYPES.forEach(t => { %><option value="<%= t %>" <%= r.type===t?'selected':'' %>><%= t %></option><% }) %>
             </select>
           </td>
-          <td class="py-2.5"><input class="f-options w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][options]" value="<%= (r.options||[]).join(', ') %>" oninput="renderPreview()" placeholder="A, B, C" /></td>
-          <td class="py-2.5"><input class="f-section w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][section]" value="<%= r.section||'' %>" oninput="renderPreview()" placeholder="e.g. Purchase" /></td>
-          <td class="py-2.5 text-center"><input type="checkbox" class="f-required h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" name="rows[<%= i %>][required]" <%= r.required ? 'checked' : '' %> onchange="renderPreview()" /></td>
-          <td class="py-2.5"><input class="f-min w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][min]" value="<%= r.min_value ?? '' %>" oninput="renderPreview()" /></td>
-          <td class="py-2.5"><input class="f-max w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" name="rows[<%= i %>][max]" value="<%= r.max_value ?? '' %>" oninput="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-options w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][options]" value="<%= (r.options||[]).join(', ') %>" oninput="renderPreview()" placeholder="A, B, C" /></td>
+          <td class="py-2.5"><input class="f-section w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][section]" value="<%= r.section||'' %>" oninput="renderPreview()" placeholder="e.g. Purchase" /></td>
+          <td class="py-2.5 text-center"><input type="checkbox" class="f-required h-4 w-4 rounded border-slate-300 text-signal focus:ring-signal/30" name="rows[<%= i %>][required]" <%= r.required ? 'checked' : '' %> onchange="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-min w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][min]" value="<%= r.min_value ?? '' %>" oninput="renderPreview()" /></td>
+          <td class="py-2.5"><input class="f-max w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][max]" value="<%= r.max_value ?? '' %>" oninput="renderPreview()" /></td>
         </tr>
         <% if (r.condition_raw) { %>
           <tr class="bg-brand-50/50">
             <td></td>
-            <td colspan="8" class="px-2 py-1.5 text-xs text-brand-700">
+            <td colspan="8" class="px-2 py-1.5 text-xs text-signal">
               <%- icon('arrow-right', 'w-3.5 h-3.5 inline align-text-bottom') %>
               Condition: "<%= r.condition_raw %>" — <%= r.is_section_anchor ? 'will become a skip rule for the whole "' + (r.section||'') + '" section' : 'will become a skip rule for this question, on commit' %>
             </td>
@@ -60,7 +60,7 @@
       </tbody>
     </table>
     <div class="p-4 flex items-center gap-3 border-t border-slate-100">
-      <button type="submit" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <button type="submit" class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition shadow-card">
         <%- icon('check', 'w-4 h-4') %> Commit Checked Rows to Questionnaire
       </button>
       <span id="includeCount" class="text-sm text-slate-500 self-center"></span>
@@ -68,8 +68,8 @@
   </div>
 
   <div class="xl:col-span-2">
-    <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 sticky top-4">
-      <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2"><%- icon('eye', 'w-4 h-4 text-brand-500') %> Live Form Preview</div>
+    <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 sticky top-4">
+      <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2"><%- icon('eye', 'w-4 h-4 text-signal') %> Live Form Preview</div>
       <p class="text-xs text-slate-400 mb-4">This is what the respondent diary screen will look like with the checked rows above.</p>
       <div id="livePreview" class="space-y-4 max-h-[70vh] overflow-y-auto pr-1"></div>
     </div>

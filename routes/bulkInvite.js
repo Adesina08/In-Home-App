@@ -39,7 +39,7 @@ async function loadStudy(req, res) {
 }
 
 function basePath(req) {
-  return req.session.user.role === "admin" ? `/admin/studies/${req.params.id}` : `/interviewer/studies/${req.params.id}`;
+  return req.baseUrl.startsWith("/admin/") ? `/admin/studies/${req.params.id}` : `/interviewer/studies/${req.params.id}`;
 }
 
 router.get("/template.csv", (req, res) => {

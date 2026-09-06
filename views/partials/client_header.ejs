@@ -1,0 +1,6 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title><%= study ? study.name : 'Client portal' %> — Client portal | Inicio Diary</title><link rel="icon" href="/public/icons/icon-192.png" /><link rel="stylesheet" href="/public/tailwind.css" /><link rel="stylesheet" href="/public/reports.css" /><script src="/public/js/reports.js" defer></script></head>
+<body class="client-shell"><a class="sr-only focus:not-sr-only" href="#client-main">Skip to content</a>
+<header class="client-top"><a class="client-brand" href="/client<%= study ? '?study=' + study.id : '' %>"><img src="/public/icons/logo-header.png" alt="" /><span>Inicio Diary<small>Client portal</small></span></a>
+<nav aria-label="Client navigation"><a href="/client?<%= query %>" <%- !insights ? 'aria-current="page"' : '' %>>Study overview</a><a href="/client/insights?<%= query %>" <%- insights ? 'aria-current="page"' : '' %>>Insights & media</a></nav>
+<div class="client-account"><span><%= user.name || user.email %></span><a href="/logout">Sign out</a></div></header>
+<main id="client-main" class="client-main report-page">

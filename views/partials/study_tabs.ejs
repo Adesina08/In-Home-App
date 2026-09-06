@@ -1,10 +1,13 @@
-<div class="mb-6">
-  <div class="flex items-center justify-between gap-3 mb-1">
-    <div>
-      <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Study Configuration</div>
-      <h1 class="text-2xl font-bold text-slate-900"><%= study.name %></h1>
+<% if (typeof user !== 'undefined' && user && user.role === 'superadmin') { %>
+<%- include('console_study_tabs', { study, tab }) %>
+<% } else { %>
+<div class="mb-1 shrink-0">
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <div class="min-w-0">
+      <div class="text-[11px] font-bold text-signal uppercase tracking-wide mb-0.5">Study Configuration</div>
+      <h1 class="font-display text-[22px] font-extrabold text-slate-900 tracking-tight truncate"><%= study.name %></h1>
     </div>
-    <span class="text-xs uppercase tracking-wide px-2.5 py-1 rounded-full font-semibold <%= study.status === 'live' ? 'badge-green' : 'bg-slate-200 text-slate-600' %>"><%= study.status %></span>
+    <span class="text-[10.5px] uppercase tracking-wide px-2.5 py-1 rounded-full font-bold shrink-0 <%= study.status === 'live' ? 'badge-green' : 'bg-slate-100 text-slate-500' %>"><%= study.status %></span>
   </div>
   <%
     // The step counter belongs to the six setup screens only. A drill-down
@@ -15,17 +18,19 @@
     const here = studyTabNeighbours(tab);
   %>
   <% if (showStepper && here.index !== -1) { %>
-    <div class="text-xs text-slate-400 mb-4">Step <%= here.index + 1 %> of <%= here.total %> · <%= here.next ? `next: ${here.next.short}` : 'last step' %></div>
+    <div class="text-[11.5px] text-slate-400 mb-3">Step <%= here.index + 1 %> of <%= here.total %> &middot; <%= here.next ? `next: ${here.next.short}` : 'last step' %></div>
   <% } else { %>
-    <div class="mb-4"></div>
+    <div class="mb-3"></div>
   <% } %>
   <div class="flex flex-wrap gap-1.5 pb-1">
     <% STUDY_TABS.forEach(t => { %>
       <a href="<%= studyTabHref(study.id, t.key) %>"
-         class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition shrink-0 <%= tab === t.key ? 'bg-brand-700 text-white shadow-card' : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-300 hover:text-brand-700' %>">
-        <%- icon(t.icon, 'w-4 h-4') %>
+         class="flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13px] font-semibold transition shrink-0 <%= tab === t.key ? 'bg-signal text-white shadow-[0_1px_2px_rgba(29,78,216,.2),0_4px_10px_-2px_rgba(29,78,216,.35)]' : 'bg-white text-slate-600 border border-slate-200 hover:border-signal/40 hover:text-signal' %>">
+        <%- icon(t.icon, 'w-[15px] h-[15px]') %>
         <%= t.label %>
       </a>
     <% }) %>
   </div>
 </div>
+
+<% } %>

@@ -1,4 +1,4 @@
-<%- include('../partials/header', { title: 'Questionnaire — Inicio Diary', user: user }) %>
+<%- include('../partials/header', { title: 'Questionnaire — Inicio Diary', user: user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study: study, tab: 'questionnaire' }) %>
 
 <%#
@@ -37,7 +37,7 @@
        class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('upload', 'w-4 h-4') %> Import</a>
     <% if (study.has_unpublished_changes) { %>
       <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish">
-        <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition"><%- icon('check', 'w-4 h-4') %> Publish v<%= (study.version || 1) + 1 %></button>
+        <button class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition"><%- icon('check', 'w-4 h-4') %> Publish v<%= (study.version || 1) + 1 %></button>
       </form>
     <% } %>
   </div>
@@ -53,10 +53,10 @@
   </div>
 <% } %>
 
-<div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_290px] gap-4 items-start">
+<div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_290px] gap-4 items-start console-questionnaire-v2">
 
   <!-- ============ LEFT: the questionnaire as a list ============ -->
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-hidden">
     <div class="px-4 pt-4 pb-2 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Questions</div>
     <div id="qList" class="pb-2 max-h-[70vh] overflow-y-auto"></div>
     <div class="px-3 pb-3 pt-1 border-t border-slate-100">
@@ -66,10 +66,10 @@
   </div>
 
   <!-- ============ CENTRE: one question, fully expanded ============ -->
-  <div id="editor" class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 min-h-[420px]"></div>
+  <div id="editor" class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 min-h-[420px]"></div>
 
   <!-- ============ RIGHT: logic for the whole study ============ -->
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-hidden">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-hidden">
     <div class="px-4 pt-4 pb-2 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Logic</div>
     <%# Rules read as sentences and live together, because a rule set is only
         auditable as a set. Attached to individual cards, as before, nobody
@@ -190,7 +190,7 @@
         '<div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Editing question</div>' +
         '<button id="delQ" class="text-xs text-red-600 hover:underline">Delete</button>' +
       '</div>' +
-      '<textarea id="fText" rows="2" class="w-full font-display text-xl font-bold tracking-tight text-slate-900 border-0 border-b-2 border-slate-200 focus:border-brand-500 focus:ring-0 px-0 pb-2 resize-none" placeholder="Ask a question…">' + esc(q.text || '') + '</textarea>' +
+      '<textarea id="fText" rows="2" class="w-full font-display text-xl font-bold tracking-tight text-slate-900 border-0 border-b-2 border-slate-200 focus:border-signal focus:ring-0 px-0 pb-2 resize-none" placeholder="Ask a question…">' + esc(q.text || '') + '</textarea>' +
       '<div class="grid grid-cols-2 gap-3 mt-4">' +
         '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Type</span>' +
           '<select id="fType" class="mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white">' + typeOpts + '</select></label>' +
@@ -200,7 +200,7 @@
       '<div class="grid grid-cols-2 gap-3 mt-3">' +
         '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Code</span>' +
           '<input id="fCode" value="' + esc(q.code || '') + '" class="mt-1 w-full font-mono border border-slate-300 rounded-lg px-2.5 py-2 text-sm" /></label>' +
-        '<label class="flex items-center gap-2 mt-6"><input type="checkbox" id="fRequired" ' + (q.required ? 'checked' : '') + ' class="h-4 w-4 rounded border-slate-300 accent-brand-700" />' +
+        '<label class="flex items-center gap-2 mt-6"><input type="checkbox" id="fRequired" ' + (q.required ? 'checked' : '') + ' class="h-4 w-4 rounded border-slate-300 accent-signal" />' +
           '<span class="text-sm text-slate-700">Required</span></label>' +
       '</div>' +
       '<div class="mt-4"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Applies to</div>' +
@@ -209,7 +209,7 @@
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
-        '<button id="addOpt" class="mt-2 text-xs text-brand-700 font-medium hover:underline">+ Add option</button></div>' : '') +
+        '<button id="addOpt" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add option</button></div>' : '') +
       '<div class="mt-5 pt-4 border-t border-slate-100">' +
         (canAiFill(q)
           ? '<div class="flex items-start gap-2 text-xs font-medium text-verified bg-verified-soft rounded-lg px-3 py-2.5">' +
@@ -229,7 +229,7 @@
     var current = cadencesOf(q);
     host.innerHTML = CADENCES.map(function (c) {
       return '<label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">' +
-        '<input type="checkbox" class="cadence-in h-4 w-4 rounded border-slate-300 accent-brand-700" value="' + c[0] + '"' +
+        '<input type="checkbox" class="cadence-in h-4 w-4 rounded border-slate-300 accent-signal" value="' + c[0] + '"' +
         (current.indexOf(c[0]) > -1 ? ' checked' : '') + ' />' + c[1] + '</label>';
     }).join('');
     host.querySelectorAll('.cadence-in').forEach(function (box) {
@@ -301,7 +301,7 @@
     questions.forEach(function (q) { byId[q.id] = q; });
     host.innerHTML = rules.map(function (r) {
       var val = ['in', 'not_in', 'includes'].indexOf(r.operator) > -1 ? String(r.value || '').split('|').join(', ') : r.value;
-      return '<div class="group border-l-2 border-brand-400 bg-brand-50/50 pl-2.5 pr-1.5 py-1.5 rounded-r text-[12px] leading-snug text-slate-700">' +
+      return '<div class="group border-l-2 border-signal bg-brand-50/50 pl-2.5 pr-1.5 py-1.5 rounded-r text-[12px] leading-snug text-slate-700">' +
         'If <strong>' + esc(r.condition_text || '') + '</strong> ' + (OPS[r.operator] || r.operator) + ' <strong>' + esc(val) + '</strong>, ' +
         (r.action === 'show' ? 'show' : 'hide') + ' it.' +
         '<button class="rule-del float-right text-slate-300 group-hover:text-red-600" data-id="' + r.id + '">&times;</button></div>';
@@ -363,7 +363,7 @@
       '</div>' +
       '<select id="rCond" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + qOpts + '</select>' +
       '<input id="rVal" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="Value — comma-separate for is one of / none of" />' +
-      '<button id="rSave" class="w-full bg-brand-700 text-white rounded-lg py-2 font-semibold">Add rule</button>';
+      '<button id="rSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Add rule</button>';
     document.getElementById('rSave').onclick = async function () {
       var op = document.getElementById('rOp').value;
       var raw = document.getElementById('rVal').value;

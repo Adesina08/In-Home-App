@@ -1,0 +1,37 @@
+<div class="report-two">
+  <section class="report-panel">
+    <div class="report-panel-head"><div><div class="report-kicker">Respondent language</div><h2>In their own words</h2><p>Word frequency across <%= report.openText.length %> eligible open-text answers.</p></div></div>
+    <% if (report.words.length) { const max = report.words[0].count; %>
+      <div class="report-cloud" aria-label="Word cloud; exact frequencies are in the table below">
+        <% report.words.forEach(w => { %><span style="font-size:<%= Math.round(15 + 30 * w.count / max) %>px" title="<%= w.count %> mentions"><%= w.word %></span><% }) %>
+      </div>
+      <details><summary>View word frequencies</summary><table class="report-table"><caption class="sr-only">Most frequent words</caption><thead><tr><th scope="col">Word</th><th scope="col">Mentions</th></tr></thead><tbody><% report.words.forEach(w => { %><tr><td><%= w.word %></td><td><%= w.count %></td></tr><% }) %></tbody></table></details>
+      <p class="report-muted">Common English words are removed. Size reflects mentions, not sentiment or the number of respondents.</p>
+    <% } else { %><div class="report-empty">The word cloud will appear when this period has eligible written answers. Media uploads alone do not create words.</div><% } %>
+  </section>
+  <section class="report-panel">
+    <div class="report-panel-head"><div><div class="report-kicker">Consumption context</div><h2>Occasions that stand out</h2><p>Answer counts from eligible entries.</p></div></div>
+    <%- include('report_bars', { items: report.occasions, empty: 'No occasion answers in this period.' }) %>
+    <p class="report-muted" style="margin-top:22px">Open QC flags and unconfirmed AI answers are excluded from answer charts and the word cloud.</p>
+  </section>
+</div>
+<section class="report-panel" data-media-gallery>
+  <div class="report-panel-head"><div><div class="report-kicker">Life behind the numbers</div><h2>Respondent media</h2><p>Photos, videos and voice notes from this study. Play recordings right here.</p></div><span class="report-badge"><%= report.media.length %> files</span></div>
+  <div class="report-media-filters" role="group" aria-label="Filter respondent media">
+    <% [['all','All media'],['photo','Photos'],['video','Videos'],['audio','Voice notes']].forEach(([kind,label]) => { %><button type="button" data-media-filter="<%= kind %>" aria-pressed="<%= kind === 'all' %>"><%= label %></button><% }) %>
+  </div>
+  <div class="report-media">
+    <% report.media.forEach((m, index) => { const url = mediaUrl(m.file_path); %>
+      <figure data-kind="<%= m.media_type %>"><div class="report-media-stage">
+        <% if (url) { %>
+          <% if (m.media_type === 'photo') { %><img src="<%= url %>" alt="Study respondent photo <%= index + 1 %>" loading="lazy" /><% } %>
+          <% if (m.media_type === 'video') { %><video controls playsinline preload="none" aria-label="Study respondent video <%= index + 1 %>" src="<%= url %>"></video><% } %>
+          <% if (m.media_type === 'audio') { %><audio controls preload="none" aria-label="Study respondent voice note <%= index + 1 %>" src="<%= url %>"></audio><% } %>
+        <% } %>
+        <p class="report-media-error" data-media-error <%= url ? 'hidden' : '' %>>This file is currently unavailable.</p>
+      </div><figcaption><strong><%= {photo:'Photo',video:'Video',audio:'Voice note'}[m.media_type] %></strong><time><%= m.day %></time></figcaption></figure>
+    <% }) %>
+  </div>
+  <div class="report-empty" data-media-empty <%= report.media.length ? 'hidden' : '' %>>No eligible media for this selection.</div>
+  <p class="report-muted" style="margin-top:16px">Submitted, non-practice entries only. Media with an open entry-level QC flag is excluded.</p>
+</section>

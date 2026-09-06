@@ -16,7 +16,7 @@ export function useInterviewerTheme() {
 export function Screen({ children }: { children: React.ReactNode }) {
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[18px] shrink-0" />
+      <View className="h-[40px] shrink-0" />
       <View className="flex-1 px-[18px] pb-4">{children}</View>
     </View>
   );

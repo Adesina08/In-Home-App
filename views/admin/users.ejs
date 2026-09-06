@@ -1,12 +1,11 @@
-<%- include('../partials/header', { title: 'Users — INICIO', user }) %>
+<%- include('../partials/header', { title: 'Users — INICIO', user, currentPath: '/admin/users' }) %>
 
-<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-  <div>
-    <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Admin</div>
-    <h1 class="text-2xl font-bold text-slate-900">Users & Access</h1>
-    <p class="text-slate-500 text-sm mt-1">Manage staff accounts and study-level permissions.</p>
-  </div>
-</div>
+<%- include('../partials/page_header', {
+  eyebrow: 'Admin',
+  title: 'Users & Access',
+  subtitle: 'Manage staff accounts and study-level permissions.',
+  actions: user.role === 'superadmin' ? '<button type="button" data-open-dialog="create-user" class="console-button is-primary">' + icon('plus', 'w-4 h-4') + 'Create user</button>' : '',
+}) %>
 
 <%# Shown once, on the redirect after a reset. The password is never stored in
     readable form, so if it is lost here the only way forward is another reset
@@ -33,10 +32,10 @@
   </script>
 <% } %>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-  <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/70 shadow-card">
+<div class="console-user-layout grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="lg:col-span-2 bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow">
     <div class="overflow-x-auto">
-    <table class="w-full text-sm">
+    <table data-console-table="users" data-console-search-label="Search team members…" class="w-full text-sm">
       <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide"><th class="px-5 py-2.5">Name</th><th class="py-2.5">Email</th><th class="py-2.5">Role</th><th class="py-2.5">Study Scope</th><th class="py-2.5 pr-5 text-right">Password</th></tr></thead>
       <tbody>
       <% users.forEach(u => { %>
@@ -51,7 +50,7 @@
             <% } else { %>
               <form method="POST" action="/admin/users/<%= u.id %>/reset-password"
                     onsubmit="return confirm('Issue a new temporary password for <%= u.email %>? Their current password stops working immediately.')">
-                <button class="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">Reset</button>
+                <button class="text-xs font-medium text-signal hover:underline">Reset</button>
               </form>
             <% } %>
           </td>
@@ -62,24 +61,25 @@
     </table>
     </div>
   </div>
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 h-fit">
-    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-brand-500') %> Create User</div>
+  <% if (user.role === 'superadmin') { %><dialog id="create-user" class="console-dialog" aria-label="Create user"><div class="console-panel-heading"><h2>Create user</h2><button type="button" data-close-dialog class="console-icon-button" aria-label="Close create user">✕</button></div><% } %>
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 h-fit">
+    <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-signal') %> Create User</div>
     <form method="POST" action="/admin/users" class="space-y-3 text-sm">
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label>
-        <input name="name" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        <input name="name" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Email</label>
-        <input name="email" type="email" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        <input name="email" type="email" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Temporary password</label>
-        <input name="password" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" />
+        <input name="password" type="password" autocomplete="new-password" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Role</label>
-        <select name="role" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+        <select name="role" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
           <option value="admin">Admin</option>
           <option value="interviewer">Interviewer</option>
           <option value="client">Client</option>
@@ -87,15 +87,16 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Study scope (client/interviewer)</label>
-        <select name="study_id" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition">
+        <select name="study_id" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
           <option value="">All studies</option>
           <% studies.forEach(s => { %><option value="<%= s.id %>"><%= s.name %></option><% }) %>
         </select>
       </div>
-      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
+      <button class="w-full inline-flex items-center justify-center gap-1.5 bg-signal text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-signal-bright transition shadow-card">
         <%- icon('plus', 'w-4 h-4') %> Create User
       </button>
     </form>
   </div>
+<% if (user.role === 'superadmin') { %></dialog><% } %>
 </div>
 <%- include('../partials/footer') %>

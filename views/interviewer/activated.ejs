@@ -1,27 +1,5 @@
-<%- include('../partials/header', { title: 'Respondent Activated — INICIO', user }) %>
-
-<div class="max-w-lg mx-auto bg-white rounded-2xl border border-slate-200/70 p-8 text-center shadow-card">
-  <div class="w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4">
-    <%- icon('check-circle', 'w-7 h-7') %>
-  </div>
-  <h1 class="text-xl font-bold text-slate-900 mb-1">Respondent Activated</h1>
-  <p class="text-slate-500 text-sm mb-4">Respondent code <strong class="text-slate-700"><%= code %></strong> is now active. Have the respondent scan the code below with their own phone's camera. It opens their personal diary, where they set their fingerprint or Face ID lock and add it to their home screen.</p>
-  <% if (qr) { %>
-    <img src="<%= qr %>" alt="QR code that opens this respondent's diary link" class="mx-auto w-52 h-52 rounded-xl border border-slate-200 p-2 bg-white mb-3" />
-    <p class="text-xs text-slate-400 mb-4">It must be their own phone, not yours — the diary's lock is tied to the device that first opens it.</p>
-  <% } %>
-  <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono break-all mb-5 text-slate-600"><%= diaryUrl || ('/r/' + token) %></div>
-  <!-- No "open their diary" button here on purpose. The diary's first screen
-       registers a device lock against the respondent, so opening it on the
-       interviewer's phone would bind the wrong fingerprint and leave the
-       respondent unable to unlock their own diary. -->
-  <div class="flex flex-wrap gap-3 justify-center">
-    <a href="/interviewer/respondents/<%= respondentId %>" class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
-      <%- icon('chat', 'w-4 h-4') %> Send them the link
-    </a>
-    <a href="/interviewer/register" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition shadow-card">
-      <%- icon('plus', 'w-4 h-4') %> Register Another
-    </a>
-  </div>
-</div>
-<%- include('../partials/footer') %>
+<%- include('../partials/interviewer_header', { title: 'Respondent registered', currentPath: '/interviewer/register' }) %>
+<div class="field-result"><a class="field-back" href="/interviewer">← Back to my respondents</a><section class="report-panel"><div class="field-result-mark"><%- icon('check-circle','w-7 h-7') %></div><div class="report-kicker">Registration saved</div><h1>Ready for the handover.</h1><p class="report-lead">Respondent <strong><%= code %></strong> is activated. Help them continue on their own phone using the personal link below.</p>
+<div class="field-handover"><div class="field-qr"><% if(qr) { %><img src="<%= qr %>" alt="QR code for the respondent’s personal link" width="240" height="240" /><% } else { %><p>QR code unavailable. Copy the personal link instead.</p><% } %><p>Scan with the respondent’s phone.</p></div><div><h2>Their personal link</h2><div class="field-link" id="diary-link"><%= diaryUrl %></div><button type="button" class="report-button secondary" data-copy-link="diary-link">Copy link</button><p class="field-copy-status" data-copy-status role="status"></p><p class="report-muted">They can complete any remaining setup after opening the link. No invitation message was sent by this registration.</p></div></div>
+<div class="field-submit" style="margin-top:26px"><a class="report-button" href="/interviewer/respondents/<%= respondentId %>">Handover details</a><a class="report-button secondary" href="/interviewer/register">Register another respondent</a></div></section></div>
+<%- include('../partials/interviewer_footer') %>

@@ -124,7 +124,8 @@ router.post("/change-password", async (req, res) => {
   logAudit(req.session.user.email, "change_own_password", "users", req.session.user.id, {});
 
   const role = req.session.user.role;
-  if (role === "admin" || role === "superadmin") return res.redirect("/admin");
+  if (role === "superadmin") return res.redirect("/admin/superadmin");
+  if (role === "admin") return res.redirect("/admin");
   if (role === "interviewer") return res.redirect("/interviewer");
   if (role === "client") return res.redirect("/client");
   res.redirect("/");

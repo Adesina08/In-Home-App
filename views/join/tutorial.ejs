@@ -1,4 +1,4 @@
-<%- include('../partials/header', { title: 'How it works — ' + study.name, user: null, showThemeToggle: true }) %>
+<%- include('../partials/onboarding_header', { phase: 3, title: 'How it works — ' + study.name, user: null, showThemeToggle: true }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
@@ -6,7 +6,7 @@
       <div class="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3">
         <%- icon('check-circle', 'w-7 h-7') %>
       </div>
-      <h1 class="text-lg font-bold text-slate-900">You're verified, <%= respondent.name %></h1>
+      <h1 class="text-lg font-bold text-slate-900">Welcome, <%= respondent.name %></h1>
       <p class="text-sm text-slate-500 mt-1">Here's how the diary works — it takes a minute to read.</p>
     </div>
 
@@ -50,10 +50,10 @@
 
     <form method="POST" action="/join/<%= code %>/finish">
       <button class="w-full inline-flex items-center justify-center gap-1.5 bg-brand-700 text-white rounded-xl px-5 py-3 text-sm font-semibold hover:bg-brand-600 transition shadow-card">
-        Open my diary <%- icon('arrow-right', 'w-4 h-4') %>
+        Continue setup <%- icon('arrow-right', 'w-4 h-4') %>
       </button>
     </form>
   </div>
 </div>
 
-<%- include('../partials/footer') %>
+<%- include('../partials/onboarding_footer') %>

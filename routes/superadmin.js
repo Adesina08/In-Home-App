@@ -106,14 +106,26 @@ router.get("/superadmin", onlySuperadmin, async (req, res) => {
   const selectedStudy =
     studies.find((s) => s.id === requestedStudyId) || studies[0] || null;
 
-  const studyCards = [];
-  for (const study of studies) {
-    studyCards.push({
-      ...study,
-      respondent_count: await store.count("respondents", { study_id: study.id }),
-      record_count: await store.count("diary_records", { study_id: study.id }),
-    });
+  const [respondentCounts, recordCounts, submittedCounts, respondentStudyRows, openFlags] = await Promise.all([
+    store.countBy("respondents", "study_id", {}),
+    store.countBy("diary_records", "study_id", {}),
+    store.countBy("diary_records", "study_id", { status: "submitted" }),
+    store.find("respondents", {}, { projection: { id: 1, study_id: 1 } }),
+    store.find("qc_flags", { status: "open" }, { projection: { respondent_id: 1 } }),
+  ]);
+  const studyByRespondent = new Map(respondentStudyRows.map(r => [r.id, r.study_id]));
+  const flagsByStudy = new Map();
+  for (const flag of openFlags) {
+    const id = studyByRespondent.get(flag.respondent_id);
+    if (id !== undefined) flagsByStudy.set(id, (flagsByStudy.get(id) || 0) + 1);
   }
+  const studyCards = studies.map(study => ({
+    ...study,
+    respondent_count: respondentCounts[study.id] || 0,
+    record_count: recordCounts[study.id] || 0,
+    submitted_count: submittedCounts[study.id] || 0,
+    open_flag_count: flagsByStudy.get(study.id) || 0,
+  }));
 
   const respondents = selectedStudy
     ? await store.find(

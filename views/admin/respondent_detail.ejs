@@ -1,14 +1,14 @@
-<%- include('../partials/header', { title: respondent.respondent_code + ' — Respondent', user }) %>
+<%- include('../partials/header', { title: respondent.respondent_code + ' — Respondent', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study, tab }) %>
 
 <div class="mb-5">
-  <a href="/admin/studies/<%= study.id %>/respondents" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 transition">
+  <a href="/admin/studies/<%= study.id %>/respondents" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-signal transition">
     &larr; Back to all respondents
   </a>
 </div>
 
 <!-- Profile -->
-<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-6 mb-5">
+<div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-6 mb-5">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div class="min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap mb-1">
@@ -38,7 +38,7 @@
         </form>
       <% } %>
       <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/export.csv"
-         class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+         class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-signal-bright transition shadow-card">
         <%- icon('download', 'w-3.5 h-3.5') %> Export answers
       </a>
       <a href="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/media.csv"
@@ -122,6 +122,7 @@
   })();
 </script>
 
+<div class="console-profile-layout"><div class="console-profile-tools">
 <!-- Sign-in account. A respondent row is one person's participation in ONE
      study; the account is the person, and is what lets them sign in once and
      see every study they're on. -->
@@ -136,9 +137,9 @@
   </div>
 <% } %>
 
-<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+<div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 mb-5">
   <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-    <%- icon('users', 'w-4 h-4 text-brand-500') %> Sign-in account
+    <%- icon('users', 'w-4 h-4 text-signal') %> Sign-in account
   </div>
 
   <% if (account) { %>
@@ -171,7 +172,7 @@
           <% otherEnrolments.forEach(e => { %>
             <div class="flex items-center gap-2 text-sm flex-wrap">
               <a href="/admin/studies/<%= e.study_id %>/respondents/<%= e.id %>"
-                 class="text-brand-600 hover:underline font-medium"><%= e.study_name %></a>
+                 class="text-signal hover:underline font-medium"><%= e.study_name %></a>
               <span class="font-mono text-xs text-slate-500"><%= e.respondent_code %></span>
               <span class="text-xs text-slate-400">
                 · <%= e.activation_status %> · <%= e.submitted_count %> <%= e.submitted_count === 1 ? 'entry' : 'entries' %>
@@ -191,7 +192,7 @@
     <% if (respondent.contact) { %>
       <form method="POST" action="/admin/studies/<%= study.id %>/respondents/<%= respondent.id %>/account" class="mt-3">
         <input type="hidden" name="contact" value="<%= respondent.contact %>" />
-        <button class="inline-flex items-center gap-1.5 bg-brand-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-brand-600 transition shadow-card">
+        <button class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-3.5 py-2 text-xs font-semibold hover:bg-signal-bright transition shadow-card">
           <%- icon('plus', 'w-3.5 h-3.5') %>
           <% if (linkCandidate) { %>Link to the existing account for <%= respondent.contact %><% } else { %>Give them an account for <%= respondent.contact %><% } %>
         </button>
@@ -212,9 +213,9 @@
 <!-- QC flags for this respondent (including ones not tied to a single entry) -->
 <% const openFlags = flags.filter(f => f.status === 'open'); %>
 <% if (flags.length) { %>
-  <div class="bg-white rounded-2xl border border-slate-200/70 shadow-card p-5 mb-5">
+  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 mb-5">
     <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-      <%- icon('shield', 'w-4 h-4 text-brand-500') %> QC Flags
+      <%- icon('shield', 'w-4 h-4 text-signal') %> QC Flags
       <span class="text-xs font-normal text-slate-400"><%= openFlags.length %> open of <%= flags.length %></span>
     </div>
     <div class="space-y-2">
@@ -226,7 +227,7 @@
             <div class="text-[11px] text-slate-400 mt-0.5">
               <%= f.flag_type %> · <%= f.created_time %> · <%= f.status %><% if (f.reviewer) { %> by <%= f.reviewer %><% } %>
               <% if (f.record_id) { %>
-                · <a href="/admin/studies/<%= study.id %>/records/<%= f.record_id %>" class="text-brand-600 hover:underline font-medium">view the entry</a>
+                · <a href="/admin/studies/<%= study.id %>/records/<%= f.record_id %>" class="text-signal hover:underline font-medium">view the entry</a>
               <% } else { %>
                 · <span class="italic">not tied to one entry</span>
               <% } %>
@@ -238,14 +239,15 @@
   </div>
 <% } %>
 
+</div><div class="console-profile-entries">
 <!-- Diary entries -->
-<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card">
+<div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow">
   <div class="px-5 pt-5 pb-3 font-semibold text-slate-800 flex items-center gap-2">
-    <%- icon('clipboard', 'w-4 h-4 text-brand-500') %> Diary Entries
+    <%- icon('clipboard', 'w-4 h-4 text-signal') %> Diary Entries
     <span class="text-xs font-normal text-slate-400"><%= records.length %> total</span>
   </div>
   <div class="overflow-x-auto">
-    <table class="w-full text-sm">
+    <table data-console-table="entries" data-console-search-label="Search diary entries…" class="w-full text-sm">
       <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
         <th class="px-5 py-2.5">Period</th><th class="py-2.5">Occurred</th><th class="py-2.5">Entered</th>
         <th class="py-2.5">How</th><th class="py-2.5">Status</th><th class="py-2.5">Answers</th>
@@ -277,7 +279,7 @@
             <% } else { %><span class="text-slate-300 text-xs">—</span><% } %>
           </td>
           <td class="py-2.5 pr-5 text-right">
-            <a href="/admin/studies/<%= study.id %>/records/<%= r.id %>" class="text-brand-600 text-xs font-semibold hover:underline">Open &rarr;</a>
+            <a href="/admin/studies/<%= study.id %>/records/<%= r.id %>" class="text-signal text-xs font-semibold hover:underline">Open &rarr;</a>
           </td>
         </tr>
       <% }) %>
@@ -291,4 +293,5 @@
   </div>
 </div>
 
+</div></div>
 <%- include('../partials/footer') %>

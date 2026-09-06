@@ -1,4 +1,4 @@
-<%- include('../partials/header', { title: (typeof ready !== 'undefined' && ready) ? 'Inicio Diary is ready' : (existingAccount ? 'Your Inicio Diary account' : 'Create your Inicio Diary account'), user: null, showThemeToggle: true }) %>
+<%- include('../partials/onboarding_header', { phase: 3, title: (typeof ready !== 'undefined' && ready) ? 'Inicio Diary is ready' : (existingAccount ? 'Your Inicio Diary account' : 'Create your Inicio Diary account'), user: null, showThemeToggle: true }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
@@ -32,7 +32,6 @@
       </div>
     <% } else { %>
       <div class="mb-6">
-        <div class="text-xs font-bold uppercase tracking-wide text-brand-600">Step 3 of 3</div>
         <% if (existingAccount) { %>
           <h1 class="text-2xl font-bold text-slate-900 mt-1">Your Inicio Diary login is ready</h1>
           <p class="text-sm text-slate-500 mt-2 leading-relaxed">You already have an Inicio Diary account. We’ll keep your existing username and password and add this study to the same account.</p>
@@ -72,4 +71,4 @@
   </div>
 </div>
 
-<%- include('../partials/footer') %>
+<%- include('../partials/onboarding_footer') %>
