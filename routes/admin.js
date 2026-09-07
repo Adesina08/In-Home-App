@@ -87,6 +87,28 @@ async function getStudyOrFirst(req) {
   return { study, studies };
 }
 
+// Staff analysis is read-only and inherits the admin/superadmin role guard above.
+router.get(['/analysis', '/analysis/export'], async (req, res) => {
+  const studies = await store.find('studies', {}, { sort: { id: 1 } });
+  const study = req.query.study === undefined ? studies[0] : studies.find(s => s.id === Number(req.query.study));
+  if (!study) {
+    if (studies.length || req.query.study !== undefined) return res.status(404).render('error', { message: 'Study not found.' });
+    return res.render('admin/analysis', { study: null, studies });
+  }
+  let period;
+  try { period = require('../lib/studyReport').validatePeriod({ from: req.query.from, to: req.query.to }); }
+  catch (e) { return res.status(400).render('error', { message: e.message }); }
+  const { staffAnalysis, analysisCsv } = require('../lib/staffAnalysis');
+  let data;
+  try { data = await staffAnalysis(study.id, { ...period, question: req.query.question, segment: req.query.segment }); }
+  catch (e) {
+    if (/^Choose /.test(e.message)) return res.status(400).render('error', { message: e.message });
+    throw e;
+  }
+  if (req.path.endsWith('/export')) return res.attachment(`study-${study.id}-crosstab.csv`).type('text/csv').send(analysisCsv(data));
+  res.render('admin/analysis', { study, studies, ...period, ...data });
+});
+
 // ---------- Ops Dashboard ----------
 router.get("/", async (req, res) => {
   const { study, studies } = await getStudyOrFirst(req);

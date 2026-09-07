@@ -3,13 +3,13 @@
   const consoleStudy = typeof study !== 'undefined' && study ? study : null;
   const consoleGroups = [
     { label: 'Workspace', items: [['/admin/superadmin', 'Overview', 'home'], ['/admin/studies', 'Studies', 'clipboard'], ['/admin', 'Fieldwork Dashboard', 'chart'], ['/admin/panel', 'Respondent Panel', 'users']] },
-    { label: 'Review & insights', items: [['/admin/qc', 'Quality Control', 'shield-check'], ['/admin/ai-summary', 'AI Summary', 'trend'], ['/admin/whatsapp-outbox', 'Message Log', 'chat']] },
+    { label: 'Review & insights', items: [['/admin/qc', 'Quality Control', 'shield-check'], ['/admin/analysis', 'Analysis', 'chart'], ['/admin/ai-summary', 'AI Summary', 'trend'], ['/admin/whatsapp-outbox', 'Message Log', 'chat']] },
     { label: 'Administration', items: [['/admin/users', 'Users & Access', 'user'], ['/admin/system-settings', 'System Settings', 'settings']] }
   ];
   const activeConsoleLink = (href) => consolePath === href || (href !== '/admin' && consolePath.startsWith(href + '/'));
   const activeConsoleItem = consoleGroups.flatMap(g => g.items).find(([href]) => activeConsoleLink(href));
   const consoleInitials = (user.name || 'SA').split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-  const scopedConsoleHref = (href) => consoleStudy && ['/admin', '/admin/qc', '/admin/ai-summary'].includes(href) ? href + '?study=' + encodeURIComponent(consoleStudy.id) : href;
+  const scopedConsoleHref = (href) => consoleStudy && ['/admin', '/admin/qc', '/admin/analysis', '/admin/ai-summary'].includes(href) ? href + '?study=' + encodeURIComponent(consoleStudy.id) : href;
 %>
 <a class="console-skip" href="#console-main">Skip to content</a>
 <div class="console-layout">
