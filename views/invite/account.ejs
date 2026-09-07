@@ -1,4 +1,4 @@
-<%- include('../partials/onboarding_header', { phase: 3, title: (typeof ready !== 'undefined' && ready) ? 'Inicio Diary is ready' : (existingAccount ? 'Your Inicio Diary account' : 'Create your Inicio Diary account'), user: null, showThemeToggle: true }) %>
+<%- include('../partials/onboarding_header', { phase: 3, title: (typeof ready !== 'undefined' && ready) ? 'INICIO Diary is ready' : (existingAccount ? 'Your INICIO Diary account' : 'Create your INICIO Diary account'), user: null, showThemeToggle: true }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
@@ -8,36 +8,36 @@
           <%- icon('check-circle', 'w-7 h-7') %>
         </div>
         <div class="text-xs font-bold uppercase tracking-wide text-emerald-600">Setup complete</div>
-        <h1 class="text-2xl font-bold text-slate-900 mt-1">Your Inicio Diary account is ready</h1>
-        <p class="text-sm text-slate-500 mt-2 leading-relaxed">Your study setup is complete. Install Inicio Diary, then sign in with the username and password you created to open your consumption diary.</p>
+        <h1 class="text-2xl font-bold text-slate-900 mt-1">Your INICIO Diary account is ready</h1>
+        <p class="text-sm text-slate-500 mt-2 leading-relaxed">Your study setup is complete. Install INICIO Diary, then sign in with the username and password you created to open your consumption diary.</p>
       </div>
 
       <div class="rounded-xl bg-brand-50 border border-brand-100 p-4 mt-6">
         <div class="text-xs font-semibold uppercase tracking-wide text-brand-600">Your username</div>
         <div class="text-base font-semibold text-slate-900 mt-1"><%= username %></div>
-        <p class="text-xs text-slate-500 mt-2">Keep your password private. You will use these details whenever you sign in to Inicio Diary.</p>
+        <p class="text-xs text-slate-500 mt-2">Keep your password private. You will use these details whenever you sign in to INICIO Diary.</p>
       </div>
 
       <div class="space-y-3 mt-6">
         <a href="<%= apkUrl %>" class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 px-4 hover:bg-brand-800 transition flex items-center justify-center gap-2">
-          <%- icon('download', 'w-4 h-4') %> Download Inicio Diary
+          <%- icon('download', 'w-4 h-4') %> Download INICIO Diary
         </a>
         <a href="inicio://login" class="w-full rounded-xl bg-white border border-slate-300 text-slate-700 font-semibold py-3.5 px-4 hover:bg-slate-50 transition flex items-center justify-center gap-2">
-          <%- icon('smartphone', 'w-4 h-4') %> Already installed? Open Inicio Diary
+          <%- icon('smartphone', 'w-4 h-4') %> Already installed? Open INICIO Diary
         </a>
       </div>
 
       <div class="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-500 leading-relaxed">
-        <strong class="text-slate-700">What happens next:</strong> install the APK if prompted, open Inicio Diary, then sign in. If Android cannot update an older installation, contact the research team before uninstalling so any unsent entries can be preserved.
+        <strong class="text-slate-700">What happens next:</strong> install the APK if prompted, open INICIO Diary, then sign in. If Android cannot update an older installation, contact the research team before uninstalling so any unsent entries can be preserved.
       </div>
     <% } else { %>
       <div class="mb-6">
         <% if (existingAccount) { %>
-          <h1 class="text-2xl font-bold text-slate-900 mt-1">Your Inicio Diary login is ready</h1>
-          <p class="text-sm text-slate-500 mt-2 leading-relaxed">You already have an Inicio Diary account. We’ll keep your existing username and password and add this study to the same account.</p>
+          <h1 class="text-2xl font-bold text-slate-900 mt-1">Your INICIO Diary login is ready</h1>
+          <p class="text-sm text-slate-500 mt-2 leading-relaxed">You already have an INICIO Diary account. We’ll keep your existing username and password and add this study to the same account.</p>
         <% } else { %>
-          <h1 class="text-2xl font-bold text-slate-900 mt-1">Create your Inicio Diary login</h1>
-          <p class="text-sm text-slate-500 mt-2 leading-relaxed">You’ll use this username and password whenever you open Inicio Diary to complete your consumption diary.</p>
+          <h1 class="text-2xl font-bold text-slate-900 mt-1">Create your INICIO Diary login</h1>
+          <p class="text-sm text-slate-500 mt-2 leading-relaxed">You’ll use this username and password whenever you open INICIO Diary to complete your consumption diary.</p>
         <% } %>
       </div>
 

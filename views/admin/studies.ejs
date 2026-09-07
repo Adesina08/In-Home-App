@@ -1,5 +1,5 @@
 <% if (user.role === 'superadmin') { %>
-<%- include('../partials/header', { title: 'Studies — Inicio Console', user, currentPath: '/admin/studies' }) %>
+<%- include('../partials/header', { title: 'Studies — INICIO Console', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/page_header', { eyebrow: 'Research workspace', title: 'Studies', subtitle: 'Plan, configure, and follow every research study in one place.', actions: '<button type="button" data-open-dialog="create-study" class="console-button is-primary">' + icon('plus', 'w-4 h-4') + 'Create study</button>' }) %>
 <div class="console-metrics">
   <% [['All studies',studies.length,'clipboard','Your complete research portfolio'],['Live',studies.filter(s=>s.status==='live').length,'chart','Currently in fieldwork'],['Draft',studies.filter(s=>s.status==='draft').length,'pencil','Being prepared for launch'],['Closed',studies.filter(s=>s.status==='closed').length,'check-circle','Completed fieldwork']].forEach(([label,value,glyph,note])=>{ %><div class="console-metric"><div class="console-metric-label"><%= label %><span class="console-metric-icon"><%- icon(glyph,'w-4 h-4') %></span></div><div class="console-metric-value"><%= value %></div><div class="console-metric-foot"><%= note %></div></div><% }) %>

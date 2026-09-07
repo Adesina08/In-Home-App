@@ -72,7 +72,7 @@ router.post("/admin/studies/:id/respondents/:respondentId/send-link", requireLog
     template: "diary_link_invite",
     variables: {
       name: respondent.name,
-      study: study ? study.name : "Inicio Diary",
+      study: study ? study.name : "INICIO Diary",
       link: respondentInviteUrl(req, respondent.unique_token),
     },
   });
@@ -84,7 +84,7 @@ router.post("/admin/studies/:id/respondents/:respondentId/send-link", requireLog
   if (result.simulated) {
     return back("linkError", `Messaging isn't connected yet, so nothing was delivered to ${respondent.contact} — the invitation was logged only.`);
   }
-  return back("linked", `Inicio Diary invitation sent to ${respondent.contact}.`);
+  return back("linked", `INICIO Diary invitation sent to ${respondent.contact}.`);
 });
 
 // Interviewer handover QR.
@@ -119,7 +119,7 @@ router.post("/interviewer/respondents/:id/send-link", requireLogin, async (req, 
   if (result.simulated) {
     return back("sendError", `Messaging isn't connected yet, so nothing was actually sent to ${respondent.contact} — the invitation was only logged. Show them the QR code instead.`);
   }
-  return back("sent", `Inicio Diary invitation sent to ${respondent.contact}.`);
+  return back("sent", `INICIO Diary invitation sent to ${respondent.contact}.`);
 });
 
 module.exports = router;

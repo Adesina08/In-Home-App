@@ -1,5 +1,5 @@
 <% if (typeof currentPath !== 'undefined' && /^\/(join|invite)(\/|$)/.test(currentPath)) { %>
-<%- include('partials/onboarding_header', { title: 'Study unavailable — Inicio Diary', phase: 0, study: null }) %>
+<%- include('partials/onboarding_header', { title: 'Study unavailable — INICIO Diary', phase: 0, study: null }) %>
 <div><h1>This link is unavailable</h1><p style="margin-top:16px;color:#526680"><%= message %></p><p style="margin-top:16px;color:#526680">Please check the invitation with the study team.</p></div>
 <%- include('partials/onboarding_footer') %>
 <% } else if (typeof currentPath !== 'undefined' && /^\/client(\/|$)/.test(currentPath) && user) { %>

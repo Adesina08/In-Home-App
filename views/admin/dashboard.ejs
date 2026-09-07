@@ -1,5 +1,5 @@
 <% if (user.role === 'superadmin') { %>
-<%- include('../partials/header', { title: 'Fieldwork Dashboard — Inicio Console', user, currentPath: '/admin', studyPicker: { studies, current: study.id, action: '/admin?study=' } }) %>
+<%- include('../partials/header', { title: 'Fieldwork Dashboard — INICIO Console', user, currentPath: '/admin', studyPicker: { studies, current: study.id, action: '/admin?study=' } }) %>
 <%- include('../partials/page_header', { eyebrow: 'Study overview', title: 'Fieldwork Dashboard', subtitle: study.name, actions: '<a href="/admin?study=' + study.id + '" class="console-button">' + icon('refresh','w-4 h-4') + 'Refresh</a><a href="/admin/studies/' + study.id + '" class="console-button is-primary">' + icon('settings','w-4 h-4') + 'Study settings</a>' }) %>
 <% const submissionShare = expected ? Math.round(completed / expected * 100) : null; const stages = [['invited','Invited'],['screened','Screened'],['registered','Registered'],['activated','Activated'],['active','Active']]; const funnelMax = Math.max(1,...stages.map(([key])=>funnelMap[key] || 0)); %>
 <div class="console-metrics">

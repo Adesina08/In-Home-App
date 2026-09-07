@@ -65,7 +65,7 @@ async function continueAfterAccount(res, respondent) {
     const wa = whatsappChatUrl(respondent.unique_token);
     if (wa) return res.redirect(wa);
     return res.status(503).render("error", {
-      message: "WhatsApp participation is not configured for this deployment yet. Please return to your invitation and choose the Inicio Diary mobile app.",
+      message: "WhatsApp participation is not configured for this deployment yet. Please return to your invitation and choose the INICIO Diary mobile app.",
       user: null,
     });
   }
@@ -184,7 +184,7 @@ router.post("/:token/account", async (req, res) => {
 
   try {
     const account = currentAccount || await accounts.findOrCreate({ contact: respondent.contact, name: respondent.name });
-    if (!account) return fail("We couldn't create your Inicio Diary account. Please try again.");
+    if (!account) return fail("We couldn't create your INICIO Diary account. Please try again.");
 
     // A returning respondent keeps the credentials they already use on their
     // other studies. Never allow a new study invitation to reset that password.
@@ -202,7 +202,7 @@ router.post("/:token/account", async (req, res) => {
       channel: respondent.chosen_mode,
     });
   } catch (e) {
-    return fail(e.message || "We couldn't create your Inicio Diary account. Please try again.");
+    return fail(e.message || "We couldn't create your INICIO Diary account. Please try again.");
   }
 
   return continueAfterAccount(res, respondent);

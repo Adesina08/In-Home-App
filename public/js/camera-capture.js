@@ -66,7 +66,7 @@
       '  <img id="camPhotoPreview" alt="Captured photo preview" class="w-full h-full object-contain hidden" />' +
       '  <video id="camVideoPlayback" playsinline controls class="w-full h-full object-contain hidden"></video>' +
       '  <div id="camPermissionMsg" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center text-white/90 text-sm p-8 gap-4">' +
-      "    <span>Camera access is needed to capture this. Please allow camera access for Inicio Diary, then try again.</span>" +
+      "    <span>Camera access is needed to capture this. Please allow camera access for INICIO Diary, then try again.</span>" +
       '    <button type="button" id="camRetryPermBtn" class="border border-white/40 rounded-lg px-4 py-2 text-sm text-white">Try again</button>' +
       "  </div>" +
       '  <div id="camTimer" class="hidden absolute top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs font-semibold rounded-full px-3 py-1">0:00</div>' +
@@ -350,7 +350,7 @@
     var labelEl = labelElId ? document.getElementById(labelElId) : null;
     if (!input) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert("This device doesn't support live camera capture in Inicio Diary.");
+      alert("This device doesn't support live camera capture in INICIO Diary.");
       return;
     }
     openModal(kind, input, labelEl);

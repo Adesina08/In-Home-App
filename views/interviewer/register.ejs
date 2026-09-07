@@ -23,7 +23,7 @@
 <label class="field-check"><input type="checkbox" name="practice" value="1" <%= v.practice ? 'checked' : '' %> /><span><strong>Practice respondent</strong>Mark this registration as practice, separate from the research sample.</span></label>
 </section>
 <section id="prepare-handover" class="report-panel"><div class="field-section-title"><span class="field-step">3</span><h2>Prepare the handover</h2></div>
-<label class="field-input">Preferred diary channel<select name="preferred_channel"><option value="app" <%= v.preferred_channel !== 'whatsapp' ? 'selected' : '' %>>Inicio Diary app</option><option value="whatsapp" <%= v.preferred_channel === 'whatsapp' ? 'selected' : '' %>>WhatsApp</option></select><small>This records a preference. Registration does not send a message.</small></label>
+<label class="field-input">Preferred diary channel<select name="preferred_channel"><option value="app" <%= v.preferred_channel !== 'whatsapp' ? 'selected' : '' %>>INICIO Diary app</option><option value="whatsapp" <%= v.preferred_channel === 'whatsapp' ? 'selected' : '' %>>WhatsApp</option></select><small>This records a preference. Registration does not send a message.</small></label>
 <p class="report-muted">The app checks for recruitment holds when you save. If a review is needed, you’ll see the reason before handing over.</p>
 <div class="field-submit"><p>Help the respondent open their personal link on their own phone.</p><button type="submit" class="report-button" <%= consent ? '' : 'disabled' %>>Register & continue <span aria-hidden="true">→</span></button></div>
 </section>

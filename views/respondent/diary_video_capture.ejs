@@ -1,9 +1,9 @@
-<%- include('../partials/header', { title: 'Record Video — Inicio Diary', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
+<%- include('../partials/header', { title: 'Record Video — INICIO Diary', user: null, manifestUrl: '/r/' + respondent.unique_token + '/manifest.json' }) %>
 
 <div class="max-w-2xl mx-auto pb-10">
   <div class="flex items-center justify-between mb-5 px-1">
     <div>
-      <div class="text-brand-700 font-bold">Inicio Diary</div>
+      <div class="text-brand-700 font-bold">INICIO Diary</div>
       <div class="text-slate-500 text-sm"><%= study.name %></div>
     </div>
     <a href="/r/<%= respondent.unique_token %>/diary/new<%= practice ? '?practice=1' : '' %>" class="text-sm text-slate-400 hover:text-slate-600 shrink-0">← Change method</a>

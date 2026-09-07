@@ -111,7 +111,7 @@ router.post("/:token/account-app", async (req, res, next) => {
       contact: respondent.contact,
       name: respondent.name,
     });
-    if (!account) return fail("We couldn't create your Inicio Diary account. Please try again.", false);
+    if (!account) return fail("We couldn't create your INICIO Diary account. Please try again.", false);
 
     const hadPassword = !!account.password_hash;
     if (!hadPassword) {
@@ -134,7 +134,7 @@ router.post("/:token/account-app", async (req, res, next) => {
 
     return res.redirect(`/invite/${respondent.unique_token}/ready`);
   } catch (e) {
-    return fail(e.message || "We couldn't create your Inicio Diary account. Please try again.");
+    return fail(e.message || "We couldn't create your INICIO Diary account. Please try again.");
   }
 });
 

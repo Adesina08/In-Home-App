@@ -1,4 +1,4 @@
-<%- include('partials/header', { title: 'Sign in — Inicio Diary', user: null }) %>
+<%- include('partials/header', { title: 'Sign in — INICIO Diary', user: null }) %>
 
 <%#
   Sign-in, redesigned. Two changes of substance beyond the visual pass:
@@ -17,7 +17,7 @@
 <div class="login-stage min-h-[80vh] flex items-center justify-center -mt-4">
   <div class="login-spread w-full max-w-4xl grid md:grid-cols-2 rounded-3xl overflow-hidden shadow-pop border border-slate-200/70 bg-white">
 
-    <div class="hidden md:flex flex-col justify-between bg-brand-700 text-white p-10 relative overflow-hidden">
+    <div class="login-story-page hidden md:flex flex-col justify-between bg-brand-700 text-white p-10 relative overflow-hidden">
       <%# One quiet geometric mark rather than two stacked blurs. %>
       <div class="absolute -right-24 -bottom-24 w-72 h-72 rounded-full border-[28px] border-white/[0.04]"></div>
       <div class="relative">
@@ -51,9 +51,13 @@
       </div>
     </div>
 
+    <div class="notebook-binding" aria-hidden="true">
+      <% for (let ring = 0; ring < 18; ring++) { %><span></span><% } %>
+    </div>
+
     <div class="login-diary-wrap"><section class="login-diary" aria-label="Sign in to your diary"><span class="diary-bookmark" aria-hidden="true"></span><div class="diary-page-heading" aria-hidden="true"><span>INICIO / RESEARCH DIARY</span><span>01</span></div><div class="diary-page-content">
       <div class="mb-7 md:hidden">
-        <img src="/public/icons/logo-header.png" alt="Inicio Diary" class="h-9 w-auto" />
+        <img src="/public/icons/logo-header.png" alt="INICIO Diary" class="h-9 w-auto" />
       </div>
       <h1 class="font-display text-[22px] font-bold text-slate-900 tracking-tight mb-1">Welcome back</h1>
       <p class="text-sm text-slate-500 mb-6">Staff and client accounts.</p>
