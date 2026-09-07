@@ -27,6 +27,8 @@ export type MobileEnrolment = {
 };
 
 export type RespondentProfile = {
+  hasPhoto?: boolean;
+  photoUpdatedAt?: string | null;
   id: number;
   name: string | null;
   location: string | null;
@@ -95,6 +97,7 @@ export const api = {
   diaryLinkLogin: (value: string) => request<{ token: string }>("/mobile/api/auth/diary-link", { method: "POST", body: JSON.stringify({ url: value }) }),
   logout: () => request<{ ok: boolean }>("/mobile/api/auth/logout", { method: "POST" }),
   me: () => request<{ account: any; linkOnly: boolean; enrolments: MobileEnrolment[] }>("/mobile/api/me"),
+  uploadProfilePhoto: (form: FormData) => request<{profile:RespondentProfile}>("/mobile/api/profile/photo", {method:"POST",body:form}),
   profile: () => request<{ profile: RespondentProfile | null; required: boolean; prefillName: string }>("/mobile/api/profile"),
   saveProfile: (values: any) => request<{ profile: RespondentProfile; required: boolean }>("/mobile/api/profile", { method: "PUT", body: JSON.stringify(values) }),
   home: (respondentId: number) => request<any>(`/mobile/api/respondents/${respondentId}/home`),

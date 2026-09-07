@@ -2,7 +2,7 @@
   "expo": {
     "name": "INICIO Diary",
     "slug": "inicio-diary",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "orientation": "portrait",
     "scheme": "inicio",
     "userInterfaceStyle": "light",
@@ -26,7 +26,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "INICIO uses your photo library only when you choose evidence for a diary entry.",
+          "photosPermission": "INICIO uses your photo library when you choose a profile photo or diary evidence.",
           "cameraPermission": "INICIO uses your camera only when you choose to capture diary evidence."
         }
       ],

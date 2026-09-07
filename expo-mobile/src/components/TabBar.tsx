@@ -18,7 +18,9 @@ export function TabBar({ active, onNavigate }: { active: string; onNavigate?: (k
         return (
           <Pressable
             key={tab.key}
-            className="items-center gap-[3px]"
+            accessibilityRole="tab"
+            accessibilityState={{selected:isActive}}
+            className="flex-1 min-h-[48px] items-center justify-center gap-[3px]"
             onPress={() => onNavigate?.(tab.key)}
             hitSlop={10}
           >

@@ -1,6 +1,9 @@
 import "./global.css";
 import React, { useEffect, useState } from "react";
 import { View } from "react-native";
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
+import { useColorScheme } from "nativewind";
+import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   useFonts as useInterFonts,
@@ -26,7 +29,7 @@ import InterviewerApp from "./InterviewerApp";
 type AppMode = "respondent" | "interviewer";
 const MODE_KEY = "inicio.appMode";
 
-export default function App() {
+function AppContent() {
   const [interLoaded] = useInterFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
   const [bricolageLoaded] = useBricolageFonts({ BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold });
   const [monoLoaded] = useMonoFonts({ IBMPlexMono_400Regular, IBMPlexMono_500Medium, IBMPlexMono_600SemiBold });
@@ -58,4 +61,13 @@ export default function App() {
     return <InterviewerApp onSwitchToRespondent={() => switchMode("respondent")} />;
   }
   return <AppRedesign onSwitchToInterviewer={() => switchMode("interviewer")} />;
+}
+
+function SafeApp() {
+  const { colorScheme } = useColorScheme();
+  const dark = colorScheme === 'dark';
+  return <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={{flex:1,backgroundColor:dark?'#0A1628':'#FAF9F7'}}><StatusBar style={dark?'light':'dark'} /><AppContent /></SafeAreaView>;
+}
+export default function App() {
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><SafeApp /></SafeAreaProvider>;
 }

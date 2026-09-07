@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView, Image } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon } from "../icons";
 import { TabBar } from "../components/TabBar";
@@ -107,14 +107,13 @@ export function HomeScreen({
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[40px] shrink-0" />
-      <View className="flex-1 gap-[9px] px-[18px] pb-4">
+      <ScrollView style={{flex:1}} contentContainerStyle={{paddingHorizontal:18,paddingTop:16,paddingBottom:24,gap:13}}>
         <ScreenDoodleField color={blueIcon} />
         {/* Header */}
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-[6px]">
             <View className="h-5 w-5 items-center justify-center rounded-[6px] bg-[#EFF4FF] dark:bg-[rgba(29,78,216,0.2)]">
-              <Icon name="book" size={12} color={blueIcon} strokeWidth={1.9} />
+              <Image source={require("../../assets/logo.png")} style={{width:25,height:20}} resizeMode="contain" accessibilityLabel="Inicio logo" />
             </View>
             <Text className="font-disp-extrabold text-[12.5px] text-[#0F172A] dark:text-[#F8FAFC]">
               Inicio Diary
@@ -171,7 +170,7 @@ export function HomeScreen({
             <Pressable
               disabled={busy}
               onPress={onAcceptConsent}
-              className="mt-[10px] h-[38px] flex-row items-center justify-center gap-[6px] rounded-xl bg-[#1D4ED8]"
+              className="mt-[10px] min-h-[48px] flex-row items-center justify-center gap-[6px] rounded-xl bg-[#1D4ED8]"
               style={busy ? { opacity: 0.6 } : null}
             >
               <Text className="text-[13px] font-sans-bold text-white">
@@ -202,10 +201,10 @@ export function HomeScreen({
           <Pressable
             disabled={consentNeeded || busy}
             onPress={onStartDiary}
-            className="mb-[11px] h-[38px] flex-row items-center justify-center gap-[6px] rounded-xl bg-white"
+            className="mb-[11px] min-h-[48px] flex-row items-center justify-center gap-[6px] rounded-xl bg-white"
             style={consentNeeded || busy ? { opacity: 0.6 } : null}
           >
-            <Text className="text-[13px] font-sans-bold text-[#1D4ED8]">Log consumption</Text>
+            <Text className="text-[13px] font-sans-bold text-[#1D4ED8]">Open diary</Text>
             <Icon name="arrowRight" size={13} color="#1D4ED8" strokeWidth={2.1} />
           </Pressable>
           <View className="mb-[9px] h-px" style={{ backgroundColor: "rgba(255,255,255,0.18)" }} />
@@ -322,7 +321,7 @@ export function HomeScreen({
             No occasions logged yet — start with today's diary above.
           </Text>
         )}
-      </View>
+      </ScrollView>
       <TabBar active="home" onNavigate={onNavigate} />
     </View>
   );

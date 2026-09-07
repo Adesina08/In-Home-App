@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView, Image } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
@@ -91,20 +91,21 @@ export function EntriesScreen({
   draftsCount,
   onNavigate,
   onToggleTheme,
+  onStartDiary,
 }: {
   records: DisplayRecord[];
   submittedCount: number;
   draftsCount: number;
   onNavigate?: (key: string) => void;
   onToggleTheme: () => void;
+  onStartDiary: () => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[40px] shrink-0" />
-      <View className="flex-1 gap-3 px-[18px] pb-4">
+      <ScrollView style={{flex:1}} contentContainerStyle={{paddingHorizontal:18,paddingTop:16,paddingBottom:24,gap:13}}>
         <ScreenDoodleField color={isDark ? "#60A5FA" : "#1D4ED8"} />
         <View className="flex-row items-center justify-between">
           <Text
@@ -121,6 +122,7 @@ export function EntriesScreen({
           </Pressable>
         </View>
 
+        <Pressable accessibilityRole="button" onPress={onStartDiary} style={{minHeight:48,borderRadius:12,backgroundColor:"#1D4ED8",alignItems:"center",justifyContent:"center"}}><Text style={{color:"#FFFFFF",fontWeight:"700",fontSize:14}}>Open diary →</Text></Pressable>
         <View className="flex-row gap-[7px]">
           <FilterPill label="All" count={records.length} active />
           <FilterPill label="Submitted" count={submittedCount} />
@@ -138,7 +140,7 @@ export function EntriesScreen({
             No diary entries yet — they'll show up here once you log an occasion.
           </Text>
         )}
-      </View>
+      </ScrollView>
       <TabBar active="entries" onNavigate={onNavigate} />
     </View>
   );

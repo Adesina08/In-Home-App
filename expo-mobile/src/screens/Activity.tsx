@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView, Image } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
@@ -19,7 +19,7 @@ function StatCard({
   label: string;
 }) {
   return (
-    <View className="flex-1 rounded-[18px] border border-[#E2E8F0] bg-white p-3 dark:border-[#1B3556] dark:bg-[#0F2038]">
+    <View className="rounded-[18px] border border-[#E2E8F0] bg-white p-3 dark:border-[#1B3556] dark:bg-[#0F2038]">
       <View
         className="mb-2 h-[26px] w-[26px] items-center justify-center rounded-lg"
         style={{ backgroundColor: iconBg }}
@@ -55,6 +55,7 @@ export function ActivityScreen({
   voiceCount,
   onNavigate,
   onToggleTheme,
+  onStartDiary,
 }: {
   submittedCount: number;
   daysLogged: number;
@@ -64,6 +65,7 @@ export function ActivityScreen({
   voiceCount: number;
   onNavigate?: (key: string) => void;
   onToggleTheme: () => void;
+  onStartDiary: () => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -77,13 +79,12 @@ export function ActivityScreen({
   const loggingTotal = formCount + videoCount + voiceCount || 1;
   const formPct = Math.round((formCount / loggingTotal) * 100);
   const videoPct = Math.round((videoCount / loggingTotal) * 100);
-  const voicePct = Math.max(0, 100 - formPct - videoPct);
+  const voicePct = Math.round((voiceCount / loggingTotal) * 100);
   const maxBar = Math.max(1, ...last14Days);
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[40px] shrink-0" />
-      <View className="flex-1 gap-[13px] px-[18px] pb-4">
+      <ScrollView style={{flex:1}} contentContainerStyle={{paddingHorizontal:18,paddingTop:16,paddingBottom:24,gap:13}}>
         <ScreenDoodleField color={blueIcon} />
         <View className="flex-row items-center justify-between">
           <Text
@@ -100,6 +101,7 @@ export function ActivityScreen({
           </Pressable>
         </View>
 
+        <Pressable accessibilityRole="button" onPress={onStartDiary} style={{minHeight:48,borderRadius:12,backgroundColor:"#1D4ED8",alignItems:"center",justifyContent:"center"}}><Text style={{color:"#FFFFFF",fontWeight:"700",fontSize:14}}>Open diary →</Text></Pressable>
         <View className="flex-row gap-[9px]">
           <StatCard icon="megaphone" iconBg={blueIconBg} iconColor={blueIcon} value={submittedCount} label="Entries submitted" />
           <StatCard icon="flame" iconBg={amberIconBg} iconColor={amberIcon} value={daysLogged} label="Days you logged" />
@@ -123,7 +125,7 @@ export function ActivityScreen({
           </View>
         </View>
 
-        <View className="flex-1 rounded-[18px] border border-[#E2E8F0] bg-white p-[14px] dark:border-[#1B3556] dark:bg-[#0F2038]">
+        <View className="rounded-[18px] border border-[#E2E8F0] bg-white p-[14px] dark:border-[#1B3556] dark:bg-[#0F2038]">
           <Text className="mb-[11px] text-[12.5px] font-sans-bold text-[#0F172A] dark:text-[#F8FAFC]">
             How you log
           </Text>
@@ -133,7 +135,7 @@ export function ActivityScreen({
             <BreakdownRow label="Voice note" stat={`${voiceCount} · ${voicePct}%`} pct={voicePct} fill={green} />
           </View>
         </View>
-      </View>
+      </ScrollView>
       <TabBar active="activity" onNavigate={onNavigate} />
     </View>
   );

@@ -5,13 +5,13 @@ on:
     inputs:
       version_name:
         description: 'Version shown on Android'
-        default: '2.0.0'
+        default: '2.0.1'
         required: true
   workflow_call:
     inputs:
       version_name:
         type: string
-        default: '2.0.0'
+        default: '2.0.1'
         required: false
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
         run: npm run typecheck
       - name: Set the release version
         env:
-          RELEASE_VERSION: ${{ inputs.version_name || '2.0.0' }}
+          RELEASE_VERSION: ${{ inputs.version_name || '2.0.1' }}
         run: |
           echo "ANDROID_VERSION_NAME=$RELEASE_VERSION" >> "$GITHUB_ENV"
           # Increasing across both calling workflows, without changing the package ID.

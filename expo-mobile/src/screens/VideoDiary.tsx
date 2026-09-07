@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import { ScreenDoodleField } from '../components/Doodles';
 import { packetId, preserveMedia } from '../diaryQueue';
 
 export type VideoScript = { prompts: Array<{ id: string; text: string; hint?: string }>; secondsEach: number; truncated: boolean; totalFillable: number };
@@ -18,7 +19,9 @@ function Button({ title, onPress, disabled = false, secondary = false }: { title
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} onPress={onPress} disabled={disabled} style={[styles.button, secondary && styles.secondary, disabled && { opacity: .45 }]}><Text style={styles.buttonText}>{title}</Text></Pressable>;
 }
 
-export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit }: { respondentId: number; script: VideoScript; onBack: () => void; onSubmit: (draft: VideoDraft) => Promise<void> }) {
+export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode = 'light' }: { mode?: 'light' | 'dark'; respondentId: number; script: VideoScript; onBack: () => void; onSubmit: (draft: VideoDraft) => Promise<void> }) {
+  const {height} = useWindowDimensions();
+  const styles = videoStyles(mode, Math.max(240, Math.min(360, height * .42)));
   const camera = useRef<CameraView>(null);
   const recordingRef = useRef(false);
   const mounted = useRef(true);
@@ -33,7 +36,7 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit }: { r
   const [elapsed, setElapsed] = useState(0);
   const [index, setIndex] = useState(0);
   const [auto, setAuto] = useState(true);
-  const [pace, setPace] = useState(Math.max(5, script.secondsEach));
+  const [pace, setPace] = useState(Math.max(3, script.secondsEach));
   const [error, setError] = useState('');
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const draftKey = `inicio.video-draft.v1.${respondentId}`;
@@ -116,7 +119,7 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit }: { r
   }
   const granted = cameraPermission?.granted && micPermission?.granted;
   return <View style={styles.page}>
-    <View style={styles.header}><Pressable accessibilityRole="button" onPress={onBack} disabled={recording || saving}><Text style={[styles.back, (recording || saving) && { opacity: .4 }]}>‹ Change method</Text></Pressable><Text style={styles.eyebrow}>VIDEO DIARY</Text></View>
+    <ScreenDoodleField color={mode==='dark'?'#60A5FA':'#1D4ED8'} withBottom /><View style={styles.header}><Pressable accessibilityRole="button" onPress={onBack} disabled={recording || saving}><Text style={[styles.back, (recording || saving) && { opacity: .4 }]}>‹ Change method</Text></Pressable><Text style={styles.eyebrow}>VIDEO DIARY</Text></View>
     {loading ? <ActivityIndicator color="#9DBBFF" /> : <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>{draft ? 'Review your recording' : 'Your diary, in your words'}</Text>
       <Text style={styles.copy}>{draft ? 'Play your video, record again, or submit. There is no form to fill in afterwards.' : 'Read each prompt near the camera and answer out loud. Keep the product label visible. Up to 90 seconds.'}</Text>
@@ -139,22 +142,28 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit }: { r
             <View style={styles.promptNav}><Pressable accessibilityRole="button" disabled={index === 0} onPress={() => setIndex(i => Math.max(0, i - 1))}><Text style={[styles.back, index === 0 && { opacity: .4 }]}>‹ Previous</Text></Pressable><Pressable accessibilityRole="button" disabled={index >= script.prompts.length - 1} onPress={() => setIndex(i => Math.min(script.prompts.length - 1, i + 1))}><Text style={[styles.back, index >= script.prompts.length - 1 && { opacity: .4 }]}>Next ›</Text></Pressable></View>
           </View>
         </View>
-        <View style={styles.controls}><Pressable accessibilityRole="button" onPress={() => setAuto(value => !value)}><Text style={styles.back}>{auto ? 'Pause auto prompts' : 'Resume auto prompts'}</Text></Pressable><View style={styles.pace}><Pressable accessibilityRole="button" accessibilityLabel="Faster prompts" onPress={() => setPace(p => Math.max(5, p - 5))}><Text style={styles.back}>−</Text></Pressable><Text style={styles.copy}>{pace}s / prompt</Text><Pressable accessibilityRole="button" accessibilityLabel="Slower prompts" onPress={() => setPace(p => Math.min(90, p + 5))}><Text style={styles.back}>+</Text></Pressable></View></View>
+        <View style={styles.controls}><Pressable accessibilityRole="button" onPress={() => setAuto(value => !value)}><Text style={styles.back}>{auto ? 'Pause auto prompts' : 'Resume auto prompts'}</Text></Pressable><View style={styles.pace}><Pressable accessibilityRole="button" accessibilityLabel="Faster prompts" onPress={() => setPace(p => Math.max(3, p - 1))}><Text style={styles.back}>−</Text></Pressable><Text style={styles.copy}>{pace}s / prompt</Text><Pressable accessibilityRole="button" accessibilityLabel="Slower prompts" onPress={() => setPace(p => Math.min(90, p + 1))}><Text style={styles.back}>+</Text></Pressable></View></View>
         <Text style={styles.copy}>Pausing prompts keeps the camera recording. You can move between prompts yourself.</Text>
         {script.truncated ? <Text style={styles.copy}>Some study questions exceed this recording’s time limit. Cover the prompts shown; the team will review your answers.</Text> : null}
-        <Button title={saving ? 'Saving recording…' : recording ? 'Stop & review' : 'Start recording'} disabled={saving || !ready || !foreground} onPress={recording ? () => camera.current?.stopRecording() : record} />
+
       </>}
     </ScrollView>}
+    {!loading&&!draft&&granted&&Platform.OS!=='web'?<View style={styles.footer}><Button title={saving ? 'Saving recording…' : recording ? 'Stop & review' : 'Start recording'} disabled={saving || !ready || !foreground} onPress={recording ? () => camera.current?.stopRecording() : record} /></View>:null}
   </View>;
 }
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#0A1628' }, header: { padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  content: { paddingHorizontal: 20, paddingBottom: 32, gap: 14 }, title: { color: '#F8FAFC', fontSize: 25, fontWeight: '800' }, copy: { color: '#B7C5D9', fontSize: 13, lineHeight: 20 },
-  back: { color: '#B0C8FF', fontSize: 14, fontWeight: '700', paddingVertical: 10, paddingHorizontal: 4 }, eyebrow: { color: '#B0C8FF', fontSize: 10, letterSpacing: 1.1, fontWeight: '800' },
-  viewfinder: { height: 440, borderRadius: 22, overflow: 'hidden', backgroundColor: '#14233B', borderColor: '#304466', borderWidth: 1 }, camera: { width: '100%', height: '100%' },
-  overlay: { position: 'absolute', top: 12, left: 12, right: 12, padding: 14, borderRadius: 16, backgroundColor: 'rgba(8,18,34,.9)' }, promptHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
-  clock: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' }, promptScroll: { maxHeight: 150, marginTop: 10 }, promptText: { color: '#FFFFFF', fontSize: 21, lineHeight: 28, fontWeight: '700' }, hint: { color: '#D3DFF0', fontSize: 13, lineHeight: 19, marginTop: 8 },
+const styles = videoStyles('light', 300);
+function videoStyles(mode: 'light' | 'dark', cameraHeight: number) {
+const dark=mode==='dark';
+return StyleSheet.create({
+  page: { flex: 1, backgroundColor: dark?'#0A1628':'#FAF9F7' }, header: { padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  footer: {paddingHorizontal:20,paddingVertical:12,borderTopWidth:1,borderColor:dark?'#304466':'#E2E8F0',backgroundColor:dark?'#0A1628':'#FAF9F7'},
+  content: { paddingHorizontal: 20, paddingBottom: 32, gap: 14 }, title: { color: dark?'#F8FAFC':'#0F172A', fontSize: 25, fontWeight: '800' }, copy: { color: dark?'#B7C5D9':'#64748B', fontSize: 13, lineHeight: 20 },
+  back: { color: dark?'#B0C8FF':'#1D4ED8', fontSize: 14, fontWeight: '700', paddingVertical: 10, paddingHorizontal: 4 }, eyebrow: { color: dark?'#B0C8FF':'#1D4ED8', fontSize: 10, letterSpacing: 1.1, fontWeight: '800' },
+  viewfinder: { height: cameraHeight, borderRadius: 22, overflow: 'hidden', backgroundColor: '#14233B', borderColor: '#304466', borderWidth: 1 }, camera: { width: '100%', height: '100%' },
+  overlay: { position: 'absolute', top: 12, left: 12, right: 12, padding: 14, borderRadius: 16, backgroundColor: dark?'rgba(8,18,34,.94)':'rgba(255,255,255,.96)' }, promptHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
+  clock: { color: dark?'#FFFFFF':'#334155', fontSize: 10, fontWeight: '800' }, promptScroll: { maxHeight: 150, marginTop: 10 }, promptText: { color: dark?'#FFFFFF':'#0F172A', fontSize: 21, lineHeight: 28, fontWeight: '700' }, hint: { color: dark?'#D3DFF0':'#64748B', fontSize: 13, lineHeight: 19, marginTop: 8 },
   promptNav: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }, controls: { gap: 4 }, pace: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  button: { backgroundColor: '#375BC7', minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 14 }, secondary: { backgroundColor: '#1C2D48', borderColor: '#496188', borderWidth: 1 }, buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  permission: { padding: 22, borderRadius: 20, backgroundColor: '#182A44', gap: 18 }, error: { color: '#FFB5B5', fontSize: 13, lineHeight: 20 },
+  button: { backgroundColor: '#375BC7', minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 14 }, secondary: { backgroundColor: '#334B70', borderColor: '#496188', borderWidth: 1 }, buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  permission: { padding: 22, borderRadius: 20, backgroundColor: dark?'#182A44':'#FFFFFF', gap: 18 }, error: { color: dark?'#FFB5B5':'#B42318', fontSize: 13, lineHeight: 20 },
 });
+}

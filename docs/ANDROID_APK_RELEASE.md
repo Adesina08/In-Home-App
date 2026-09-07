@@ -22,3 +22,11 @@ Validation:
 - Physical-device camera, microphone, playback and installation tests remain outstanding.
 
 Release transition: package ID remains `com.inicio.inhome`. Android cannot replace an installed APK signed with a different certificate. Devices using the debug build may require reinstalling; protect unsynced entries before removing that app. Use the established release key for all subsequent builds. The matching backend changes must accompany this native release.
+
+## 2.0.1 screen corrections
+
+The next corrective release reserves native safe-area space above and below all screens, makes respondent pages scrollable above the tab bar, and keeps recording controls outside the scrolling content. It restores visible Open diary actions, uses the official logo, defaults both entry modes to light, and carries the doodle background into secondary screens.
+
+Profile now offers private profile-photo uploads, a separate rewards screen, saved-entry sync status, and participation settings. The respondent interviewer-switch option is removed. Automatic video prompts can be adjusted in one-second increments down to three seconds. Empty activity counts show zero percent.
+
+Validation before publication: all 39 backend tests pass, including photo ownership, validation and replacement cleanup; native TypeScript and web export pass. Browser fixtures at compact phone dimensions verify the respondent layouts and navigation. Android system-bar insets and camera hardware still require a physical-device check; browser screenshots do not validate those native behaviors.

@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView, Image, ImageSourcePropType } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
@@ -68,7 +68,7 @@ export function ProfileScreen({
   onSignOut,
   onNavigate,
   onToggleTheme,
-  onSwitchToInterviewer,
+  photoSource, photoBusy, onUploadPhoto, onOpenRewards, onOpenParticipation, onOpenSync, pendingCount,
 }: {
   name: string;
   respondentCode: string;
@@ -79,15 +79,20 @@ export function ProfileScreen({
   onSignOut: () => void;
   onNavigate?: (key: string) => void;
   onToggleTheme: () => void;
-  onSwitchToInterviewer: () => void;
+  photoSource?: ImageSourcePropType;
+  photoBusy: boolean;
+  onUploadPhoto: () => void;
+  onOpenRewards: () => void;
+  onOpenParticipation: () => void;
+  onOpenSync: () => void;
+  pendingCount: number;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <View className="h-[40px] shrink-0" />
-      <View className="flex-1 gap-[13px] px-[18px] pb-4">
+      <ScrollView style={{flex:1}} contentContainerStyle={{paddingHorizontal:18,paddingTop:16,paddingBottom:24,gap:13}}>
         <ScreenDoodleField color={isDark ? "#60A5FA" : "#1D4ED8"} withBottom />
         <Text
           className="font-disp-extrabold text-[20px] text-[#0F172A] dark:text-[#F8FAFC]"
@@ -97,15 +102,12 @@ export function ProfileScreen({
         </Text>
 
         <View className="flex-row items-center gap-3">
-          <View
-            className="h-[52px] w-[52px] items-center justify-center rounded-full"
-            style={{ backgroundColor: isDark ? "rgba(29,78,216,0.2)" : "#EFF4FF" }}
-          >
-            <Text className="font-disp text-[17px] font-bold" style={{ color: isDark ? "#93C5FD" : "#1D4ED8" }}>
-              {initials(name)}
-            </Text>
-          </View>
-          <View className="min-w-0">
+          <Pressable onPress={onUploadPhoto} disabled={photoBusy} accessibilityRole="button" accessibilityLabel="Upload profile photo" style={{alignItems:'center',gap:6}}>
+            <View style={{width:64,height:64,borderRadius:32,overflow:'hidden',alignItems:'center',justifyContent:'center',backgroundColor:isDark?'#1B3556':'#EFF4FF'}}>
+              {photoSource?<Image source={photoSource} style={{width:64,height:64}} />:<Text style={{fontSize:22,fontWeight:'700',color:isDark?'#93C5FD':'#1D4ED8'}}>{initials(name)}</Text>}
+            </View><Text style={{fontSize:11,fontWeight:'600',color:isDark?'#93C5FD':'#1D4ED8'}}>{photoBusy?'Uploading…':'Change photo'}</Text>
+          </Pressable>
+          <View className="min-w-0 flex-1">
             <Text className="text-[15px] font-sans-bold text-[#0F172A] dark:text-[#F8FAFC]">{name}</Text>
             <Text className="mt-[1px] font-mono text-[11px] text-[#94A3B8]">{respondentCode}</Text>
           </View>
@@ -113,8 +115,8 @@ export function ProfileScreen({
 
         <View className="rounded-[18px] border border-[#E2E8F0] bg-white dark:border-[#1B3556] dark:bg-[#0F2038]">
           <Row>
-            <Text className="flex-1 text-[11.5px] text-[#94A3B8]">Study</Text>
-            <Text className="text-[11.5px] font-sans-semibold text-[#0F172A] dark:text-[#F8FAFC]" numberOfLines={1}>
+            <Text style={{width:50,flexShrink:0}} className="text-[11.5px] text-[#94A3B8]">Study</Text>
+            <Text style={{flex:1,textAlign:"right"}} className="text-[11.5px] font-sans-semibold text-[#0F172A] dark:text-[#F8FAFC]" numberOfLines={3}>
               {studyName}
             </Text>
           </Row>
@@ -140,12 +142,7 @@ export function ProfileScreen({
               </Text>
             </View>
           </Row>
-          <Row last>
-            <Text className="flex-1 text-[11.5px] text-[#94A3B8]">Reminders</Text>
-            <Text className="text-[11.5px] font-sans-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-              On this device
-            </Text>
-          </Row>
+
         </View>
 
         <View className="rounded-[18px] border border-[#E2E8F0] bg-white dark:border-[#1B3556] dark:bg-[#0F2038]">
@@ -166,7 +163,9 @@ export function ProfileScreen({
           </Row>
           <NavRow icon="question" label="Help & study guide" isDark={isDark} />
           <NavRow icon="document" label="My other studies" isDark={isDark} onPress={onOpenStudies} />
-          <NavRow icon="switchRole" label="Switch to Interviewer mode" isDark={isDark} onPress={onSwitchToInterviewer} last />
+          <NavRow icon="archive" label="My rewards" isDark={isDark} onPress={onOpenRewards} />
+          <NavRow icon="document" label={`Saved entries${pendingCount?` · ${pendingCount} awaiting sync`:""}`} isDark={isDark} onPress={onOpenSync} />
+          <NavRow icon="checkCircle" label="Study participation & privacy" isDark={isDark} onPress={onOpenParticipation} last />
         </View>
 
         <Text className="text-[10px] leading-[14.5px] text-[#64748B]">
@@ -184,7 +183,7 @@ export function ProfileScreen({
             {busy ? "Signing out…" : "Sign out"}
           </Text>
         </Pressable>
-      </View>
+      </ScrollView>
       <TabBar active="profile" onNavigate={onNavigate} />
     </View>
   );

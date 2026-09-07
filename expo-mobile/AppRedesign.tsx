@@ -8,13 +8,11 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import {
   useAudioRecorder,
@@ -24,19 +22,20 @@ import {
 } from "expo-audio";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColorScheme } from "nativewind";
-import { api, getToken, MobileEnrolment, setToken } from "./src/api";
+import { api, API_BASE, getToken, MobileEnrolment, setToken } from "./src/api";
 import { VideoDiaryScreen, VideoDraft } from "./src/screens/VideoDiary";
 import { HomeScreen, DisplayRecord } from "./src/screens/Home";
 import { EntriesScreen } from "./src/screens/Entries";
 import { ActivityScreen } from "./src/screens/Activity";
 import { ProfileScreen } from "./src/screens/Profile";
-import { LoginDoodleField } from "./src/components/Doodles";
+import { LoginDoodleField, ScreenDoodleField } from "./src/components/Doodles";
 
 import { enqueue, listQueue, syncQueue, removeQueued, packetId, preserveMedia, DiaryPacket } from "./src/diaryQueue";
 
 type ThemeMode = "dark" | "light";
 type Screen =
   | "participation"
+  | "rewards"
   | "sync"
   | "loading"
   | "login"
@@ -176,7 +175,6 @@ const MARITAL = [
   ["prefer_not_to_say", "Prefer not to say"],
 ];
 
-const padTop = Platform.OS === "android" ? RNStatusBar.currentHeight || 0 : 0;
 const THEME_KEY = "inicio.theme";
 
 function ruleMatches(rule: any, answers: AnswerMap) {
@@ -250,11 +248,11 @@ function OutlineButton({ title, onPress, t }: any) {
 }
 
 function AppFrame({ children, t, mode }: { children: React.ReactNode; t: Theme; mode: ThemeMode }) {
-  return <View style={[styles.root, { backgroundColor: t.bg }]}><StatusBar style={mode === "dark" ? "light" : "dark"} />{children}</View>;
+  return <View style={[styles.root, { backgroundColor: t.bg }]}><ScreenDoodleField color={t.blue} withBottom />{children}</View>;
 }
 
 function Brand({ t }: { t: Theme }) {
-  return <View style={styles.brandRow}><View style={{ width: 22, alignItems: "center" }}><Text style={{ color: "#5D93FF", fontSize: 19 }}>▭</Text></View><Text style={[styles.brandName, { color: t.text }]}>Inicio Diary</Text></View>;
+  return <View style={styles.brandRow}><Image source={require("./assets/logo.png")} style={{width:32,height:24}} resizeMode="contain" accessibilityLabel="Inicio logo" /><Text style={[styles.brandName, { color: t.text }]}>Inicio Diary</Text></View>;
 }
 
 function Card({ children, t, style }: { children: React.ReactNode; t: Theme; style?: any }) {
@@ -299,6 +297,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [problems, setProblems] = useState<any[]>([]);
   const [videoScript, setVideoScript] = useState<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number } | null>(null);
+  const [photoSource,setPhotoSource] = useState<{uri:string;headers:Record<string,string>}|undefined>();
+  const [photoBusy,setPhotoBusy] = useState(false);
   const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
   const draftKey = selected ? `inicio.draft.${selected.respondent.id}` : "";
@@ -318,8 +318,29 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     else setScreen("studies");
   }
 
+  async function showProfilePhoto(profile:any) {
+    const token=await getToken();
+    setPhotoSource(profile?.hasPhoto&&token?{uri:`${API_BASE}/mobile/api/profile/photo?v=${encodeURIComponent(profile.photoUpdatedAt||'')}`,headers:{Authorization:`Bearer ${token}`}}:undefined);
+  }
+  async function uploadProfilePhoto() {
+    if(photoBusy)return;
+    try {
+      const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if(!permission.granted){Alert.alert('Photo access needed','Allow photo access in device settings to choose your profile image.');return;}
+      const picked=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.65});
+      if(picked.canceled||!picked.assets[0])return;
+      const asset=picked.assets[0];
+      if(asset.fileSize&&asset.fileSize>3*1024*1024){Alert.alert('Choose a smaller image','Profile images must be smaller than 3 MB.');return;}
+      setPhotoBusy(true);
+      const form=new FormData();form.append('photo',{uri:asset.uri,name:asset.fileName||'profile.jpg',type:asset.mimeType||'image/jpeg'} as any);
+      const result=await api.uploadProfilePhoto(form);await showProfilePhoto(result.profile);
+    } catch(e:any){Alert.alert('Could not upload photo',e.message);}
+    finally{setPhotoBusy(false);}
+  }
+
   async function loadProfileGate() {
     const result = await api.profile();
+    await showProfilePhoto(result.profile);
     if (result.required) {
       const p = result.profile;
       setProfileForm({
@@ -409,7 +430,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   const [participation,setParticipation]=useState<any>(null);
   const [closeoutAnswers,setCloseoutAnswers]=useState<Record<string,string>>({});
-  async function openParticipation(){if(!selected)return;try{setParticipation(await api.participation(selected.respondent.id));setScreen("participation");}catch(e:any){Alert.alert("Connection needed",e.message);}}
+  async function openParticipation(target: "participation" | "rewards" = "participation"){if(!selected)return;try{setParticipation(await api.participation(selected.respondent.id));setScreen(target);}catch(e:any){Alert.alert("Connection needed",e.message);}}
   const [pendingEntries,setPendingEntries]=useState<DiaryPacket[]>([]);
   const [captureTime,setCaptureTime]=useState(new Date().toISOString());
   const [occurrenceTime,setOccurrenceTime]=useState(new Date().toISOString());
@@ -555,7 +576,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const drafts = records.filter((r: any) => r.status === "draft").length;
   const respondentName = home?.respondent?.name || selected?.respondent?.name || "";
 
-  if(screen==='participation'&&selected&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Your participation</Text><Card t={t}><Text style={{color:t.text}}>Allow authorised client researchers to view your study photos, video and audio?</Text><ChoiceList t={t} options={[["yes","Yes, share study media"],["no","No, keep media with the research team"]]} value={participation.mediaConsent?'yes':'no'} onChange={async value=>{try{await api.mediaConsent(selected.respondent.id,value==='yes');await openParticipation();}catch(e:any){Alert.alert('Could not save',e.message);}}}/></Card><Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Study rewards</Text>{participation.incentives.length?participation.incentives.map((i:any,index:number)=><Text key={index} style={{color:t.muted}}>{i.milestone} · {i.currency} {i.amount} · {i.status}</Text>):<Text style={{color:t.muted}}>No reward eligibility has been recorded yet.</Text>}</Card>{participation.closeoutDue&&!participation.closeoutCompleted?<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Final study validation</Text>{participation.questions.map((q:any)=><View key={q.code}><Text style={{color:t.text}}>{q.text}{q.required?' *':''}</Text>{q.type==='single'?<ChoiceList t={t} options={q.options.map((o:string)=>[o,o])} value={closeoutAnswers[q.code]||''} onChange={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))}/>:<TextInput value={closeoutAnswers[q.code]||''} onChangeText={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))} style={[styles.input,{color:t.text,borderColor:t.border}]} />}</View>)}<PrimaryButton t={t} title="Submit final validation" onPress={async()=>{try{await api.closeout(selected.respondent.id,closeoutAnswers);await openParticipation();}catch(e:any){Alert.alert('Check your answers',e.message);}}}/></Card>:null}{participation.closeoutCompleted?<Text style={{color:t.green}}>Final validation completed.</Text>:null}<Pressable onPress={()=>Alert.alert('Withdraw from this study?','You will stop participating. The research team will process your data according to the study retention policy.',[{text:'Keep participating',style:'cancel'},{text:'Withdraw',style:'destructive',onPress:async()=>{try{await api.withdraw(selected.respondent.id);await logout();}catch(e:any){Alert.alert('Could not withdraw',e.message);}}}])}><Text style={{color:t.red}}>Withdraw from study</Text></Pressable></ScrollView></AppFrame>;
+  if(screen==='rewards'&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>My rewards</Text><Text style={{color:t.muted}}>Rewards for {home?.study?.name||'this study'}.</Text>{participation.incentives.length?participation.incentives.map((reward:any,index:number)=><Card key={index} t={t}><Text style={{color:t.text,fontWeight:'700',fontSize:16}}>{reward.milestone==='onboarding'?'Getting started':reward.milestone==='closeout'?'Study completion':'Diary participation'}</Text><Text style={{color:t.blue,fontWeight:'800',fontSize:24,marginVertical:8}}>{reward.currency} {Number(reward.amount).toLocaleString()}</Text><Text style={{color:t.muted}}>{reward.status==='paid'?'Paid':reward.status==='eligible'?'Eligible · awaiting payment':reward.status==='held'?'On hold · under review':reward.status}</Text></Card>):<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>No rewards recorded yet</Text><Text style={{color:t.muted,marginTop:8}}>Your eligible study rewards will appear here when confirmed by the research team.</Text></Card>}</ScrollView></AppFrame>;
+  if(screen==='participation'&&selected&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Your participation</Text><Card t={t}><Text style={{color:t.text}}>Allow authorised client researchers to view your study photos, video and audio?</Text><ChoiceList t={t} options={[["yes","Yes, share study media"],["no","No, keep media with the research team"]]} value={participation.mediaConsent?'yes':'no'} onChange={async value=>{try{await api.mediaConsent(selected.respondent.id,value==='yes');await openParticipation();}catch(e:any){Alert.alert('Could not save',e.message);}}}/></Card>{participation.closeoutDue&&!participation.closeoutCompleted?<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Final study validation</Text>{participation.questions.map((q:any)=><View key={q.code}><Text style={{color:t.text}}>{q.text}{q.required?' *':''}</Text>{q.type==='single'?<ChoiceList t={t} options={q.options.map((o:string)=>[o,o])} value={closeoutAnswers[q.code]||''} onChange={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))}/>:<TextInput value={closeoutAnswers[q.code]||''} onChangeText={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))} style={[styles.input,{color:t.text,borderColor:t.border}]} />}</View>)}<PrimaryButton t={t} title="Submit final validation" onPress={async()=>{try{await api.closeout(selected.respondent.id,closeoutAnswers);await openParticipation();}catch(e:any){Alert.alert('Check your answers',e.message);}}}/></Card>:null}{participation.closeoutCompleted?<Text style={{color:t.green}}>Final validation completed.</Text>:null}<Pressable onPress={()=>Alert.alert('Withdraw from this study?','You will stop participating. The research team will process your data according to the study retention policy.',[{text:'Keep participating',style:'cancel'},{text:'Withdraw',style:'destructive',onPress:async()=>{try{await api.withdraw(selected.respondent.id);await logout();}catch(e:any){Alert.alert('Could not withdraw',e.message);}}}])}><Text style={{color:t.red}}>Withdraw from study</Text></Pressable></ScrollView></AppFrame>;
   if(screen==='sync')return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Saved on this device</Text><Text style={{color:t.muted}}>Entries remain here until the server confirms receipt. Pending entries retry while the app is open.</Text><PrimaryButton title="Retry sync" t={t} onPress={()=>refreshSync(true)} />{!pendingEntries.length?<Text style={{color:t.text}}>All queued entries have synced.</Text>:pendingEntries.map(p=><Card key={p.id} t={t}><Text style={{color:t.text}}>{p.fields.occurrence_time} · {p.kind}</Text><Text style={{color:t.muted}}>{p.state==='needs_attention'?'Needs attention':'Waiting to sync'} · {p.media.length} saved files</Text>{p.error?<Text style={{color:t.red}}>{p.error}</Text>:null}{p.state==='needs_attention'&&p.kind==='standard'?<Pressable onPress={()=>reviewQueued(p)}><Text style={{color:t.blue}}>Review and edit saved entry</Text></Pressable>:null}<Pressable onPress={()=>Alert.alert('Delete this saved entry?','This removes its answers and media from this device.',[{text:'Keep entry',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await removeQueued(p.respondentId,p.id);await refreshSync();}}])}><Text style={{color:t.red}}>Delete saved entry</Text></Pressable></Card>)}</ScrollView></AppFrame>;
 
   if (screen === "loading") return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator size="large" color={t.blue} /></View></AppFrame>;
@@ -582,7 +604,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
     if (screen === "home")
       return (
-        <View style={{flex:1}}><Pressable accessibilityRole="button" onPress={()=>setScreen("sync")} style={{padding:12,backgroundColor:t.card}}><Text style={{color:t.blue}}>Saved on this device · {pendingEntries.length} awaiting sync</Text></Pressable><Pressable onPress={openParticipation} style={{padding:12,backgroundColor:t.card}}><Text style={{color:t.blue}}>Participation, rewards & final validation</Text></Pressable><HomeScreen
+        <HomeScreen
           firstName={firstName(respondentName)}
           studyName={home.study.name}
           consentNeeded={!!consentNeeded}
@@ -598,12 +620,13 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
           onOpenStudies={() => setScreen("studies")}
           onViewAllEntries={() => setScreen("entries")}
           onNavigate={(key) => setScreen(key as Screen)}
-        /></View>
+        />
       );
 
     if (screen === "entries")
       return (
         <EntriesScreen
+          onStartDiary={openDiaryModePicker}
           records={displayRecords}
           submittedCount={submitted}
           draftsCount={drafts}
@@ -615,6 +638,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     if (screen === "activity")
       return (
         <ActivityScreen
+          onStartDiary={openDiaryModePicker}
           submittedCount={submitted}
           daysLogged={daysLogged}
           last14Days={last14}
@@ -631,13 +655,19 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
         name={respondentName}
         respondentCode={home.respondent.respondentCode}
         studyName={home.study.name}
-        activated={home.respondent.consentStatus === "given"}
+        activated={["active","activated"].includes(home.respondent.activationStatus)}
         busy={busy}
         onOpenStudies={() => setScreen("studies")}
         onSignOut={logout}
         onNavigate={(key) => setScreen(key as Screen)}
         onToggleTheme={toggleTheme}
-        onSwitchToInterviewer={onSwitchToInterviewer}
+        photoSource={photoSource}
+        photoBusy={photoBusy}
+        onUploadPhoto={uploadProfilePhoto}
+        onOpenRewards={()=>openParticipation("rewards")}
+        onOpenParticipation={()=>openParticipation()}
+        onOpenSync={()=>setScreen("sync")}
+        pendingCount={pendingEntries.length}
       />
     );
   }
@@ -674,23 +704,23 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     );
 
   if (screen === "diaryVideo" && selected && videoScript)
-    return <AppFrame t={DARK} mode="dark"><VideoDiaryScreen respondentId={selected.respondent.id} script={videoScript} onBack={() => setScreen("diaryMode")} onSubmit={submitRecordedVideo} /></AppFrame>;
+    return <AppFrame t={t} mode={mode}><VideoDiaryScreen mode={mode} respondentId={selected.respondent.id} script={videoScript} onBack={() => setScreen("diaryMode")} onSubmit={submitRecordedVideo} /></AppFrame>;
 
-  if (screen === "diary" && selected && questionnaire) return <AppFrame t={DARK} mode="dark"><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 90 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("home")}><Text style={{ color: DARK.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: DARK.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: DARK.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:DARK.text,borderColor:DARK.border}]} /><Text style={[styles.smallMuted,{color:DARK.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={DARK} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: DARK.text }]}>{q.text}{q.required ? <Text style={{ color: DARK.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:DARK.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:DARK.text,borderColor:DARK.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={DARK.subtle} style={[styles.input, styles.textArea, { color: DARK.text, borderColor: DARK.border, backgroundColor: DARK.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: DARK.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: DARK.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: DARK.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: DARK.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={styles.answerChips}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); return <Pressable key={opt} onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? DARK.blueSoft : DARK.card, borderColor: on ? DARK.blue : DARK.border }]}><Text style={{ color: on ? "#9EBBFF" : DARK.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: DARK.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={DARK} /><View style={{ flex: 1 }}><Text style={{ color: DARK.text, fontWeight: "800" }}>{q.type === "video" ? "Record video" : "Take photo"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Opens your camera — no gallery photos.</Text></View><Text style={{ color: DARK.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPressIn={() => startRecording(q.id)} onPressOut={() => stopRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: DARK.card, borderColor: recordingQuestionId === q.id ? DARK.red : DARK.border }]}><Icon glyph="♩" t={DARK} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? DARK.red : DARK.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… release to stop" : "Press and hold to record"}</Text><Text style={[styles.smallMuted, { color: DARK.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <Text style={{ color: DARK.green, marginTop: 6, fontSize: 11 }}>✓ Evidence captured</Text> : null}{problem ? <Text style={{ color: DARK.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: DARK.nav, borderTopColor: DARK.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: DARK.border }]}><Text style={{ color: DARK.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: DARK.blue }, busy && { opacity: .5 }]}><Text style={{ color: DARK.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
+  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("home")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: t.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: t.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: t.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={styles.answerChips}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); return <Pressable key={opt} onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{q.type === "video" ? "Record video" : "Take photo"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens your camera — no gallery photos.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPressIn={() => startRecording(q.id)} onPressOut={() => stopRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… release to stop" : "Press and hold to record"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <Text style={{ color: t.green, marginTop: 6, fontSize: 11 }}>✓ Evidence captured</Text> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingTop: padTop },
+  root: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  page: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 34, gap: 12 },
+  page: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 12 },
   card: { borderWidth: 1, borderRadius: 18, padding: 14 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   brandName: { fontSize: 15, fontWeight: "900", letterSpacing: .2 },
   bookMark: { width: 36, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   bookGlyph: { fontSize: 22, fontWeight: "900", marginTop: -2 },
-  loginWrap: { minHeight: "100%", paddingHorizontal: 28, paddingTop: 92, paddingBottom: 24, justifyContent: "space-between" },
+  loginWrap: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 24, gap: 20, justifyContent: "center" },
   loginTop: { alignItems: "center" },
   loginTitle: { fontSize: 26, fontWeight: "900", marginTop: 12, letterSpacing: .2 },
   loginSubtitle: { fontSize: 13, marginTop: 4 },
