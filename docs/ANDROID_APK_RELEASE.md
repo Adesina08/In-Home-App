@@ -30,3 +30,5 @@ The next corrective release reserves native safe-area space above and below all 
 Profile now offers private profile-photo uploads, a separate rewards screen, saved-entry sync status, and participation settings. The respondent interviewer-switch option is removed. Automatic video prompts can be adjusted in one-second increments down to three seconds. Empty activity counts show zero percent.
 
 Validation before publication: all 39 backend tests pass, including photo ownership, validation and replacement cleanup; native TypeScript and web export pass. Browser fixtures at compact phone dimensions verify the respondent layouts and navigation. Android system-bar insets and camera hardware still require a physical-device check; browser screenshots do not validate those native behaviors.
+
+An Android component check with mocked camera hardware also passes: light default, three-second pacing floor, fixed recording controls, and prompt pause while recording continues. Long prompts scroll within the camera preview to preserve prompt-navigation space on compact screens.
