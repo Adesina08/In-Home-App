@@ -12,7 +12,7 @@ before(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'inicio-report-test-'));
   await store.connect({ uri: '', file: path.join(dir, 'test.json') });
   study = await store.insert('studies', { name: 'Report study',minimum_base_size:2 });
-  for(const id of [99,100])await store.insert('respondents',{id,study_id:study.id,activation_status:'active',consent_status:'given',media_consent:true});
+  for(const id of [99,100])await store.insert('respondents',{id,study_id:study.id,activation_status:'active',consent_status:'given',media_consent:true,created_at:'2026-09-01 00:00:00'});
   await store.insert('client_grants',{user_id:7,study_id:study.id,enabled:true,media:true,text:true,exports:true});
   const other = await store.insert('studies', { name: 'Foreign study' });
   const q = await store.insert('questions', { study_id: study.id, type: 'text', code: 'brand', text: 'Experience' });
