@@ -17,6 +17,7 @@ const { logAudit } = require("../lib/audit");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
 const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
 
+const submission = require("../lib/diarySubmission");
 const router = express.Router();
 const uploadsRoot = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
 const upload = multer({ dest: uploadsRoot, limits: { fileSize: 60 * 1024 * 1024, files: 12 } });
@@ -60,7 +61,10 @@ async function ownedRespondent(req, id) {
   return r && p.account && r.account_id === p.account.id ? r : null;
 }
 
-function diaryGate(respondent, res) {
+async function diaryGate(respondent, res) {
+  const study=await store.findOne("studies",{id:respondent.study_id});
+  if(!study||study.status==="closed"){res.status(410).json({error:"The study has closed. Open Participation for final validation."});return false;}
+  if (respondent.withdrawn_at || ["pending","completed"].includes(respondent.end_validation_status)) { res.status(410).json({error:"Participation in this study has ended."}); return false; }
   if (respondent.activation_status === "disqualified") {
     res.status(410).json({ error: "This study is complete for you." });
     return false;
@@ -69,7 +73,7 @@ function diaryGate(respondent, res) {
     res.status(428).json({ error: "Please review and accept the study consent before starting a diary." });
     return false;
   }
-  if (!["activated", "active"].includes(respondent.activation_status)) {
+  if (!["activated", "active", "training"].includes(respondent.activation_status)) {
     res.status(423).json({ error: "Your enrolment is waiting for activation." });
     return false;
   }
@@ -149,7 +153,7 @@ router.get("/respondents/:id/home", requireMobileAuth, async (req, res) => {
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
   const study = await store.findOne("studies", { id: respondent.study_id });
   const consent = await store.findOne("consent_versions", { study_id: study.id, status: "approved" }, { sort: { version: -1 } });
-  const records = await store.find("diary_records", { respondent_id: respondent.id }, { sort: { entry_time: -1 }, limit: 30 });
+  const records = await store.find("diary_records", { respondent_id: respondent.id }, { sort: { entry_time: -1 } });
   res.json({
     respondent: publicRespondent(respondent),
     study: { id: study.id, name: study.name, status: study.status, market: study.market || null, category: study.category || null, diaryMode: study.diary_mode || null, recruitmentMode: study.recruitment_mode || null, inviteBrief: study.invite_brief || null, mandatoryPhoto: !!study.mandatory_photo },
@@ -161,22 +165,53 @@ router.get("/respondents/:id/home", requireMobileAuth, async (req, res) => {
 router.post("/respondents/:id/consent", requireMobileAuth, async (req, res) => {
   const respondent = await ownedRespondent(req, req.params.id);
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
-  const nextStatus = respondent.activation_status === "registered" ? "registered" : "activated";
-  await store.update("respondents", { id: respondent.id }, { consent_status: "given", activation_status: nextStatus });
+  if(respondent.withdrawn_at||respondent.activation_status==='disqualified')return res.status(410).json({error:"Participation has ended."});
+  const consent=await store.findOne("consent_versions",{study_id:respondent.study_id,status:"approved"},{sort:{version:-1}});
+  if(!consent||Number(req.body.consent_version)!==consent.version)return res.status(409).json({error:"The consent wording changed. Reopen the study and review the current version."});
+  const nextStatus = ["registered","training"].includes(respondent.activation_status) ? respondent.activation_status : "activated";
+  await store.update("respondents", { id: respondent.id }, { consent_status: "given", activation_status: nextStatus,consent_version:consent.version,consent_at:store.nowSql(),consent_recorded_by:"respondent" });
   logAudit(respondent.respondent_code, "mobile_consent", "respondents", respondent.id, {});
   res.json({ ok: true });
+});
+
+router.get('/respondents/:id/submissions/:key',requireMobileAuth,async(req,res)=>{
+ const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);
+ const row=await store.findOne('diary_submissions',{id:`${r.id}:${req.params.key}`,state:'done'});
+ res.json(row?{recordId:row.record_id,status:row.result_status}:null);
+});
+router.get('/respondents/:id/participation',requireMobileAuth,async(req,res)=>{
+  const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);const study=await store.findOne('studies',{id:r.study_id});
+  const due=r.end_validation_status==='pending'||study.status==='closed'||study.end_date&&study.end_date<store.nowSql().slice(0,10);
+  res.json({mediaConsent:r.media_consent===true,withdrawn:!!r.withdrawn_at,closeoutDue:!!due,closeoutCompleted:r.end_validation_status==='completed',questions:require('../lib/closeOutQuestionnaire').questionsFor(study),incentives:(await store.find('incentive_ledger',{respondent_id:r.id})).map(i=>({milestone:i.milestone,amount:i.amount,currency:i.currency,status:i.status}))});
+});
+router.post('/respondents/:id/media-consent',requireMobileAuth,async(req,res)=>{
+  const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);if(r.consent_status!=='given'||r.withdrawn_at)return res.sendStatus(403);
+  await require('../lib/researchOperations').audit(r.respondent_code,'media_consent',r.study_id,{respondent_id:r.id,given:req.body.given===true});await store.update('respondents',{id:r.id},{media_consent:req.body.given===true,media_consent_at:store.nowSql()});res.json({ok:true});
+});
+router.post('/respondents/:id/withdraw',requireMobileAuth,async(req,res)=>{
+  const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);await require('../lib/researchPrivacy').withdraw(r,r.respondent_code);res.json({ok:true});
+});
+router.post('/respondents/:id/closeout',requireMobileAuth,async(req,res)=>{
+  const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);const study=await store.findOne('studies',{id:r.study_id});
+  if(r.consent_status!=='given'||r.withdrawn_at)return res.sendStatus(403);
+  if(r.end_validation_status==='completed')return res.json({ok:true});
+  if(r.end_validation_status!=='pending'&&study.status!=='closed'&&!(study.end_date&&study.end_date<store.nowSql().slice(0,10)))return res.status(409).json({error:'Final validation is not due yet.'});
+  const closeout=require('../lib/closeOutQuestionnaire');const answers={};for(const q of closeout.questionsFor(study))answers[q.code]=String(req.body.answers?.[q.code]||'');
+  const errors=closeout.validate(answers,study);if(Object.keys(errors).length)return res.status(400).json({error:'Answer the required final validation questions.',fields:errors});
+  await require('../lib/researchOperations').insertOnce('end_validations',`closeout:${r.id}`,{respondent_id:r.id,study_id:study.id,answers,completed_at:store.nowSql()});await store.update('respondents',{id:r.id},{end_validation_status:'completed'});res.json({ok:true});
 });
 
 router.get("/respondents/:id/questionnaire", requireMobileAuth, async (req, res) => {
   const respondent = await ownedRespondent(req, req.params.id);
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
-  if (!diaryGate(respondent, res)) return;
+  if (!await diaryGate(respondent, res)) return;
   const study = await store.findOne("studies", { id: respondent.study_id });
-  const { questions, rules } = await loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   res.json({
-    study: { id: study.id, name: study.name, version: study.version || 1 },
+    study: { id: study.id, name: study.name, version: study.version || 1, backEntryHours: study.back_entry_hours ?? 24, diaryMode:study.diary_mode, practiceRequired:respondent.activation_status === "training" },
     respondent: publicRespondent(respondent),
-    questions: questions.map((q) => ({ id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], minValue: q.min_value, maxValue: q.max_value })),
+    occasionNumber:(await store.count("diary_records",{respondent_id:respondent.id,status:"submitted",is_practice:0}))+1,
+    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], minValue: q.min_value, maxValue: q.max_value })),
     rules: rules.map((r) => ({ id: r.id, targetQuestionId: r.target_question_id, conditionQuestionId: r.condition_question_id, operator: r.operator, value: r.value, action: r.action, terminateScope: r.terminate_scope || null })),
   });
 });
@@ -186,9 +221,9 @@ router.get("/respondents/:id/questionnaire", requireMobileAuth, async (req, res)
 router.get("/respondents/:id/diary/video-script", requireMobileAuth, async (req, res) => {
   const respondent = await ownedRespondent(req, req.params.id);
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
-  if (!diaryGate(respondent, res)) return;
+  if (!await diaryGate(respondent, res)) return;
   const study = await store.findOne("studies", { id: respondent.study_id });
-  const { questions } = await loadQuestionnaire(study.id);
+  const { questions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const script = buildVideoPrompts(questions);
   res.json(script);
 });
@@ -196,31 +231,31 @@ router.get("/respondents/:id/diary/video-script", requireMobileAuth, async (req,
 // Video mode: the respondent's part ends here. The video is saved as evidence
 // immediately and AI field-extraction (lib/videoEntryAnalysis.js) runs in the
 // background, exactly like the web respondent flow's /diary/analyze-video.
-router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.single("video"), async (req, res) => {
+router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.single("video"), submission.cleanupUploads, async (req, res) => {
   const respondent = await ownedRespondent(req, req.params.id);
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
-  if (!diaryGate(respondent, res)) return;
+  if (!await diaryGate(respondent, res)) return;
   if (!req.file) return res.status(400).json({ error: "Please record a video before continuing." });
 
   const study = await store.findOne("studies", { id: respondent.study_id });
-  const { questions } = await loadQuestionnaire(study.id);
+  const { questions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
-  const isPractice = req.body.practice === "1" ? 1 : 0;
+  const isPractice = respondent.activation_status === "training" || req.body.practice === "1" ? 1 : 0;
 
-  const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
   const now = store.nowSql();
-  const { id: recordId } = await store.insert("diary_records", {
+  const recordId = await submission.begin(req,res,respondent, {
     respondent_id: respondent.id,
     study_id: study.id,
     period_label: now.slice(0, 10),
-    occurrence_time: now,
+    ...submission.timestamps(req.body,study),
     entry_time: now,
-    submit_time: now,
     channel: "app",
     status: "submitted",
     is_practice: isPractice,
-    entry_mode: "video",
+    entry_mode: "video",review_status:"pending_ai",
   });
+  if(recordId===null)return;
+  const storedPath = await persistUpload(req.file);
   await store.insert("media", { record_id: recordId, media_type: "video", file_path: storedPath });
 
   analyzeSubmittedVideo({
@@ -236,32 +271,39 @@ router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.si
   }
 
   logAudit(respondent.respondent_code, "mobile_diary_video_submit", "diary_records", recordId, { practice: !!isPractice });
+  await submission.finish(req,recordId,"submitted");
   res.status(201).json({ recordId, status: "submitted" });
 });
 
-router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), async (req, res) => {
+router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submission.cleanupUploads, async (req, res) => {
   const respondent = await ownedRespondent(req, req.params.id);
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
-  if (!diaryGate(respondent, res)) return;
+  if (!await diaryGate(respondent, res)) return;
 
   const study = await store.findOne("studies", { id: respondent.study_id });
-  const { questions, rules } = await loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   let answers = {};
   try { answers = req.body.answers_json ? JSON.parse(req.body.answers_json) : {}; }
   catch (e) { return res.status(400).json({ error: "Your saved answers could not be read." }); }
 
-  const body = {};
+  const body = {occurrence_time:req.body.occurrence_time,occasion_number:req.body.occasion_number};
   for (const q of questions) {
+    if(!require("../lib/advancedQuestionnaire").scheduled(q,{occurrenceTime:req.body.occurrence_time,occasionNumber:Number(req.body.occasion_number)||1}))continue;
     const v = answers[String(q.id)] !== undefined ? answers[String(q.id)] : answers[q.id];
     if (v === undefined || v === null || v === "") continue;
     body[`q_${q.id}`] = q.type === "multi" && !Array.isArray(v) ? String(v).split("|").filter(Boolean) : v;
   }
 
+  if(questions.some(q=>q.every_nth_occasion)&&req.body.submission_id&&!await store.findOne('diary_submissions',{id:`${respondent.id}:${req.body.submission_id}`})){
+    const expected=(await store.count('diary_records',{respondent_id:respondent.id,status:'submitted',is_practice:0}))+1;
+    if(Number(req.body.occasion_number)!==expected)return res.status(409).json({error:'The questionnaire sequence changed on another device. Review this saved entry using the current questionnaire.'});
+  }
   const action = req.body.action === "draft" ? "draft" : "submit";
   const isSubmit = action === "submit";
-  const isPractice = req.body.practice === "1" ? 1 : 0;
+  const isPractice = respondent.activation_status === "training" || req.body.practice === "1" ? 1 : 0;
   const entryMode = ["standard", "video", "audio"].includes(req.body.entry_mode) ? req.body.entry_mode : "standard";
-  const occurrenceTime = req.body.occurrence_time ? String(req.body.occurrence_time).replace("T", " ").replace(/Z$/, "").slice(0, 19) : store.nowSql();
+  const times = submission.timestamps(req.body, study);
+  const occurrenceTime = times.occurrence_time;
   const periodLabel = req.body.period_label || occurrenceTime.slice(0, 10);
 
   const skipAnswers = {};
@@ -279,13 +321,15 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), async (re
 
   const terminateNote = isTerminated ? `Terminated: question ${terminateMatch.condition_question_id} ${terminateMatch.operator} ${terminateMatch.value}` : null;
   const now = store.nowSql();
-  const { id: recordId } = await store.insert("diary_records", {
+  const recordId = await submission.begin(req,res,respondent, {
     respondent_id: respondent.id, study_id: study.id, period_label: periodLabel,
-    occurrence_time: occurrenceTime, entry_time: now, submit_time: isSubmit ? now : null,
+    ...times, entry_time: now, submit_time: isSubmit ? times.submit_time : null,
+    participation_kind:req.body.participation_kind === "period_summary" ? "period_summary" : "occasion",
     channel: "app", status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"),
     is_practice: isPractice, entry_mode: entryMode, terminate_note: terminateNote,
   });
 
+  if(recordId===null)return;
   for (const q of questions) {
     if (["photo", "video", "audio"].includes(q.type)) continue;
     const raw = body[`q_${q.id}`];
@@ -300,7 +344,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), async (re
   const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
 
   for (const f of req.files || []) {
-    const storedPath = await persistUpload(f).catch(() => `/uploads/${f.filename}`);
+    const storedPath = await persistUpload(f);
     const mime = String(f.mimetype || "");
     const mediaType = mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "photo";
     const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: mediaType, file_path: storedPath });
@@ -322,13 +366,15 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), async (re
   }
 
   logAudit(respondent.respondent_code, isTerminated ? "mobile_diary_terminated" : (isSubmit ? "mobile_diary_submit" : "mobile_diary_draft"), "diary_records", recordId, { practice: !!isPractice });
+  await submission.finish(req,recordId,isTerminated?"screened_out":isSubmit?"submitted":"draft");
   res.status(201).json({ recordId, status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft") });
 });
 
-router.use((err, req, res, next) => {
-  console.error("Mobile API error:", err);
+router.use(async (err, req, res, next) => {
+  await submission.release(req,err);
+  if(!err.status||err.status>=500)console.error("Mobile API error:", err);
   if (res.headersSent) return next(err);
-  res.status(500).json({ error: "Something went wrong. Your last completed save is safe." });
+  res.status(err.status || 500).json({ error: err.status ? err.message : "Sync could not finish. Your saved entry can be retried." });
 });
 
 module.exports = router;

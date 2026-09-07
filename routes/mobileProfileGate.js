@@ -18,7 +18,7 @@ router.use(async (req, res, next) => {
   // Home + consent remain reachable because the app needs to explain the
   // study before the person completes anything. The diary/questionnaire is
   // where the one-time person profile becomes mandatory.
-  if (!(req.path === "/questionnaire" || req.path === "/diary")) return next();
+  if (!(req.path === "/questionnaire" || req.path === "/diary" || req.path.startsWith("/diary/"))) return next();
 
   const principal = await mobileAuth.authenticateRequest(req);
   if (!principal) return res.status(401).json({ error: "Please sign in again." });

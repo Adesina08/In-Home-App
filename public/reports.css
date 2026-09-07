@@ -73,3 +73,9 @@
 @media(max-width:550px) { .report-heading { flex-direction:column; gap:16px; } .report-panel { padding:18px; } .report-stat { padding:17px; } .report-stat dd { font-size:27px; } .report-stats { gap:10px; } .report-media { grid-template-columns:1fr; } .report-toolbar { padding:15px; gap:10px; } .report-toolbar label { flex:1 1 120px; min-width:0; } .report-toolbar label:first-child { flex-basis:100%; } .report-panel-head { flex-wrap:wrap; } .client-main { padding:25px 16px; } .client-account span { display:none; } }
 @media print { .client-top,.report-toolbar,.report-media-filters,.report-button,.report-history,video,audio { display:none; } .report-panel,.report-stat { break-inside:avoid; } .client-main { padding:0; } }
 .report-stat dd.report-stat-note { font-size:11px; font-weight:400; letter-spacing:0; color:#586981; margin:3px 0 0; }
+
+/* Research configuration forms and client navigation remain usable on phones. */
+.report-toolbar label { min-width:0; max-width:100%; }
+.report-toolbar textarea { max-width:100%;border:1px solid #d2dbe7;border-radius:8px;padding:10px;background:#f9fbfd;color:#182945; }
+.report-page pre { max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere; }
+@media(max-width:600px){.report-toolbar>label{width:100%}.report-toolbar input[type=checkbox]{align-self:flex-start;min-height:20px}.report-toolbar select{width:100%}.client-top nav{flex-wrap:wrap;gap:6px}.report-panel{overflow-wrap:anywhere}.report-page details{min-width:0}}

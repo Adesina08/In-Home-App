@@ -8,12 +8,12 @@
 <div class="console-columns">
   <div class="console-stack">
     <section class="console-panel"><div class="console-panel-heading"><div><h2>Participation at a glance</h2><p>All-time diary records · practice entries excluded</p></div><span class="console-status <%= study.status === 'live' ? 'is-live' : '' %>"><%= study.status %></span></div>
-      <div class="console-panel-body"><div class="console-progress-caption"><span>Submitted share of existing records</span><strong><%= submissionShare === null ? 'No records yet' : submissionShare + '%' %></strong></div><div class="console-progress-track"><span style="width:<%= submissionShare || 0 %>%"></span></div><div class="console-actions" style="margin-top:22px;font-size:12px;color:#5f7189"><span><strong style="color:#35549c"><%= completed %></strong> submitted</span><span>·</span><span><%= missed %> drafts</span><span>·</span><span><%= screenedOut %> screened out</span><span>·</span><span><%= expected %> total records</span></div></div>
+      <div class="console-panel-body"><div class="console-progress-caption"><span>Participation compliance</span><strong><%= participationSummary.rate === null ? 'Schedule not configured' : participationSummary.rate + '%' %></strong></div><div class="console-progress-track"><span style="width:<%= participationSummary.rate || 0 %>%"></span></div><div class="console-actions" style="margin-top:22px;font-size:12px;color:#5f7189"><span><strong style="color:#35549c"><%= completed %></strong> submitted</span><span>·</span><span><%= missed %> drafts</span><span>·</span><span><%= screenedOut %> screened out</span><span>·</span><span><%= participationSummary.completed??'—' %> / <%= participationSummary.expected??'—' %> participation periods</span></div></div>
     </section>
-    <section class="console-panel"><div class="console-panel-heading"><div><h2>Latest quality flags</h2><p>Up to 8 recent open flags in this study</p></div><a href="/admin/qc?study=<%= study.id %>">Open worklist ↗</a></div><div class="overflow-x-auto"><table><thead><tr><th>Respondent</th><th>Issue</th><th>Severity</th><th>Action</th></tr></thead><tbody>
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Latest quality flags</h2><p>Up to 8 recent open flags in this study</p></div><a href="/admin/qc?study=<%= study.id %>">Open worklist ↗</a></div><div class="overflow-x-auto" role="region" aria-label="Latest quality flags" tabindex="0"><table><thead><tr><th>Respondent</th><th>Issue</th><th>Severity</th><th>Action</th></tr></thead><tbody>
       <% openFlags.forEach(f=>{ %><tr><td><strong><%= f.respondent_code %></strong><div style="font-size:11px;color:#5f7189;margin-top:4px"><%= f.respondent_name %></div></td><td><%= String(f.flag_type || '').replace(/_/g,' ') %></td><td><span class="console-status <%= ['critical','high'].includes(f.severity) ? 'is-danger' : 'is-alert' %>"><%= f.severity %></span></td><td><a class="console-button" href="/admin/qc?study=<%= study.id %>&flag=<%= f.id %>">Review →</a></td></tr><% }) %>
     </tbody></table></div><% if(!openFlags.length){ %><div class="console-empty"><%- icon('shield-check','w-7 h-7') %><strong>No open QC flags</strong><p>New quality flags will appear here for review.</p></div><% } %></section>
-    <section class="console-panel"><div class="console-panel-heading"><div><h2>Interviewer performance</h2><p>Recruitment and activation in this study</p></div></div><div class="overflow-x-auto"><table><thead><tr><th>Interviewer</th><th>Recruited</th><th>Activated</th><th>Activation rate</th></tr></thead><tbody><% interviewers.forEach(i=>{ %><tr><td><%= i.name %></td><td><%= i.recruited %></td><td><%= i.activated %></td><td><%= i.recruited ? Math.round(i.activated/i.recruited*100)+'%' : '—' %></td></tr><% }) %></tbody></table></div><% if(!interviewers.length){ %><div class="console-empty">No interviewers to show.</div><% } %></section>
+    <section class="console-panel"><div class="console-panel-heading"><div><h2>Interviewer performance</h2><p>Recruitment and activation in this study</p></div></div><div class="overflow-x-auto" role="region" aria-label="Interviewer performance" tabindex="0"><table><thead><tr><th>Interviewer</th><th>Recruited</th><th>Activated</th><th>Activation rate</th></tr></thead><tbody><% interviewers.forEach(i=>{ %><tr><td><%= i.name %></td><td><%= i.recruited %></td><td><%= i.activated %></td><td><%= i.recruited ? Math.round(i.activated/i.recruited*100)+'%' : '—' %></td></tr><% }) %></tbody></table></div><% if(!interviewers.length){ %><div class="console-empty">No interviewers to show.</div><% } %></section>
   </div>
   <div class="console-stack">
     <section class="console-panel"><div class="console-panel-heading"><div><h2>Recruitment status</h2><p>Respondents currently at each stage</p></div></div><% stages.forEach(([key,label])=>{const value=funnelMap[key] || 0; %><div class="console-progress-row"><div class="console-progress-caption"><span><%= label %></span><strong><%= value %></strong></div><div class="console-progress-track"><span style="width:<%= Math.round(value/funnelMax*100) %>%"></span></div></div><% }) %></section>
@@ -26,7 +26,7 @@
 
 <% } else { %>
 <%
-  const compliancePct = expected > 0 ? Math.round((completed / expected) * 100) : 0;
+  const compliancePct = participationSummary.rate;
   const incompletePct = expected > 0 ? Math.round((missed / expected) * 100) : 0;
   const riskTotal = riskCounts.green + riskCounts.amber + riskCounts.red;
   const greenPct = riskTotal ? Math.round((riskCounts.green / riskTotal) * 100) : 0;
@@ -66,7 +66,7 @@
 <div class="grid grid-cols-5 gap-3.5 shrink-0">
   <% const kpis = [
     ['users', 'rgba(29,78,216,.10)', '#1D4ED8', 'Respondents', totalRespondents, 'Current study sample'],
-    ['check-circle', 'rgba(30,126,52,.12)', '#1E7E34', 'Diary Compliance', compliancePct + '%', completed + ' of ' + expected + ' submitted'],
+    ['check-circle', 'rgba(30,126,52,.12)', '#1E7E34', 'Diary Compliance', compliancePct===null?'—':compliancePct + '%', participationSummary.expected===null?'Configure participation schedule':participationSummary.completed + ' of ' + participationSummary.expected + ' participation periods'],
     ['clipboard', 'rgba(184,134,11,.12)', '#B8860B', 'Completed Diaries', completed, 'Submitted records'],
     ['warning', 'rgba(192,57,43,.12)', '#C0392B', 'Incomplete Diaries', missed, incompletePct + '% of diary records'],
     ['stop', 'rgba(124,58,237,.12)', '#7C3AED', 'Screened Out', screenedOut, 'Recruitment exclusions'],
@@ -89,7 +89,7 @@
     <div class="flex gap-3.5 items-stretch">
       <div class="flex-1 flex flex-col gap-2">
         <div>
-          <div class="flex justify-between text-[10.5px] text-slate-500 mb-[3px]"><span>Diary completion</span><span class="font-mono"><%= compliancePct %>%</span></div>
+          <div class="flex justify-between text-[10.5px] text-slate-500 mb-[3px]"><span>Diary completion</span><span class="font-mono"><%= compliancePct===null?'—':compliancePct+'%' %></span></div>
           <div class="h-[7px] rounded bg-slate-100 overflow-hidden"><div class="h-full rounded bg-signal" style="width:<%= Math.min(compliancePct, 100) %>%"></div></div>
         </div>
         <div>

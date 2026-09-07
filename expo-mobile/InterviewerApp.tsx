@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, Alert } from "react-native";
+import { View, Text, Pressable, ActivityIndicator, Alert } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
@@ -89,14 +89,16 @@ export default function InterviewerApp({ onSwitchToRespondent }: { onSwitchToRes
         name: form.name,
         contact: form.contact,
         eligible: !!form.eligible,
+        screener:form.screener,media_consent:form.mediaConsent,
         consent_given: form.consentGiven,
+        consent_version:dashboard?.studies.find(s=>s.id===form.studyId)?.consent?.version||0,
         preferred_channel: form.channel,
         practice: form.practice,
       });
       if ("held" in result && result.held) {
         setHeldResult({ name: result.name, code: result.code, holds: result.holds || [] });
         setScreen("held");
-      } else if ("activated" in result && result.activated) {
+      } else if ("activated" in result) {
         setActivatedResult({ respondentId: result.respondentId, code: result.code, diaryUrl: result.diaryUrl, qr: result.qr });
         setScreen("activated");
       } else if ("screenedOut" in result) {
@@ -228,6 +230,7 @@ export default function InterviewerApp({ onSwitchToRespondent }: { onSwitchToRes
     return (
       <InterviewerDashboardScreen
         data={dashboard}
+        onVisit={async(id,status,notes)=>{try{await interviewerApi.visit(id,status,notes);await loadDashboard();}catch(e:any){Alert.alert("Could not save visit",e.message);}}}
         refreshing={refreshing}
         onRefresh={() => loadDashboard(true)}
         onRegister={() => setScreen("register")}
@@ -244,7 +247,7 @@ export default function InterviewerApp({ onSwitchToRespondent }: { onSwitchToRes
   if (screen === "register") {
     return (
       <RegisterWizardScreen
-        studies={(dashboard?.studies || []).map((s) => ({ id: s.id, name: s.name }))}
+        studies={dashboard?.studies || []}
         onCancel={() => setScreen("dashboard")}
         onSubmit={handleRegisterSubmit}
         busy={busy}
@@ -260,6 +263,7 @@ export default function InterviewerApp({ onSwitchToRespondent }: { onSwitchToRes
         qr={activatedResult.qr}
         sending={sendingLink}
         onSendLink={() => sendLinkFor(activatedResult.respondentId)}
+        onMyRespondents={() => setScreen("dashboard")}
         onRegisterAnother={() => setScreen("register")}
       />
     );
@@ -279,7 +283,7 @@ export default function InterviewerApp({ onSwitchToRespondent }: { onSwitchToRes
 
   if (screen === "share" && shareRespondent) {
     return (
-      <InterviewerShareScreen
+      <View style={{flex:1}}><View style={{padding:12,gap:8}}><Text>After demonstrating the diary, save training completion. Handover checks for a respondent-submitted practice entry.</Text><Pressable onPress={()=>Alert.alert('Training completed?','Confirm you demonstrated recording, drafts and sync status.',[{text:'Cancel',style:'cancel'},{text:'Save completion',onPress:async()=>{try{await interviewerApi.training(shareRespondent.id);Alert.alert('Training saved');}catch(e:any){Alert.alert('Could not save',e.message);}}}])}><Text style={{color:'#35549c'}}>Record training completion</Text></Pressable><Pressable onPress={async()=>{try{await interviewerApi.handover(shareRespondent.id);Alert.alert('Handover completed');await loadDashboard();}catch(e:any){Alert.alert('Handover pending',e.message);}}}><Text style={{color:'#35549c'}}>Verify practice & complete handover</Text></Pressable></View><InterviewerShareScreen
         name={shareRespondent.name || shareRespondent.respondentCode}
         respondentCode={shareRespondent.respondentCode}
         studyName={shareRespondent.studyName}
@@ -296,7 +300,7 @@ export default function InterviewerApp({ onSwitchToRespondent }: { onSwitchToRes
           setTimeout(() => setCopied(false), 2000);
         }}
         onSendLink={() => sendLinkFor(shareRespondent.id)}
-      />
+      /></View>
     );
   }
 

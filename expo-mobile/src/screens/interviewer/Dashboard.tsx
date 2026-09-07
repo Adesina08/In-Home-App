@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, Pressable, ScrollView, RefreshControl } from "react-native";
+import React, {useState} from "react";
+import { View, Text, TextInput, Pressable, ScrollView, RefreshControl } from "react-native";
 import { Icon } from "../../icons";
 import { Screen, PrimaryButton } from "./shared";
 import type { Dashboard, DashboardRespondent } from "../../interviewerApi";
@@ -24,6 +24,7 @@ export function InterviewerDashboardScreen({
   onBulkInvite,
   onOpenRespondent,
   onSwitchMode,
+  onVisit,
 }: {
   data: Dashboard | null;
   refreshing: boolean;
@@ -32,7 +33,9 @@ export function InterviewerDashboardScreen({
   onBulkInvite: () => void;
   onOpenRespondent: (r: DashboardRespondent) => void;
   onSwitchMode: () => void;
+  onVisit:(id:number,status:string,notes:string)=>void;
 }) {
+  const [notes,setNotes]=useState<Record<number,string>>({});
   const mine = data?.mine || [];
   const counts = data?.counts || { registered: 0, activated: 0, pending: 0 };
 
@@ -82,6 +85,7 @@ export function InterviewerDashboardScreen({
           ))}
         </View>
 
+        {(data?.visits||[]).map(v=><View key={v.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:bg-[#0F2038]"><Text className="font-sans-bold text-slate-800 dark:text-slate-100">{v.household_code} · {v.status}</Text><Text className="text-slate-600 dark:text-slate-300">{v.visit_date} · {v.address}</Text><TextInput accessibilityLabel="Visit notes" value={notes[v.id]??v.notes??''} onChangeText={value=>setNotes(n=>({...n,[v.id]:value}))} placeholder="Visit notes" className="border border-slate-300 rounded-lg p-2 text-slate-800 dark:text-slate-100"/><View className="flex-row flex-wrap gap-3 mt-3">{['visited','no_answer','ineligible','recruited'].map(status=><Pressable key={status} onPress={()=>onVisit(v.id,status,notes[v.id]??v.notes??'')}><Text className="text-blue-700 dark:text-blue-300">{status.replace('_',' ')}</Text></Pressable>)}</View></View>)}
         <PrimaryButton title="Register Respondent" onPress={onRegister} icon="plus" />
 
         <Pressable

@@ -1,82 +1,90 @@
-# Builds the signed Inicio Diary Android APK on demand.
-#
-# Run it from the Actions tab: "Build Android APK" -> Run workflow.
-# The signed APK is attached to the run as a downloadable artifact.
-#
-# The signing key is never in this repository. It arrives from three repository
-# secrets and is written to a file that exists only for the length of the job.
+# Both manual downloads and Azure deployments build the current native app.
 name: Build Android APK
-
 on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'Version name shown to respondents (e.g. 1.0.1)'
+        description: 'Version shown on Android'
+        default: '2.0.0'
+        required: true
+  workflow_call:
+    inputs:
+      version_name:
+        type: string
+        default: '2.0.0'
         required: false
-        default: '1.0'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      EXPO_PUBLIC_API_URL: https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net
+      EXPO_NO_DOTENV: '1'
+      CI: '1'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: expo-mobile/package-lock.json
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Capacitor dependencies
-        working-directory: mobile
-        run: npm install --no-audit --no-fund
-
-      - name: Sync web assets into the Android project
-        working-directory: mobile
-        run: npx cap sync android
-
-      # Written to the runner's temp dir, which is destroyed with the runner.
-      # Never inside the checkout, so it cannot be committed or uploaded.
-      - name: Restore the signing keystore
+      - uses: android-actions/setup-android@v3
+      - name: Install the native app dependencies
+        working-directory: expo-mobile
+        run: npm ci --no-audit --no-fund
+      - name: Validate native TypeScript
+        working-directory: expo-mobile
+        run: npm run typecheck
+      - name: Set the release version
+        env:
+          RELEASE_VERSION: ${{ inputs.version_name || '2.0.0' }}
+        run: |
+          echo "ANDROID_VERSION_NAME=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          # Increasing across both calling workflows, without changing the package ID.
+          echo "ANDROID_VERSION_CODE=$((2000 + $(date +%s) - 1767225600))" >> "$GITHUB_ENV"
+      - name: Generate the native Android project
+        working-directory: expo-mobile
+        run: npx expo prebuild --platform android --no-install
+      - name: Restore the established release key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 is not set. Add it under Settings -> Secrets and variables -> Actions."
+            echo '::error::ANDROID_KEYSTORE_BASE64 is required. No unsigned or debug APK will be published.'
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          echo "Keystore restored ($(stat -c%s "$RUNNER_TEMP/release.jks") bytes)"
-
-      - name: Build the signed release APK
-        working-directory: mobile/android
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          chmod 600 "$RUNNER_TEMP/release.jks"
+      - name: Build the current app with its JavaScript bundle
+        working-directory: expo-mobile/android
         env:
           ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: ./gradlew assembleRelease --no-daemon
-
-      # A build that quietly produced an unsigned APK would be worse than a
-      # failed one: it installs on the test phone and is rejected on update.
-      - name: Verify the APK is signed
+        run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+      - name: Verify and package the APK
         run: |
-          APK=mobile/android/app/build/outputs/apk/release/app-release.apk
-          if [ ! -f "$APK" ]; then
-            echo "::error::No signed APK produced. Check the signing secrets."
-            ls -la mobile/android/app/build/outputs/apk/release/ || true
-            exit 1
-          fi
-          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$APK"
-
-      - name: Remove the keystore
+          APK=expo-mobile/android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | head -n 1
+          unzip -l "$APK" | grep 'assets/index.android.bundle'
+          mkdir -p apk-download
+          cp "$APK" apk-download/inicio-diary.apk
+          node scripts/apk-manifest.js "$APK" apk-download/inicio-diary.json
+      - name: Remove the release key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
-
       - uses: actions/upload-artifact@v4
         with:
           name: inicio-diary-apk
-          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          path: apk-download/
+          if-no-files-found: error
           retention-days: 30

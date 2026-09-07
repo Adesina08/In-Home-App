@@ -1,0 +1,19 @@
+// Reuse the established repository release key. Never ship Expo's debug key.
+def signingPath = System.getenv('ANDROID_KEYSTORE_FILE')
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+if (releaseRequested && (!signingPath || !System.getenv('ANDROID_KEYSTORE_PASSWORD') || !System.getenv('ANDROID_KEY_ALIAS'))) {
+    throw new GradleException('Release signing credentials are required. Use the Build Android APK workflow.')
+}
+if (signingPath) {
+    android {
+        signingConfigs {
+            inicioRelease {
+                storeFile file(signingPath)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
+        }
+        buildTypes { release { signingConfig signingConfigs.inicioRelease } }
+    }
+}

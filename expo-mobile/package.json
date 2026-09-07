@@ -1,14 +1,14 @@
 {
   "name": "inicio-expo-mobile",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
+    "android": "expo run:android",
     "typecheck": "tsc --noEmit",
-    "build:apk": "eas build -p android --profile preview",
-    "build:aab": "eas build -p android --profile production"
+    "build:apk": "node scripts/build-android.js apk",
+    "build:aab": "node scripts/build-android.js aab"
   },
   "dependencies": {
     "@expo-google-fonts/bricolage-grotesque": "^0.4.1",
@@ -18,6 +18,7 @@
     "@react-native-async-storage/async-storage": "^2.2.0",
     "expo": "~57.0.9",
     "expo-audio": "~57.0.4",
+    "expo-camera": "~57.0.4",
     "expo-clipboard": "~57.0.1",
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "~57.0.6",
@@ -27,14 +28,17 @@
     "expo-sharing": "~57.0.18",
     "expo-splash-screen": "~57.0.8",
     "expo-status-bar": "~57.0.1",
+    "expo-video": "~57.0.3",
     "nativewind": "^4.2.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
+    "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
     "react-native-webview": "13.16.1",
+    "react-native-worklets": "0.10.1",
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {

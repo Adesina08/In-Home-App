@@ -16,7 +16,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  android:
+    uses: ./.github/workflows/build-android-apk.yml
+    secrets: inherit
+
   build:
+    needs: android
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,44 +34,23 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: Set up Java for Android build
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install web dependencies
         run: npm install
 
-      - name: Build Inicio Diary Android APK
-        run: |
-          cd mobile
-          npm install
-          npx cap sync android
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-          cd ../..
-          mkdir -p public/downloads
-          APK_PATH="$(find mobile/android/app/build/outputs/apk -type f -name '*.apk' | head -n 1)"
-          test -n "$APK_PATH"
-          cp "$APK_PATH" public/downloads/inicio-diary.apk
-          test -s public/downloads/inicio-diary.apk
+      - name: Download the verified native APK
+        uses: actions/download-artifact@v4
+        with:
+          name: inicio-diary-apk
+          path: public/downloads
+
+      - name: Install native test adapters
+        working-directory: expo-mobile
+        run: npm ci --no-audit --no-fund
 
       - name: Build and test Inicio Diary web application
         run: |
           npm run build --if-present
-          npm run test --if-present
-
-      - name: Upload Inicio Diary APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: inicio-diary-apk
-          path: public/downloads/inicio-diary.apk
-          if-no-files-found: error
+          node --test tests/*.test.js
 
       - name: Prepare compact Azure deployment package
         run: |
@@ -83,6 +67,7 @@ jobs:
             --exclude /.git \
             --exclude /.github \
             --exclude /mobile \
+            --exclude /expo-mobile \
             --exclude /tests \
             --exclude /uploads \
             --exclude /data \

@@ -23,6 +23,7 @@ const bulk = require("../lib/bulkInvite");
 const { enrol, existingContactsFor } = require("../lib/enrolment");
 const messaging = require("../lib/whatsapp");
 
+const fieldwork=require("../lib/researchOperations");
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 
@@ -68,7 +69,7 @@ router.post("/auth/logout", requireInterviewer, async (req, res) => {
 });
 
 router.get("/dashboard", requireInterviewer, async (req, res) => {
-  const studies = await store.find("studies", { status: { $ne: "closed" } }, { sort: { id: 1 } });
+  const studies = await fieldwork.assignedStudies(req.interviewer);
   const mineRows = await store.find("respondents", { interviewer_id: req.interviewer.id }, { sort: { id: -1 } });
   const studyById = new Map((await store.find("studies", {})).map((s) => [s.id, s]));
   const mine = mineRows
@@ -95,8 +96,9 @@ router.get("/dashboard", requireInterviewer, async (req, res) => {
   };
 
   res.json({
+    visits:await store.find("fieldwork_visits",{user_id:req.interviewer.id,study_id:{$in:studies.map(s=>s.id)}},{sort:{visit_date:1}}),
     interviewer: publicUser(req.interviewer),
-    studies: studies.map((s) => ({ id: s.id, name: s.name, market: s.market, category: s.category })),
+    studies: await Promise.all(studies.map(async(s) => {const consent=await store.findOne("consent_versions",{study_id:s.id,status:"approved"},{sort:{version:-1}});return { id:s.id,name:s.name,market:s.market,category:s.category,screenerQuestions:s.screener_questions||[],consent:consent?{version:consent.version,body:consent.body}:null };})),
     mine,
     counts,
   });
@@ -160,15 +162,11 @@ router.post("/register", requireInterviewer, async (req, res) => {
   const { study_id, name, contact, eligible, consent_given, preferred_channel, practice } = req.body;
   const studyId = Number(study_id);
   const study = await store.findOne("studies", { id: studyId });
-  if (!study) return res.status(404).json({ error: "Study not found." });
+  if (!study || !await fieldwork.assigned(req.interviewer,study.id)) return res.status(404).json({ error: "Study not found or not assigned." });
 
-  if (!eligible) {
-    return res.status(200).json({
-      screenedOut: true,
-      message: "Respondent screened as not eligible. Recruitment stopped (screen stage).",
-    });
-  }
-
+  const screened=fieldwork.screen(study,req.body.screener||{});if(!screened.ok)return res.status(400).json({error:screened.error});
+  const consent=await store.findOne('consent_versions',{study_id:study.id,status:'approved'},{sort:{version:-1}});
+  if(!consent||Number(req.body.consent_version)!==consent.version||!consent_given||!String(name||'').trim()||!String(contact||'').trim())return res.status(400).json({error:'Name, contact and approved study consent are required.'});
   const token = uuidv4();
   const code = await nextRespondentCode(studyId);
   const canonicalisedContact = canonicalContact(contact, { market: study.market });
@@ -180,7 +178,8 @@ router.post("/register", requireInterviewer, async (req, res) => {
     recruitment_mode: "f2f",
     preferred_channel: preferred_channel || "app",
     consent_status: consent_given ? "given" : "declined",
-    activation_status: "activated",
+    activation_status: "training",
+    screener_answers:req.body.screener||{},screened_at:store.nowSql(),consent_version:consent.version,consent_at:store.nowSql(),consent_recorded_by:req.interviewer.id,media_consent:req.body.media_consent===true,
     unique_token: token,
     interviewer_id: req.interviewer.id,
     is_practice: practice ? 1 : 0,
@@ -195,9 +194,19 @@ router.post("/register", requireInterviewer, async (req, res) => {
   const diaryUrl = respondentDiaryUrl(req, token);
   let qr = null;
   try { qr = await qrDataUrl(diaryUrl); } catch (e) { console.error("QR generation failed:", e); }
-  res.status(201).json({ activated: true, code, token, respondentId: id, diaryUrl, qr });
+  res.status(201).json({ activated: false, trainingRequired:true, code, token, respondentId: id, diaryUrl, qr });
 });
 
+router.post('/visits/:id',requireInterviewer,async(req,res)=>{try{await fieldwork.visitOutcome(req.interviewer,req.params.id,req.body.status,req.body.notes);res.json({ok:true});}catch(e){res.status(400).json({error:e.message});}});
+router.post('/respondents/:id/training',requireInterviewer,async(req,res)=>{
+  const r=await store.findOne('respondents',{id:Number(req.params.id)});if(!r||req.interviewer.role==='interviewer'&&r.interviewer_id!==req.interviewer.id)return res.sendStatus(404);
+  if(!req.body.training_complete)return res.status(400).json({error:'Complete the training checklist.'});
+  await fieldwork.audit(req.interviewer.email,'training',r.study_id,{respondent_id:r.id});await store.update('respondents',{id:r.id},{training_completed_at:store.nowSql(),training_completed_by:req.interviewer.id});res.json({ok:true});
+});
+router.post('/respondents/:id/handover',requireInterviewer,async(req,res)=>{
+  const r=await store.findOne('respondents',{id:Number(req.params.id)});if(!r||req.interviewer.role==='interviewer'&&r.interviewer_id!==req.interviewer.id)return res.sendStatus(404);
+  try{await fieldwork.handover(r,req.interviewer.email);res.json({ok:true});}catch(e){res.status(400).json({error:e.message});}
+});
 // ---- Bulk invite: template -> review -> send, mirrors routes/bulkInvite.js ----
 
 router.get("/studies/:id/bulk/template", requireInterviewer, (req, res) => {
@@ -207,7 +216,7 @@ router.get("/studies/:id/bulk/template", requireInterviewer, (req, res) => {
 
 router.get("/studies/:id/bulk/meta", requireInterviewer, async (req, res) => {
   const study = await store.findOne("studies", { id: Number(req.params.id) });
-  if (!study) return res.status(404).json({ error: "Study not found." });
+  if (!study || !await fieldwork.assigned(req.interviewer,study.id)) return res.status(404).json({ error: "Study not found or not assigned." });
   res.json({
     study: { id: study.id, name: study.name, market: study.market },
     defaultCountryCode: bulk.defaultCountryCodeFor(study.market),
@@ -217,7 +226,7 @@ router.get("/studies/:id/bulk/meta", requireInterviewer, async (req, res) => {
 
 router.post("/studies/:id/bulk/review", requireInterviewer, upload.single("roster"), async (req, res) => {
   const study = await store.findOne("studies", { id: Number(req.params.id) });
-  if (!study) return res.status(404).json({ error: "Study not found." });
+  if (!study || !await fieldwork.assigned(req.interviewer,study.id)) return res.status(404).json({ error: "Study not found or not assigned." });
   if (!req.file) return res.status(400).json({ error: "Choose a filled-in template to upload." });
 
   const countryCode = (req.body.country_code || "").trim();
@@ -241,7 +250,7 @@ router.post("/studies/:id/bulk/review", requireInterviewer, upload.single("roste
 
 router.post("/studies/:id/bulk/send", requireInterviewer, async (req, res) => {
   const study = await store.findOne("studies", { id: Number(req.params.id) });
-  if (!study) return res.status(404).json({ error: "Study not found." });
+  if (!study || !await fieldwork.assigned(req.interviewer,study.id)) return res.status(404).json({ error: "Study not found or not assigned." });
 
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   const countryCode = String(req.body.country_code || "").trim();

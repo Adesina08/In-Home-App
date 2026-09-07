@@ -330,7 +330,7 @@ router.post("/:code/finish", async (req, res) => {
   await store.update(
     "respondents",
     { id: respondent.id },
-    { tutorial_completed_at: store.nowSql(), activation_status: "activated" }
+    { tutorial_completed_at: store.nowSql(),training_completed_at:store.nowSql(),activated_at:store.nowSql(), activation_status: "activated" }
   );
 
   const holds = await applyRecruitmentHolds(respondent.id, {

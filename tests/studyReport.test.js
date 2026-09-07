@@ -11,7 +11,9 @@ before(async () => {
   process.env.AI_SUMMARY_PROVIDER = 'template';
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'inicio-report-test-'));
   await store.connect({ uri: '', file: path.join(dir, 'test.json') });
-  study = await store.insert('studies', { name: 'Report study' });
+  study = await store.insert('studies', { name: 'Report study',minimum_base_size:2 });
+  for(const id of [99,100])await store.insert('respondents',{id,study_id:study.id,activation_status:'active',consent_status:'given',media_consent:true});
+  await store.insert('client_grants',{user_id:7,study_id:study.id,enabled:true,media:true,text:true,exports:true});
   const other = await store.insert('studies', { name: 'Foreign study' });
   const q = await store.insert('questions', { study_id: study.id, type: 'text', code: 'brand', text: 'Experience' });
   for (const [sid, status, practice, date, flagged, source, verified, value] of [
@@ -24,7 +26,7 @@ before(async () => {
     [study.id, 'submitted', 0, '2026-09-07 00:00:00', false, 'respondent', 0, 'Tomorrow'],
     [other.id, 'submitted', 0, '2026-09-06 12:00:00', false, 'respondent', 0, 'Foreign'],
   ]) {
-    const r = await store.insert('diary_records', { study_id: sid, respondent_id: 99, status, is_practice: practice, entry_time: date });
+    const r = await store.insert('diary_records', { study_id: sid, respondent_id: source==='ai_video'?100:99, status, is_practice: practice, entry_time: date });
     await store.insert('responses', { record_id: r.id, question_id: q.id, value, source, verified });
     await store.insert('media', { record_id: r.id, media_type: 'video', file_path: `${value}.mp4` });
     if (flagged) await store.insert('qc_flags', { record_id: r.id, status: 'open' });
@@ -74,7 +76,7 @@ test('client routes enforce assignment, render inline media and export the same 
   app.set('views', path.join(__dirname, '../views'));
   app.locals.mediaUrl = value => '/uploads/' + value;
   app.use((req, res, next) => {
-    req.session = { user: { role: 'client', study_id: req.headers['x-test-unassigned'] ? null : study.id, email: 'test@example.test' } };
+    req.session = { user: { id:req.headers['x-test-unassigned']?8:7,role: 'client', study_id: req.headers['x-test-unassigned'] ? null : study.id, email: 'test@example.test' } };
     res.locals.user = req.session.user;
     res.locals.currentPath = req.path;
     next();
@@ -97,6 +99,12 @@ test('client routes enforce assignment, render inline media and export the same 
     const csv = await fetch(`${url}/export?from=2026-09-06&to=2026-09-06`);
     assert.match(csv.headers.get('content-type'), /text\/csv/);
     assert.match(await csv.text(), /"Submitted entries","4"/);
+    const snapshotId=await require('../lib/researchOperations').snapshot(study.id,'test',{from:'2026-09-06',to:'2026-09-06'});
+    let history=await fetch(`${url}/reports`);assert.doesNotMatch(await history.text(),/Generated 2026/);
+    await store.update('report_snapshots',{id:snapshotId},{status:'approved',approved_at:'2026-09-06 12:00:00'});
+    history=await fetch(`${url}/reports`);assert.equal(history.status,200);assert.match(await history.text(),/approved 2026-09-06/);
+    assert.equal((await fetch(`${url}/analysis?from=2026-09-06&to=2026-09-06`)).status,200);
+    await store.update('client_grants',{user_id:7,study_id:study.id},{exports:false});assert.equal((await fetch(`${url}/export`)).status,403);
     const anonymous = await fetch(`${url}/insights?from=2030-01-01`);
     assert.match(await anonymous.text(), /No eligible media/);
   } finally { await new Promise(resolve => server.close(resolve)); }

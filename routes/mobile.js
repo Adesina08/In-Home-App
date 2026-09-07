@@ -9,6 +9,7 @@ const router = express.Router();
 // remains the single mount point in server.js while the web login and native
 // client share the same respondent-account rules.
 router.use("/api", require("./mobileNativeAuth"));
+router.use("/api/respondents/:id", require("./mobileProfileGate"));
 router.use("/api", require("./mobileApi"));
 // mobileProfileApi backs the one-time profile-gate step (GET/PUT /mobile/api/profile)
 // that AppRedesign.tsx's loadProfileGate()/saveProfile() depend on before a

@@ -1,90 +1,38 @@
-# INICIO Expo Mobile
+# INICIO native mobile app
 
-This is the native respondent application for the INICIO In-Home Consumption platform. It is a real Expo / React Native client, not a WebView wrapper.
+`expo-mobile/` is the current respondent and interviewer app. `mobile/` is the legacy Capacitor web wrapper. Both the manual APK workflow and Azure deployment now build this native project from the same source revision.
 
-The existing `mobile/` directory is the older Capacitor shell and remains in the repository for reference. New Android pilot work should use `expo-mobile/`.
+The respondent chooses **Standard** or **Video** when starting an entry. Standard renders the study questionnaire and records photo/audio/video evidence as configured. Video displays the study prompts over an in-app front camera, with automatic pacing, Previous/Next controls, a recording timer and playback/retake before submission. Pausing prompts does not pause recording. The limit is 90 seconds. Camera and microphone permissions are required. The recording is saved to app-owned storage for recovery, then copied into the durable submission queue before upload. An unfinished recording interrupted before the camera returns a file cannot be recovered.
 
-## Implemented in this first native pass
+Account OTP and personal diary-link login, the baseline profile, study consent, training/practice, interviewer assignments, and the submission queue remain part of the current app. The logo palette and native screen layouts are preserved.
 
-- Passwordless respondent account login by OTP.
-- Personal diary-link login for F2F respondents who do not have an account.
-- Mobile bearer tokens stored in Expo SecureStore.
-- Multi-study respondent home.
-- Study overview, consent, recent diary history and study guide.
-- Questionnaire rendering for text, numeric, single-select and multi-select questions.
-- Skip-logic visibility for show/hide rules.
-- Photo and video evidence capture/selection using Expo Image Picker.
-- Local draft saving with AsyncStorage.
-- Native multipart diary submission to the existing Express/MongoDB backend.
-- Server-side consent gating, validation, QC, termination rules and media persistence remain authoritative on the backend.
-
-Audio-question capture is intentionally not faked in this first pass. Audio evidence questions do not block submission, matching the web/server validation rule. Native audio recording is a follow-up capability.
-
-## Backend API
-
-The app talks to `/api/mobile/...` on the existing Azure App Service. The default production endpoint is:
-
-`https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net`
-
-Override it for local/staging work:
-
-```bash
-EXPO_PUBLIC_API_URL=https://your-staging-host.example.com npx expo start
-```
-
-## Run locally
-
-The project targets Expo SDK 57.
+## Development
 
 ```bash
 cd expo-mobile
-npm install
-npx expo install --fix
+npm ci
 npm run typecheck
 npm start
 ```
 
-## Build an installable Android APK
+`EXPO_PUBLIC_API_URL` selects the backend. The default is the existing Azure App Service. Initial authentication and initial study/script download need connectivity. The camera teleprompter is for the installed native app; a browser preview cannot verify Android camera recording.
 
-Install and authenticate EAS once:
+## Downloadable Android release
 
-```bash
-npm install -g eas-cli
-eas login
-cd expo-mobile
-eas build:configure
-```
-
-Then create the pilot APK:
+Run **Build Android APK** in GitHub Actions on the intended source branch. It uses the existing repository `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS` secrets. No Expo account or EAS project is needed for this workflow.
 
 ```bash
-npm run build:apk
+gh workflow run build-android-apk.yml --repo Adesina08/In-Home-App --ref YOUR_BRANCH
 ```
 
-The `preview` profile in `eas.json` uses `android.buildType: apk`, so the artifact can be installed directly on Android pilot devices.
+The workflow prebuilds Expo, bundles the JavaScript into a signed release APK, verifies its signature and embedded bundle, and uploads `inicio-diary-apk`. That artifact contains `inicio-diary.apk` and `inicio-diary.json` with version, source revision and SHA-256. Azure deployment consumes the same artifact and serves both under `/public/downloads/`. An `ANDROID_APK_URL` override must also point at the intended new release; unset a legacy override to use the bundled artifact.
 
-For a Play Store build later:
+Application ID remains `com.inicio.inhome`; version name is 2.0.0 and CI generates an increasing version code across both workflows. The prior Azure workflow distributed a debug-signed web wrapper. Android only accepts an in-place update when the signing certificate matches. An installed debug wrapper may require a separate migration/reinstall; preserve pending local data first. Do not rotate the existing release key.
 
-```bash
-npm run build:aab
-```
+Local release builds require Java, the Android SDK and the same signing environment variables (`ANDROID_KEYSTORE_FILE` is the local key path). Then use `npm run build:apk` or `npm run build:aab`. Generated Android/iOS projects, credentials and APKs are ignored by Git.
 
-The production profile creates an Android App Bundle (`.aab`).
+## Release checks
 
-## Mobile authentication model
+Verify the generated APK on a physical Android device: Standard/Video selection, camera/microphone denial and recovery, readable prompts during recording, manual and automatic prompt controls, playback, retake, interrupted capture, saved-recording restart, offline submission and retry. Compare the downloaded APK SHA-256 with its sidecar manifest. Type checking and Metro bundle generation do not prove device recording works.
 
-The Expo app does not reuse browser session cookies.
-
-- Account respondents verify an OTP, then receive a random native bearer token.
-- F2F/token-only respondents can exchange their existing personal `/r/:token` diary link for a mobile bearer token scoped to that enrolment.
-- Only SHA-256 hashes of mobile tokens are stored in MongoDB.
-- Tokens expire after 30 days by default. Set `MOBILE_TOKEN_TTL_DAYS` on Azure to change that.
-
-## Recommended next native pass
-
-1. Native audio recording.
-2. Expo push-notification registration and reminder deep links.
-3. Join-code/deep-link onboarding directly inside the app.
-4. Persisted evidence drafts for stronger offline media capture.
-5. Automated API and Expo type/build checks in CI.
-6. Final app icon/splash assets and EAS project ID before pilot distribution.
+Camera API reference: https://docs.expo.dev/versions/latest/sdk/camera/
