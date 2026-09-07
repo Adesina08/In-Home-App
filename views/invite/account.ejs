@@ -22,13 +22,13 @@
         <a href="<%= apkUrl %>" class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 px-4 hover:bg-brand-800 transition flex items-center justify-center gap-2">
           <%- icon('download', 'w-4 h-4') %> Download Inicio Diary
         </a>
-        <a href="inicio-diary://login" class="w-full rounded-xl bg-white border border-slate-300 text-slate-700 font-semibold py-3.5 px-4 hover:bg-slate-50 transition flex items-center justify-center gap-2">
+        <a href="inicio://login" class="w-full rounded-xl bg-white border border-slate-300 text-slate-700 font-semibold py-3.5 px-4 hover:bg-slate-50 transition flex items-center justify-center gap-2">
           <%- icon('smartphone', 'w-4 h-4') %> Already installed? Open Inicio Diary
         </a>
       </div>
 
       <div class="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-500 leading-relaxed">
-        <strong class="text-slate-700">What happens next:</strong> install the APK if prompted, open Inicio Diary, then sign in. This invitation page will not ask you to log in inside the browser.
+        <strong class="text-slate-700">What happens next:</strong> install the APK if prompted, open Inicio Diary, then sign in. If Android cannot update an older installation, contact the research team before uninstalling so any unsent entries can be preserved.
       </div>
     <% } else { %>
       <div class="mb-6">
