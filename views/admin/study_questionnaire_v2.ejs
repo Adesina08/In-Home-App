@@ -33,8 +33,10 @@
     </div>
   </div>
   <div class="flex items-center gap-2">
+    <a href="/admin/studies/<%= study.id %>/questionnaire/template.xlsx" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition">Download template</a>
     <a href="/admin/studies/<%= study.id %>/questionnaire/upload"
        class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('upload', 'w-4 h-4') %> Import</a>
+    <button type="button" id="openPreview" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('eye', 'w-4 h-4') %>Preview</button>
     <% if (study.has_unpublished_changes) { %>
       <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish">
         <button class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition"><%- icon('check', 'w-4 h-4') %> Publish v<%= (study.version || 1) + 1 %></button>
@@ -53,7 +55,7 @@
   </div>
 <% } %>
 
-<div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_290px] gap-4 items-start console-questionnaire-v2">
+<div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start console-questionnaire-v2">
 
   <!-- ============ LEFT: the questionnaire as a list ============ -->
   <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-hidden">
@@ -68,19 +70,13 @@
   <!-- ============ CENTRE: one question, fully expanded ============ -->
   <div id="editor" class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 min-h-[420px]"></div>
 
-  <!-- ============ RIGHT: logic for the whole study ============ -->
-  <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-hidden">
-    <div class="px-4 pt-4 pb-2 font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Logic</div>
-    <%# Rules read as sentences and live together, because a rule set is only
-        auditable as a set. Attached to individual cards, as before, nobody
-        could answer "what does this questionnaire actually do?" %>
-    <div id="ruleList" class="px-3 pb-3 space-y-1.5 max-h-[46vh] overflow-y-auto"></div>
-    <div class="px-3 pb-4 pt-1 border-t border-slate-100">
-      <button id="addRule" class="w-full text-left px-2.5 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"><%- icon('plus', 'w-4 h-4') %> Add a rule</button>
-      <div id="ruleForm" class="hidden mt-2 space-y-2 text-xs"></div>
-    </div>
-  </div>
 </div>
+
+<details class="console-panel mt-5"><summary class="console-panel-heading cursor-pointer"><div><h2>Repeated questions, screener & close-out</h2><p>Configure instrument-wide behavior without leaving the questionnaire.</p></div></summary><div class="grid grid-cols-1 xl:grid-cols-2 gap-5 p-5"><form method="post" action="/admin/studies/<%= study.id %>/research/loop" class="space-y-3"><h3 class="font-semibold">Repeat a question</h3><label class="block text-xs text-slate-500">Question<select name="question_id" required class="mt-1 w-full border rounded-xl p-2 bg-white"><% activeQuestions.filter(function(q){return !q.loop_source_id;}).forEach(function(q){ %><option value="<%= q.id %>"><%= q.code || ('q'+q.id) %> · <%= q.text %></option><% }) %></select></label><label class="block text-xs text-slate-500">Repeat for<select name="kind" class="mt-1 w-full border rounded-xl p-2 bg-white"><option value="product">Products</option><option value="member">Household members</option></select></label><label class="block text-xs text-slate-500">Items, one per line<textarea name="items" rows="5" required class="mt-1 w-full border rounded-xl p-2"></textarea></label><button class="console-button is-primary">Create repeated questions</button></form><form method="post" action="/admin/studies/<%= study.id %>/research/instrument" class="space-y-3"><h3 class="font-semibold">Eligibility and completion</h3><label class="block text-xs text-slate-500">Screener JSON<textarea name="screener_questions" rows="7" class="mt-1 w-full font-mono text-xs border rounded-xl p-2"><%= JSON.stringify(study.screener_questions || [], null, 2) %></textarea></label><label class="block text-xs text-slate-500">Close-out JSON<textarea name="close_out_questions" rows="5" class="mt-1 w-full font-mono text-xs border rounded-xl p-2"><%= JSON.stringify(study.close_out_questions || [], null, 2) %></textarea></label><button class="console-button is-primary">Save screener and close-out</button></form></div></details>
+
+<dialog id="respondentPreview" class="w-[min(1100px,96vw)] h-[92vh] rounded-2xl p-0 backdrop:bg-slate-900/60">
+  <div class="h-full flex flex-col"><div class="flex items-center justify-between gap-3 p-4 border-b bg-white"><div><strong>Respondent preview</strong><p class="text-xs text-slate-500">Switch size without leaving the questionnaire.</p></div><div class="flex gap-2"><button type="button" data-preview-width="390" class="console-button">Mobile</button><button type="button" data-preview-width="desktop" class="console-button">Desktop</button><button type="button" id="closePreview" class="console-button">Close</button></div></div><div class="flex-1 overflow-auto bg-slate-100 p-4 flex justify-center"><iframe id="previewFrame" title="Respondent questionnaire preview" class="h-full bg-white border-0 rounded-xl shadow-xl transition-all" style="width:390px" data-src="/admin/studies/<%= study.id %>/questionnaire/live-preview?embed=1"></iframe></div></div>
+</dialog>
 
 <div id="saveToast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs font-medium px-3.5 py-2 rounded-lg opacity-0 transition-opacity pointer-events-none">Saved</div>
 
@@ -149,6 +145,8 @@
     if (Array.isArray(raw)) return raw;
     try { var p = JSON.parse(raw || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
   }
+  function specifyOptions(q) { try { var p=JSON.parse(q.other_specify_options_json||'[]'); return Array.isArray(p)?p:[]; } catch(e){ return []; } }
+  function terminationFor(qid, option) { var rule=rules.find(function(r){ return r.action==='terminate' && Number(r.condition_question_id)===Number(qid) && r.operator==='equals' && r.value===option; }); return rule ? (rule.terminate_scope||'entry') : ''; }
   function canAiFill(q) { return AI_FILLABLE.indexOf(q.type) > -1 && optionsOf(q).length > 0; }
 
   // ---------- left pane ----------
@@ -206,10 +204,12 @@
       '<div class="mt-4"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Applies to</div>' +
       '<div id="cadenceRow" class="flex flex-wrap gap-3"></div>' +
       '<p class="text-[11px] text-slate-400 mt-1.5">Leave all unchecked for every cadence &mdash; the same as a question created before this existed.</p></div>' +
+      '<div class="mt-4 pt-4 border-t border-slate-100"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Question timing & rotation</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2"><label class="text-[11px] text-slate-500">Every nth occasion<input id="fEveryNth" type="number" min="1" value="'+esc(q.every_nth_occasion||'')+'" class="mt-1 w-full border rounded-lg p-2 text-sm" /></label><label class="text-[11px] text-slate-500">From UTC hour<input id="fFromHour" type="number" min="0" max="23" value="'+esc(q.from_hour_utc??'')+'" class="mt-1 w-full border rounded-lg p-2 text-sm" /></label><label class="text-[11px] text-slate-500">Until UTC hour<input id="fToHour" type="number" min="0" max="23" value="'+esc(q.to_hour_utc??'')+'" class="mt-1 w-full border rounded-lg p-2 text-sm" /></label><label class="flex items-center gap-2 mt-5 text-xs"><input id="fRotate" type="checkbox" '+(q.rotate_options?'checked':'')+' /> Rotate options</label></div></div>' +
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
         '<button id="addOpt" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add option</button></div>' : '') +
+      '<div class="mt-5 pt-4 border-t border-slate-100"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Logic for this question</div><div id="ruleList" class="space-y-2"></div><button id="addRule" type="button" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add show / hide rule</button><div id="ruleForm" class="hidden mt-3 space-y-2 text-xs"></div></div>' +
       '<div class="mt-5 pt-4 border-t border-slate-100">' +
         (canAiFill(q)
           ? '<div class="flex items-start gap-2 text-xs font-medium text-verified bg-verified-soft rounded-lg px-3 py-2.5">' +
@@ -221,6 +221,7 @@
     if (AI_FILLABLE.indexOf(q.type) > -1) renderOptions(q, opts);
     renderCadences(q);
     wireEditor(q);
+    renderRules(q);
   }
 
   function renderCadences(q) {
@@ -243,10 +244,13 @@
   function renderOptions(q, opts) {
     var host = document.getElementById('optList');
     if (!host) return;
+    var specify = specifyOptions(q);
     host.innerHTML = opts.map(function (o, i) {
-      return '<div class="flex items-center gap-2">' +
+      return '<div class="grid grid-cols-[20px_minmax(140px,1fr)_150px_auto_auto] items-center gap-2">' +
         '<span class="font-mono text-[10px] text-slate-400 w-4 text-right tabular-nums">' + (i + 1) + '</span>' +
         '<input class="opt-in flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm" value="' + esc(o) + '" data-i="' + i + '" />' +
+        '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'"><option value="">Continue</option><option value="entry" '+(terminationFor(q.id,o)==='entry'?'selected':'')+'>End entry</option><option value="study" '+(terminationFor(q.id,o)==='study'?'selected':'')+'>End participation</option></select>'+
+        '<label class="text-[11px] text-slate-600 whitespace-nowrap"><input type="checkbox" class="opt-specify" data-option="'+esc(o)+'" '+(specify.indexOf(o)>-1?'checked':'')+' /> Other text</label>'+
         '<button class="opt-del text-slate-400 hover:text-red-600 text-sm px-1" data-i="' + i + '">&times;</button></div>';
     }).join('') || '<div class="text-xs text-slate-400">No options yet — this question cannot be answered until it has some.</div>';
 
@@ -264,8 +268,11 @@
         patch(q.id, { options: next });
       });
     });
+    function saveBehaviour(option) { var term=host.querySelector('.opt-terminate[data-option="'+CSS.escape(option)+'"]'); var specifyBox=host.querySelector('.opt-specify[data-option="'+CSS.escape(option)+'"]'); api('POST','/admin/studies/'+STUDY_ID+'/questions/'+q.id+'/option-behaviour',{option:option,terminate_scope:term?term.value:'',allows_specify:!!(specifyBox&&specifyBox.checked)}).then(function(data){ q.other_specify_options_json=data.question.other_specify_options_json; rules=rules.filter(function(r){return !(r.action==='terminate'&&Number(r.condition_question_id)===Number(q.id)&&r.operator==='equals'&&r.value===option);}); if(data.rule) rules.push(data.rule); renderEditor(); saved('Option behaviour saved'); }).catch(fail); }
+    host.querySelectorAll('.opt-terminate').forEach(function(el){el.addEventListener('change',function(){saveBehaviour(el.dataset.option);});});
+    host.querySelectorAll('.opt-specify').forEach(function(el){el.addEventListener('change',function(){saveBehaviour(el.dataset.option);});});
     var add = document.getElementById('addOpt');
-    if (add) add.onclick = function () { patch(q.id, { options: optionsOf(q).concat(['']) }); };
+    if (add) add.onclick = function () { patch(q.id, { options: optionsOf(q).concat(['New option']) }); };
   }
 
   function wireEditor(q) {
@@ -275,6 +282,10 @@
     on('fSection', 'change', function (e) { patch(q.id, { section: e.target.value }); });
     on('fCode', 'change', function (e) { patch(q.id, { code: e.target.value }); });
     on('fRequired', 'change', function (e) { patch(q.id, { required: e.target.checked ? 1 : 0 }); });
+    on('fEveryNth', 'change', function(e){ patch(q.id, { every_nth_occasion:e.target.value }); });
+    on('fFromHour', 'change', function(e){ patch(q.id, { from_hour_utc:e.target.value, to_hour_utc:document.getElementById('fToHour').value }); });
+    on('fToHour', 'change', function(e){ patch(q.id, { to_hour_utc:e.target.value, from_hour_utc:document.getElementById('fFromHour').value }); });
+    on('fRotate', 'change', function(e){ patch(q.id, { rotate_options:e.target.checked ? 1 : 0 }); });
     on('delQ', 'click', async function () {
       if (!confirm('Delete this question? Answers already collected against it are kept.')) return;
       try {
@@ -294,18 +305,19 @@
     } catch (e) { fail(e); }
   }
 
-  // ---------- right pane ----------
-  function renderRules() {
+  function renderRules(currentQuestion) {
     var host = document.getElementById('ruleList');
+    if (!host || !currentQuestion) return;
     var byId = {};
     questions.forEach(function (q) { byId[q.id] = q; });
-    host.innerHTML = rules.map(function (r) {
+    var visible = rules.filter(function(r){ return r.action==='terminate' ? Number(r.condition_question_id)===Number(currentQuestion.id) : Number(r.target_question_id)===Number(currentQuestion.id); });
+    host.innerHTML = visible.map(function (r) {
       var val = ['in', 'not_in', 'includes'].indexOf(r.operator) > -1 ? String(r.value || '').split('|').join(', ') : r.value;
       return '<div class="group border-l-2 border-signal bg-brand-50/50 pl-2.5 pr-1.5 py-1.5 rounded-r text-[12px] leading-snug text-slate-700">' +
-        'If <strong>' + esc(r.condition_text || '') + '</strong> ' + (OPS[r.operator] || r.operator) + ' <strong>' + esc(val) + '</strong>, ' +
-        (r.action === 'show' ? 'show' : 'hide') + ' it.' +
+        'If <strong>' + esc(r.condition_text || byId[r.condition_question_id]?.text || '') + '</strong> ' + (OPS[r.operator] || r.operator) + ' <strong>' + esc(val) + '</strong>, ' +
+        (r.action === 'terminate' ? (r.terminate_scope==='study'?'end participation':'end this entry') : (r.action === 'show' ? 'show this question' : 'hide this question')) + '.' +
         '<button class="rule-del float-right text-slate-300 group-hover:text-red-600" data-id="' + r.id + '">&times;</button></div>';
-    }).join('') || '<div class="px-1 py-3 text-xs text-slate-400">No logic yet. Every question is shown to everyone.</div>';
+    }).join('') || '<div class="px-1 py-3 text-xs text-slate-400">No show, hide or termination rules are attached to this question.</div>';
     document.getElementById('rCount').textContent = rules.length;
 
     host.querySelectorAll('.rule-del').forEach(function (b) {
@@ -313,9 +325,17 @@
         try {
           await api('POST', '/admin/studies/' + STUDY_ID + '/skip-logic/' + b.dataset.id + '/delete');
           rules = rules.filter(function (r) { return String(r.id) !== String(b.dataset.id); });
-          renderRules(); saved('Rule removed');
+          renderEditor(); saved('Rule removed');
         } catch (e) { fail(e); }
       });
+    });
+    var add=document.getElementById('addRule'); if(!add)return;
+    add.addEventListener('click', function () {
+      var form = document.getElementById('ruleForm'); form.classList.toggle('hidden');
+      if (form.classList.contains('hidden')) { form.innerHTML=''; return; }
+      var qOpts=questions.filter(function(item){return item.id!==currentQuestion.id;}).map(function(item){return '<option value="'+item.id+'">'+esc(item.text||'(untitled)')+'</option>';}).join('');
+      form.innerHTML='<div class="grid grid-cols-2 gap-2"><select id="rAction" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white"><option value="show">Show this question</option><option value="hide">Hide this question</option></select><select id="rOp" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white">'+Object.keys(OPS).map(function(k){return '<option value="'+k+'">'+OPS[k]+'</option>';}).join('')+'</select></div><select id="rCond" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">'+qOpts+'</select><input id="rVal" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="Answer value"/><button type="button" id="rSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Add rule</button>';
+      document.getElementById('rSave').onclick=async function(){var op=document.getElementById('rOp').value, raw=document.getElementById('rVal').value; try{var created=await api('POST','/admin/studies/'+STUDY_ID+'/skip-logic',{target_type:'question',target_question_id:currentQuestion.id,condition_question_id:Number(document.getElementById('rCond').value),action:document.getElementById('rAction').value,operator:op,value:['in','not_in','includes'].indexOf(op)>-1?raw.split(',').map(function(v){return v.trim();}).filter(Boolean).join('|'):raw}); rules.push(created.rule||created); renderEditor(); saved('Rule added');}catch(e){fail(e);}};
     });
   }
 
@@ -349,39 +369,6 @@
     } catch (e) { fail(e); }
   });
 
-  document.getElementById('addRule').addEventListener('click', function () {
-    var form = document.getElementById('ruleForm');
-    form.classList.toggle('hidden');
-    if (form.classList.contains('hidden')) { form.innerHTML = ''; return; }
-    var qOpts = questions.map(function (q) { return '<option value="' + q.id + '">' + esc(q.text || '(untitled)') + '</option>'; }).join('');
-    form.innerHTML =
-      '<select id="rTarget" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + qOpts + '</select>' +
-      '<div class="grid grid-cols-2 gap-2">' +
-        '<select id="rAction" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white"><option value="show">Show it</option><option value="hide">Hide it</option></select>' +
-        '<select id="rOp" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' +
-          Object.keys(OPS).map(function (k) { return '<option value="' + k + '">' + OPS[k] + '</option>'; }).join('') + '</select>' +
-      '</div>' +
-      '<select id="rCond" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + qOpts + '</select>' +
-      '<input id="rVal" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="Value — comma-separate for is one of / none of" />' +
-      '<button id="rSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Add rule</button>';
-    document.getElementById('rSave').onclick = async function () {
-      var op = document.getElementById('rOp').value;
-      var raw = document.getElementById('rVal').value;
-      try {
-        var created = await api('POST', '/admin/studies/' + STUDY_ID + '/skip-logic', {
-          question_id: Number(document.getElementById('rTarget').value),
-          condition_question_id: Number(document.getElementById('rCond').value),
-          action: document.getElementById('rAction').value,
-          operator: op,
-          value: ['in', 'not_in', 'includes'].indexOf(op) > -1 ? raw.split(',').map(function (v) { return v.trim(); }).filter(Boolean).join('|') : raw,
-        });
-        rules.push(created.rule || created);
-        form.classList.add('hidden'); form.innerHTML = '';
-        renderRules(); saved('Rule added');
-      } catch (e) { fail(e); }
-    };
-  });
-
   // Drag to reorder. The list is the only place order is expressed, so this is
   // where it belongs — the old page mixed reordering into the same cards you
   // edited in, which made both harder.
@@ -407,7 +394,8 @@
     dragId = null;
   });
 
-  renderList(); renderEditor(); renderRules();
+  var preview=document.getElementById('respondentPreview'), frame=document.getElementById('previewFrame'); document.getElementById('openPreview').onclick=function(){if(!frame.src)frame.src=frame.dataset.src;preview.showModal();}; document.getElementById('closePreview').onclick=function(){preview.close();}; document.querySelectorAll('[data-preview-width]').forEach(function(button){button.onclick=function(){frame.style.width=button.dataset.previewWidth==='desktop'?'100%':button.dataset.previewWidth+'px';};});
+  renderList(); renderEditor();
 })();
 </script>
 

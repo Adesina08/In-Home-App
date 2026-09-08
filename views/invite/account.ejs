@@ -48,7 +48,7 @@
           <div class="rounded-xl bg-brand-50 border border-brand-100 p-4">
             <div class="text-xs font-semibold uppercase tracking-wide text-brand-600">Existing username</div>
             <div class="text-base font-semibold text-slate-900 mt-1"><%= username %></div>
-            <p class="text-xs text-slate-500 mt-2">Your password is unchanged.</p>
+            <p class="text-xs text-slate-500 mt-2">Your password is unchanged. <a href="/invite/<%= respondent.unique_token %>/reset-password" class="text-brand-600 font-semibold hover:underline">Not your password? Reset it</a></p>
           </div>
         <% } else { %>
           <div>

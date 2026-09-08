@@ -2,7 +2,7 @@
 
 This app is a **working functional prototype**: every P0 flow in the MVP spec runs end to end (onboarding, diary engine, QC, reminders, dashboards, export), the Developer/Config console means none of the business inputs are hardcoded, a questionnaire can be uploaded from a spreadsheet or document and previewed before it's committed, the respondent diary offers three entry methods (Standard Form, AI-assisted Video, and Voice Note), and the whole app — including the respondent diary — is an installable mobile PWA with one consistent visual design system.
 
-**As of this revision, three of the AI providers (Azure AI Vision for brand detection + video field pre-fill, Azure AI Speech for voice-note transcription) and pluggable media storage (local disk or Azure Blob Storage) have real, working implementations** — not stubs. They stay off (`*_PROVIDER=mock`, `STORAGE_PROVIDER=local`) until you supply real Azure credentials; flip the env vars documented in B9/B10 below and they call the real Azure APIs. What's still genuinely pending is everything that needs an account, a domain, or an organizational decision this sandbox cannot make on your behalf: real messaging credentials — a Twilio account (B1), a real domain + TLS (B2), staff SSO (B3), a managed production database (B4), a real secrets vault (B5), backups (B6), a written retention policy (B7), and monitoring (B8).
+**As of this revision, Azure AI Vision for brand detection and video field pre-fill, Azure AI Speech for voice-note transcription, Azure OpenAI for study summaries, Twilio SendGrid for staff credential email, and pluggable media storage have real integrations.** They remain inactive until the corresponding credentials are supplied. What's still pending is everything that needs an account, a domain, or an organizational decision this checkout cannot provide: provider credentials, a real domain and TLS, staff SSO, a managed production database, a secrets vault, backups, an approved retention policy, and monitoring.
 
 A companion document, the **Azure Deployment Runbook**, walks through provisioning every Azure resource this app can use (App Service hosting, AI Vision, AI Speech, Blob Storage, Key Vault) end to end with exact Portal steps and CLI commands, sized to fit an Azure free-account $200/30-day credit. This document (PRODUCTION_READINESS.md) stays focused on *what* needs doing and *where in the code* it plugs in; the runbook is the *how* for the Azure-specific pieces.
 
@@ -59,6 +59,10 @@ Admin → **Message Log** shows every message the app has sent or would have sen
 ### Until it's connected
 
 Leave `MESSAGING_PROVIDER` unset. Everything still works: reminders and QC run normally, and the "send the link" buttons say plainly that nothing was delivered rather than claiming success. The QR code hand-over is the working path in the field, and it needs no provider at all.
+
+### Staff and client credentials through Twilio SendGrid
+
+Only a superadmin can create or reset a staff/client account. The email address is the username; INICIO generates a temporary password, stores only its bcrypt hash, expires it after 24 hours, and forces a password change after first sign-in. Configure `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, and `APP_BASE_URL`. If delivery fails, the account remains marked failed in User Management and the superadmin can resend without exposing the password in the portal.
 
 ### Meta Cloud API
 
@@ -128,7 +132,7 @@ The app writes an `audit_log` table (who did what, when) but has no external mon
 
 **Where it plugs in:** `lib/brandDetection.js` defines a provider interface — a `MockBrandDetectionProvider` (default; every photo/video is queued but marked `unavailable`, visible on Admin → Study → Media Review) and an `AzureVisionProvider` that **actually calls Azure AI Vision** once you supply credentials.
 
-**What the real provider does:** for a photo, it sends the image bytes straight to Azure AI Vision's Image Analysis endpoint (`tags` + `read`/OCR); for a video, it samples up to 5 frames (via the bundled `ffmpeg-static` binary — no system ffmpeg install needed) and analyzes each. It then fuzzy-matches the detected tags/OCR text against this study's brand/SKU list (the `brands` table, editable at Admin → Study Config → Brand/SKU List) and writes the best match to `media.detected_brand`.
+**What the real provider does:** for a photo, it sends the image bytes straight to Azure AI Vision's Image Analysis endpoint (`tags` + `read`/OCR); for a video, it samples up to 5 frames (via the bundled `ffmpeg-static` binary — no system ffmpeg install needed) and analyzes each. It then fuzzy-matches the detected tags/OCR text against the active brand question's options in the questionnaire and writes the best match to `media.detected_brand`.
 
 **What you need to do:**
 1. Create an Azure AI Vision resource (the Azure Deployment Runbook has exact steps) and get its endpoint + key.
@@ -150,7 +154,7 @@ The app writes an `audit_log` table (who did what, when) but has no external mon
 
 ## B11 — Diary reminder push notifications (Web Push) — implemented and configured
 
-**Where it plugs in:** `lib/push.js` (send/store), `public/js/push-subscribe.js` (respondent opt-in on the diary home screen), `public/sw.js` (`push` / `notificationclick` handlers), `lib/reminders.js` (sends when a study's `default_reminder_channel` is "In-app / Push" instead of WhatsApp).
+**Where it plugs in:** `lib/push.js` (send/store), `public/js/push-subscribe.js` (respondent opt-in on the diary home screen), `public/sw.js` (`push` / `notificationclick` handlers), and `lib/reminders.js`. A study can select several reminder channels at once: WhatsApp, SMS, email, and in-app push. Each channel is delivered and logged independently.
 
 **Unlike B9/B10, this needed no external account to wire up.** Web Push (the same "Allow notifications?" prompt any website can ask for) authenticates via a VAPID key pair the app generates itself — no Firebase project, no Apple Developer Program, no API to sign up for. A real key pair is already set in `.env` (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`) — **copy the same three values into Azure App Service → Configuration → Application settings** so the deployed app can send real notifications (they're not secret the way an API key to a paid service is, but treat `VAPID_PRIVATE_KEY` like any other credential — rotating it invalidates every respondent's existing subscription, so only do that if it actually leaks).
 
@@ -160,6 +164,12 @@ The app writes an `audit_log` table (who did what, when) but has no external mon
 - This reaches an installed/home-screen **PWA or a browser tab** left open or reopened — the standard web platform mechanism. It does **not** reach the Capacitor-wrapped native app shells in `mobile/` — those load the same site in a plain WebView, which has no access to the browser's push service. Real push into the App Store/Play Store app specifically would need `@capacitor/push-notifications` wired to Firebase Cloud Messaging (Android) and an APNs key (iOS), both of which require accounts only you can create, plus a native rebuild — a separate, larger piece of work if the store apps specifically (not just the installed PWA) need this.
 - iOS Safari only supports web push for a PWA actually added to the home screen (iOS 16.4+), not for a regular Safari tab — respondents on iPhone need to use "Add to Home Screen" (the QR code flow already in Admin → Respondents does this) for reminders to reach them.
 - The due/missed timing is relative to each respondent's own last entry (Admin → Study Config → Reminder Schedule: "due after X hours" / "missed after Y hours"), not a fixed clock time — e.g. "due after 24 hours" fires whenever it's actually been 24 hours since their last entry, whatever time of day that is. If you'd rather notify everyone at fixed times of day (e.g. always 9am and 8pm) instead, that's a different, fairly small follow-up change to `lib/reminders.js` and the study settings, not implemented here.
+
+## B12 — Azure OpenAI study summaries — implemented, needs a deployment
+
+`lib/aiSummary.js` sends the current study metrics and open-text evidence to the configured Azure OpenAI deployment. The AI Summary screen automatically requests a new version when its source signature becomes stale; **Generate updated summary** always requests a fresh version. A failed request never replaces the latest successful summary, and the application does not fabricate a rules-based fallback.
+
+Configure `AI_SUMMARY_PROVIDER=azure_openai`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT`, and `AZURE_OPENAI_API_VERSION`. The deployment must support the chat completions endpoint used by the configured API version.
 
 ---
 
@@ -186,12 +196,14 @@ These cannot be done in this sandbox — they need the real deployment from tier
 | Reminder scheduling | `lib/reminders.js`, auto-run every interval by `lib/scheduler.js` (also callable on demand from `routes/admin.js` `/reminders/run`) |
 | Push notifications | `lib/push.js`, `public/js/push-subscribe.js`, `public/sw.js`, VAPID keys in `.env` |
 | QC rule thresholds | Set per-study via Admin → Study Config → Settings & Thresholds (no code change needed) |
-| Questionnaire, skip logic, brands, consent, KPIs | All configurable via Admin → Study Config (Developer/Config console) — no code change needed |
+| Questionnaire, inline skip/termination logic, brand options, consent, KPIs | All configurable via Admin → Study Config — no code change needed |
 | Questionnaire spreadsheet/document import | `lib/questionnaireParser.js`, `routes/admin.js` (`/questionnaire/upload`, `/questionnaire/preview/:id`) |
 | Brand detection provider | `lib/brandDetection.js`, `lib/azureVisionClient.js`, `.env` (B9) |
 | Video-mode field-extraction provider | `lib/videoFieldExtraction.js`, `.env` (B9) |
 | Voice-note transcription provider | `lib/audioTranscription.js`, `.env` (B10) |
 | Outbound SMS/WhatsApp provider | `lib/whatsapp.js`, `.env` (B1) |
+| Staff/client credential email | `lib/staffEmail.js`, `.env` (B1) |
+| Azure OpenAI summaries | `lib/aiSummary.js`, `.env` (B12) |
 | Wording of respondent messages | `lib/messageTemplates.js` |
 | Video-frame sampling (for the two providers above) | `lib/ffmpegFrames.js` (bundled `ffmpeg-static` binary, no system install needed) |
 | Media storage (local disk or Azure Blob) | `lib/mediaStorage.js`, `.env` (`STORAGE_PROVIDER`, B4) |

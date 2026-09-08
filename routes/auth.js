@@ -77,6 +77,9 @@ router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   const user = await store.findOne("users", { email: (email || "").trim().toLowerCase() });
   if (!user || !bcrypt.compareSync(password || "", user.password_hash)) return res.render("login", { error: "Invalid email or password.", user: null, showDemoAccounts: process.env.NODE_ENV !== "production" });
+  if (user.must_change_password && user.temporary_password_expires_at && user.temporary_password_expires_at < store.nowSql()) {
+    return res.render("login", { error: "That temporary password has expired. Ask a Superadmin to resend your account email.", user: null, showDemoAccounts: process.env.NODE_ENV !== "production" });
+  }
   req.session.user = { id: user.id, name: user.name, email: user.email, role: user.role, study_id: user.study_id };
   logAudit(user.email, "login", "users", user.id, {});
 
@@ -119,6 +122,8 @@ router.post("/change-password", async (req, res) => {
   await store.update("users", { id: req.session.user.id }, {
     password_hash: bcrypt.hashSync(password, 10),
     must_change_password: 0,
+    temporary_password_expires_at: null,
+    invite_delivery_status: "activated",
   });
   delete req.session.mustChangePassword;
   logAudit(req.session.user.email, "change_own_password", "users", req.session.user.id, {});

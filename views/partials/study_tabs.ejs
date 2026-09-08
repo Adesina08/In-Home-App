@@ -23,7 +23,7 @@
     <div class="mb-3"></div>
   <% } %>
   <div class="flex flex-wrap gap-1.5 pb-1">
-    <a href="/admin/analysis?study=<%= study.id %>" class="flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13px] font-semibold bg-white text-slate-600 border border-slate-200"><%- icon('chart', 'w-[15px] h-[15px]') %>Analysis</a>
+    <a href="/admin?study=<%= study.id %>#analysis" class="flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13px] font-semibold bg-white text-slate-600 border border-slate-200"><%- icon('chart', 'w-[15px] h-[15px]') %>Fieldwork &amp; Analysis</a>
     <% STUDY_TABS.forEach(t => { %>
       <a href="<%= studyTabHref(study.id, t.key) %>"
          class="flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13px] font-semibold transition shrink-0 <%= tab === t.key ? 'bg-signal text-white shadow-[0_1px_2px_rgba(29,78,216,.2),0_4px_10px_-2px_rgba(29,78,216,.35)]' : 'bg-white text-slate-600 border border-slate-200 hover:border-signal/40 hover:text-signal' %>">

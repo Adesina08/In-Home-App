@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="/public/reports.css" />
 <script src="/public/js/reports.js" defer></script>
 <div class="report-page">
-  <div class="report-heading"><div><div class="report-kicker">Study intelligence / <%= study.name %></div><h1>Every study has a story.</h1><p class="report-lead">Bring the findings, respondent language and everyday moments together in one AI Summary.</p></div><a class="report-button secondary" href="/admin/studies/<%= study.id %>/research#reports">Review & approve reports</a><span class="report-badge"><%= aiConfigured ? 'AI model connected' : 'Rules-based summaries available' %></span></div>
+  <div class="report-heading"><div><div class="report-kicker">Study intelligence / <%= study.name %></div><h1>Every study has a story.</h1><p class="report-lead">Bring the findings, respondent language and everyday moments together in one Azure AI Summary.</p></div><span class="report-badge"><%= aiConfigured ? 'Azure AI connected' : 'Azure AI setup required' %></span></div>
   <% if (error) { %><div class="report-notice error" role="alert"><%= error %></div><% } %>
   <form class="report-toolbar" method="GET" action="/admin/ai-summary">
     <input type="hidden" name="study" value="<%= study.id %>" />
@@ -13,10 +13,10 @@
   <dl class="report-stats"><% [['Submitted entries',report.submitted,'Within this period'],['Contributors',report.contributors,'With submitted entries'],['Eligible media',report.media.length,'Photos, videos and voice notes'],['Written answers',report.openText.length,'Eligible for word frequency']].forEach(([label,value,note]) => { %><div class="report-stat"><dt><%= label %></dt><dd><%= value %></dd><dd class="report-stat-note"><%= note %></dd></div><% }) %></dl>
   <section class="report-panel">
     <div class="report-panel-head"><div><div class="report-kicker">The research story</div><h2>Summary</h2><p><%= from || 'Beginning of study' %> → <%= to || 'Latest available data' %></p></div>
-      <form method="POST" action="/admin/ai-summary/generate" data-generate-summary><input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" /><button type="submit" class="report-button"><%= selected ? 'Generate updated summary' : 'Generate summary' %></button></form>
+      <form method="POST" action="/admin/ai-summary/generate" data-generate-summary><input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" /><input type="hidden" name="force" value="1" /><button type="submit" class="report-button"><%= selected ? 'Generate updated summary' : 'Generate summary' %></button></form>
     </div>
     <% if (selected) { %>
-      <span class="report-badge"><%= selected.used_ai_model ? 'AI-generated · review before sharing' : 'Rules-based draft · not AI-written' %></span>
+      <span class="report-badge"><%= stale ? 'Update available' : 'Current Azure AI draft · review before sharing' %></span>
       <div class="report-narrative"><%= selected.narrative %></div>
       <p class="report-muted" style="margin-top:20px">Saved <%= selected.generated_at %> · <%= selected.base_records %> submitted entries · <%= selected.base_respondents %> contributors.</p>
       <details><summary>View the saved figures and sampled answers</summary>
@@ -25,7 +25,7 @@
         <% if (Array.isArray(sample)) sample.forEach(a => { %><blockquote style="margin-top:14px;font-size:13px"><strong><%= a.question %></strong><p><%= a.answer %></p></blockquote><% }) %>
       </details>
     <% } else { %><div class="report-empty">No saved summary for this period yet. Generate one from the study’s figures and up to <%= openTextSampleSize %> eligible written answers.</div><% } %>
-    <% if (!aiConfigured) { %><p class="report-muted" style="margin-top:16px">No AI model is connected. Generation uses a fixed template and is labelled accordingly.</p><% } %>
+    <% if (!aiConfigured) { %><p class="report-muted" style="margin-top:16px">Connect Azure OpenAI to generate summaries. The latest successful summary remains visible if Azure is unavailable.</p><% } %>
   </section>
   <div class="report-notice">The visuals below show the current data for this period. A saved narrative retains the figures available when it was generated. New entries or QC decisions can change the visuals.</div>
   <%- include('../partials/report_visuals', { report }) %>
@@ -33,4 +33,13 @@
     <% if (summaries.length) { %><div class="report-history"><% summaries.forEach(s => { %><a href="/admin/ai-summary?study=<%= study.id %>&summary=<%= s.id %>" aria-current="<%= !!selected && selected.id === s.id %>"><strong><%= s.period_start || 'Start' %> → <%= s.period_end || 'All data' %></strong><small><%= s.generated_at %></small><small><%= s.base_records %> entries · <%= s.used_ai_model ? 'AI-generated' : 'Rules-based' %></small></a><% }) %></div><% } else { %><p class="report-muted">Generated summaries will be saved here.</p><% } %>
   </section>
 </div>
+<% if (stale && aiConfigured && !error) { %><script>
+document.addEventListener('DOMContentLoaded', async function () {
+  const form = document.querySelector('[data-generate-summary]'); if (!form) return;
+  const button = form.querySelector('button'); button.disabled = true; button.textContent = 'Generating with Azure AI…';
+  const body = new URLSearchParams(new FormData(form)); body.set('force', '0');
+  try { const response = await fetch(form.action, { method:'POST', headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'}, body }); const data = await response.json(); if (!response.ok) throw new Error(data.error); location.href = '/admin/ai-summary?study=<%= study.id %>&from=<%= encodeURIComponent(from) %>&to=<%= encodeURIComponent(to) %>&generated=' + data.id; }
+  catch (error) { button.disabled = false; button.textContent = 'Retry Azure AI summary'; const notice = document.createElement('div'); notice.className='report-notice error'; notice.textContent=error.message || 'Azure AI could not generate the summary.'; form.closest('.report-panel').prepend(notice); }
+});
+</script><% } %>
 <%- include('../partials/footer') %>

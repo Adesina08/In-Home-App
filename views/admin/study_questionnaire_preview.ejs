@@ -35,7 +35,7 @@
               <% VALID_TYPES.forEach(t => { %><option value="<%= t %>" <%= r.type===t?'selected':'' %>><%= t %></option><% }) %>
             </select>
           </td>
-          <td class="py-2.5"><input class="f-options w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][options]" value="<%= (r.options||[]).join(', ') %>" oninput="renderPreview()" placeholder="A, B, C" /></td>
+          <td class="py-2.5"><input class="f-options w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][options]" value="<%= (r.options||[]).join(' | ') %>" oninput="renderPreview()" placeholder="A | B | Other, specify" /></td>
           <td class="py-2.5"><input class="f-section w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][section]" value="<%= r.section||'' %>" oninput="renderPreview()" placeholder="e.g. Purchase" /></td>
           <td class="py-2.5 text-center"><input type="checkbox" class="f-required h-4 w-4 rounded border-slate-300 text-signal focus:ring-signal/30" name="rows[<%= i %>][required]" <%= r.required ? 'checked' : '' %> onchange="renderPreview()" /></td>
           <td class="py-2.5"><input class="f-min w-14 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" name="rows[<%= i %>][min]" value="<%= r.min_value ?? '' %>" oninput="renderPreview()" /></td>
@@ -93,7 +93,7 @@ function renderPreview() {
     count++;
     const text = row.querySelector('.f-text').value || '(no question text)';
     const type = row.querySelector('.f-type').value;
-    const options = row.querySelector('.f-options').value.split(',').map(s => s.trim()).filter(Boolean);
+    const options = row.querySelector('.f-options').value.split('|').map(s => s.trim()).filter(Boolean);
     const required = row.querySelector('.f-required').checked;
 
     html += `<div class="border-t pt-3 first:border-t-0 first:pt-0">

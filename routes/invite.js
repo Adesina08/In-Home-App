@@ -10,6 +10,10 @@ const accounts = require("../lib/respondentAccounts");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
 const { splitPresurvey } = require("../lib/presurveySections");
+const otp = require("../lib/otp");
+const messaging = require("../lib/whatsapp");
+const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
+const { isEmail: contactIsEmail } = require("../lib/contact");
 
 const router = express.Router();
 
@@ -44,6 +48,21 @@ async function presurveyQuestions(studyId) {
 function isEmptyAnswer(value) {
   if (Array.isArray(value)) return value.length === 0;
   return value === undefined || value === null || String(value).trim() === "";
+}
+
+/** Display-only, never stored: "jo***@example.com" or "+234******5678". */
+function maskContact(contact) {
+  const raw = String(contact || "");
+  if (!raw) return "";
+  if (contactIsEmail(raw)) {
+    const [user, domain] = raw.split("@");
+    const visible = user.slice(0, Math.min(2, user.length));
+    return `${visible}${"*".repeat(Math.max(user.length - visible.length, 3))}@${domain}`;
+  }
+  // Contacts are stored canonically (lib/contact.js), so a non-email contact
+  // here is always "+<countrycode><digits>" -- mask everything but the last 4.
+  if (raw.length <= 4) return "*".repeat(Math.max(raw.length, 3));
+  return `${raw.slice(0, -4).replace(/\d/g, "*")}${raw.slice(-4)}`;
 }
 
 async function loadInvite(req, res) {
@@ -206,6 +225,161 @@ router.post("/:token/account", async (req, res) => {
   }
 
   return continueAfterAccount(res, respondent);
+});
+
+// A returning respondent whose account already has a password never sees the
+// create-password fields on /account (their existing credentials carry over
+// to every study). This is the escape hatch for someone who genuinely forgot
+// that password: verify they still own the contact on file, then let them set
+// a new one. Session-scoped to this invite token so completing it never grants
+// access beyond what the invite link itself already implies.
+async function loadResetAccount(req, res) {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return null;
+  const { respondent, study } = loaded;
+  const account = respondent.account_id ? await accounts.getById(respondent.account_id) : null;
+  if (!account || !account.password_hash) {
+    res.redirect(`/invite/${respondent.unique_token}/account`);
+    return null;
+  }
+  return { respondent, study, account };
+}
+
+router.get("/:token/reset-password", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study, account } = loaded;
+  res.render("invite/reset_password", {
+    respondent, study, step: "request",
+    maskedContact: maskContact(account.contact),
+    error: null, notice: null, user: null,
+  });
+});
+
+router.post("/:token/reset-password", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study, account } = loaded;
+  const render = (error) => res.status(400).render("invite/reset_password", {
+    respondent, study, step: "request",
+    maskedContact: maskContact(account.contact),
+    error, notice: null, user: null,
+  });
+
+  if (!respondentOtpBypassed()) {
+    try {
+      await otp.sendCode({
+        contact: account.contact,
+        respondentId: respondent.id,
+        purpose: "account_password_reset",
+        studyName: study.name,
+      });
+    } catch (e) {
+      if (e.code !== "COOLDOWN") return render(e.message || "We couldn't send a code just now. Please try again in a moment.");
+    }
+  }
+  req.session.pwResetToken = respondent.unique_token;
+  return res.redirect(`/invite/${respondent.unique_token}/reset-password/verify`);
+});
+
+router.get("/:token/reset-password/verify", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study, account } = loaded;
+  if (respondentOtpBypassed()) return res.redirect(`/invite/${respondent.unique_token}/reset-password/new`);
+  if (req.session.pwResetToken !== respondent.unique_token) return res.redirect(`/invite/${respondent.unique_token}/reset-password`);
+  res.render("invite/reset_password", {
+    respondent, study, step: "verify",
+    maskedContact: maskContact(account.contact),
+    simulated: !messaging.isRealMessagingConfigured(),
+    ttlMinutes: otp.TTL_MINUTES,
+    error: null, notice: null, user: null,
+  });
+});
+
+router.post("/:token/reset-password/verify", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study, account } = loaded;
+  if (respondentOtpBypassed()) return res.redirect(`/invite/${respondent.unique_token}/reset-password/new`);
+  const render = (error) => res.status(400).render("invite/reset_password", {
+    respondent, study, step: "verify",
+    maskedContact: maskContact(account.contact),
+    simulated: !messaging.isRealMessagingConfigured(),
+    ttlMinutes: otp.TTL_MINUTES,
+    error, notice: null, user: null,
+  });
+  if (req.session.pwResetToken !== respondent.unique_token) return res.redirect(`/invite/${respondent.unique_token}/reset-password`);
+
+  const result = await otp.verifyCode({ contact: account.contact, code: req.body.code, purpose: "account_password_reset" });
+  if (!result.ok) return render(result.reason);
+
+  delete req.session.pwResetToken;
+  req.session.pwResetVerifiedToken = respondent.unique_token;
+  logAudit(`respondent:${respondent.respondent_code}`, "account_password_reset_verified", "respondent_accounts", account.id, {});
+  return res.redirect(`/invite/${respondent.unique_token}/reset-password/new`);
+});
+
+router.post("/:token/reset-password/resend", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study, account } = loaded;
+  if (req.session.pwResetToken === respondent.unique_token && !respondentOtpBypassed()) {
+    try {
+      await otp.sendCode({
+        contact: account.contact,
+        respondentId: respondent.id,
+        purpose: "account_password_reset",
+        studyName: study.name,
+      });
+    } catch (e) {
+      return res.status(e.code === "COOLDOWN" ? 429 : 502).render("invite/reset_password", {
+        respondent, study, step: "verify",
+        maskedContact: maskContact(account.contact),
+        simulated: !messaging.isRealMessagingConfigured(),
+        ttlMinutes: otp.TTL_MINUTES,
+        error: e.message, notice: null, user: null,
+      });
+    }
+  }
+  return res.redirect(`/invite/${respondent.unique_token}/reset-password/verify?resent=1`);
+});
+
+router.get("/:token/reset-password/new", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  if (!respondentOtpBypassed() && req.session.pwResetVerifiedToken !== respondent.unique_token) {
+    return res.redirect(`/invite/${respondent.unique_token}/reset-password`);
+  }
+  res.render("invite/reset_password", {
+    respondent, study, step: "new",
+    error: null, notice: null, user: null,
+  });
+});
+
+router.post("/:token/reset-password/new", async (req, res) => {
+  const loaded = await loadResetAccount(req, res);
+  if (!loaded) return;
+  const { respondent, study, account } = loaded;
+  if (!respondentOtpBypassed() && req.session.pwResetVerifiedToken !== respondent.unique_token) {
+    return res.redirect(`/invite/${respondent.unique_token}/reset-password`);
+  }
+  const password = String(req.body.password || "");
+  const confirmPassword = String(req.body.confirm_password || "");
+  const render = (error) => res.status(400).render("invite/reset_password", {
+    respondent, study, step: "new", error, notice: null, user: null,
+  });
+  if (password !== confirmPassword) return render("The passwords do not match.");
+
+  try {
+    await accounts.resetPassword(account.id, password);
+  } catch (e) {
+    return render(e.message || "We couldn't reset your password. Please try again.");
+  }
+  delete req.session.pwResetVerifiedToken;
+  logAudit(`respondent:${respondent.respondent_code}`, "account_password_reset_completed", "respondent_accounts", account.id, {});
+  return res.redirect(`/invite/${respondent.unique_token}/account`);
 });
 
 router.get("/:token", async (req, res) => {

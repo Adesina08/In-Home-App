@@ -211,7 +211,7 @@ router.get("/respondents/:id/questionnaire", requireMobileAuth, async (req, res)
     study: { id: study.id, name: study.name, version: study.version || 1, backEntryHours: study.back_entry_hours ?? 24, diaryMode:study.diary_mode, practiceRequired:respondent.activation_status === "training" },
     respondent: publicRespondent(respondent),
     occasionNumber:(await store.count("diary_records",{respondent_id:respondent.id,status:"submitted",is_practice:0}))+1,
-    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], minValue: q.min_value, maxValue: q.max_value })),
+    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], otherSpecifyOptions:q.otherSpecifyOptions||[], minValue: q.min_value, maxValue: q.max_value })),
     rules: rules.map((r) => ({ id: r.id, targetQuestionId: r.target_question_id, conditionQuestionId: r.condition_question_id, operator: r.operator, value: r.value, action: r.action, terminateScope: r.terminate_scope || null })),
   });
 });
@@ -239,7 +239,7 @@ router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.si
 
   const study = await store.findOne("studies", { id: respondent.study_id });
   const { questions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
-  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
+  const brands = await require("../lib/productCandidates").forStudy(study);
   const isPractice = respondent.activation_status === "training" || req.body.practice === "1" ? 1 : 0;
 
   const now = store.nowSql();
@@ -285,6 +285,9 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
   let answers = {};
   try { answers = req.body.answers_json ? JSON.parse(req.body.answers_json) : {}; }
   catch (e) { return res.status(400).json({ error: "Your saved answers could not be read." }); }
+  let otherText = {};
+  try { otherText = req.body.other_text_json ? JSON.parse(req.body.other_text_json) : {}; }
+  catch (e) { return res.status(400).json({ error: "Your other answer text could not be read." }); }
 
   const body = {occurrence_time:req.body.occurrence_time,occasion_number:req.body.occasion_number};
   for (const q of questions) {
@@ -315,6 +318,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
   const isTerminated = !!terminateMatch;
 
   if (isSubmit && !isTerminated) {
+    body.other_text_json = otherText;
     const problems = validateSubmission({ questions, rules, body });
     if (problems.length) return res.status(400).json({ error: "Please check the highlighted questions.", problems });
   }
@@ -334,14 +338,14 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
     if (["photo", "video", "audio"].includes(q.type)) continue;
     const raw = body[`q_${q.id}`];
     if (raw === undefined || raw === null || raw === "") continue;
-    await store.insert("responses", { record_id: recordId, question_id: q.id, value: Array.isArray(raw) ? raw.join("|") : String(raw), study_version: study.version || 1 });
+    await store.insert("responses", { record_id: recordId, question_id: q.id, value: Array.isArray(raw) ? raw.join("|") : String(raw), other_text_json: otherText[String(q.id)] ? JSON.stringify(otherText[String(q.id)]) : null, study_version: study.version || 1 });
   }
 
   let brandProvider = null;
   let audioProvider = null;
   try { brandProvider = getBrandDetectionProvider(); } catch (e) { console.error("Mobile brand detection unavailable:", e.message); }
   try { audioProvider = getAudioTranscriptionProvider(); } catch (e) { console.error("Mobile audio transcription unavailable:", e.message); }
-  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
+  const brands = await require("../lib/productCandidates").forStudy(study);
 
   for (const f of req.files || []) {
     const storedPath = await persistUpload(f);

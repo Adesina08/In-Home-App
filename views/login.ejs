@@ -9,8 +9,7 @@
      this screen, and it was not a design problem.
 
   2. The left panel used to sell the product to people who have already bought
-     it. It now carries the two things that help someone who cannot get in:
-     which environment they are signing into, and who to ask.
+     it. It now carries what helps someone who cannot get in: who to ask.
 %>
 
 <link rel="stylesheet" href="/public/login-diary.css" />
@@ -44,8 +43,6 @@
       </div>
 
       <div class="relative text-sm">
-        <div class="font-mono text-[10px] uppercase tracking-[0.09em] text-brand-300">Environment</div>
-        <div class="font-semibold mb-5"><%= process.env.NODE_ENV === 'production' ? 'Production' : 'Development' %> &middot; France Central</div>
         <div class="font-mono text-[10px] uppercase tracking-[0.09em] text-brand-300">Trouble signing in?</div>
         <div class="text-brand-100">Ask your research manager to reset it.</div>
       </div>

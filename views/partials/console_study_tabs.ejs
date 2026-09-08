@@ -4,7 +4,7 @@
   <p><%= [study.market, formatCategories(study.category)].filter(Boolean).join(' · ') || 'Study workspace' %> <span>·</span> <%= ({realtime:'Real-time occasions',daily:'Daily diary',weekly:'Weekly diary',monthly:'Monthly diary'})[study.diary_mode] || study.diary_mode %></p>
   <nav class="console-study-tabs" aria-label="Study navigation">
     <a href="/admin?study=<%= study.id %>"><%- icon('chart', 'w-4 h-4') %>Overview</a>
-    <a href="/admin/analysis?study=<%= study.id %>"><%- icon('chart', 'w-4 h-4') %>Analysis</a>
+    <a href="/admin?study=<%= study.id %>#analysis"><%- icon('chart', 'w-4 h-4') %>Fieldwork &amp; Analysis</a>
     <% STUDY_TABS.forEach(t => { %><a href="<%= studyTabHref(study.id, t.key) %>" title="<%= t.label %>" class="<%= tab === t.key ? 'is-active' : '' %>" <%- tab === t.key ? 'aria-current="page"' : '' %>><%- icon(t.icon, 'w-4 h-4') %><%= t.short === 'Settings' ? 'Study Settings' : t.short === 'Media' ? 'Media Review' : t.short === 'KPIs' ? 'Client KPIs' : t.short %></a><% }) %>
   </nav>
 </div>

@@ -1,6 +1,6 @@
 <% if (user.role === 'superadmin') { %>
-<%- include('../partials/header', { title: 'Fieldwork Dashboard — INICIO Console', user, currentPath: '/admin', studyPicker: { studies, current: study.id, action: '/admin?study=' } }) %>
-<%- include('../partials/page_header', { eyebrow: 'Study overview', title: 'Fieldwork Dashboard', subtitle: study.name, actions: '<a href="/admin?study=' + study.id + '" class="console-button">' + icon('refresh','w-4 h-4') + 'Refresh</a><a href="/admin/studies/' + study.id + '" class="console-button is-primary">' + icon('settings','w-4 h-4') + 'Study settings</a>' }) %>
+<%- include('../partials/header', { title: 'Fieldwork & Analysis — INICIO Console', user, currentPath: '/admin', studyPicker: { studies, current: study.id, action: '/admin?study=' } }) %>
+<%- include('../partials/page_header', { eyebrow: 'Study overview', title: 'Fieldwork & Analysis', subtitle: study.name, actions: '<a href="/admin?study=' + study.id + '" class="console-button">' + icon('refresh','w-4 h-4') + 'Refresh</a><a href="/admin/studies/' + study.id + '" class="console-button is-primary">' + icon('settings','w-4 h-4') + 'Study settings</a>' }) %>
 <% const submissionShare = expected ? Math.round(completed / expected * 100) : null; const stages = [['invited','Invited'],['screened','Screened'],['registered','Registered'],['activated','Activated'],['active','Active']]; const funnelMax = Math.max(1,...stages.map(([key])=>funnelMap[key] || 0)); %>
 <div class="console-metrics">
   <% [['Respondents',totalRespondents,'users','Current study · excludes practice'],['Submitted entries',completed,'check-circle','All time · excludes practice'],['Draft entries',missed,'pencil','Started but not submitted'],['Open QC flags',totalOpenFlags,'shield-check','All open flags in this study']].forEach(([label,value,glyph,note])=>{ %><div class="console-metric"><div class="console-metric-label"><%= label %><span class="console-metric-icon"><%- icon(glyph,'w-4 h-4') %></span></div><div class="console-metric-value"><%= Number(value).toLocaleString() %></div><div class="console-metric-foot"><%= note %></div></div><% }) %>
@@ -22,6 +22,8 @@
   </div>
 </div>
 <section class="console-panel"><div class="console-panel-heading"><div><h2>Study exports</h2><p>Download the data behind this study.</p></div><div class="console-actions"><% [['respondents','Respondents'],['diary','Diary entries'],['qc','QC flags']].forEach(([key,label])=>{ %><a class="console-button" href="/admin/export/<%= key %>.csv?study=<%= study.id %>"><%- icon('download','w-4 h-4') %><%= label %></a><% }) %></div></div></section>
+<%- include('../partials/admin_fieldwork_operations', { operations, operationSaved, operationError, study }) %>
+<%- include('../partials/admin_analysis_section', { analysis, study, studies }) %>
 <%- include('../partials/footer') %>
 
 <% } else { %>
@@ -50,7 +52,7 @@
   `;
 %>
 <%- include('../partials/header', {
-  title: 'Admin Dashboard — INICIO',
+  title: 'Fieldwork & Analysis — INICIO',
   user,
   currentPath: '/admin',
   studyPicker: { studies, current: study.id, action: '/admin?study=' },
@@ -58,7 +60,7 @@
 
 <%- include('../partials/page_header', {
   eyebrow: 'Admin',
-  title: 'Admin Dashboard',
+  title: 'Fieldwork & Analysis',
   subtitle: 'Real-time overview of fieldwork performance and study health',
   actions: dashActions,
 }) %>
@@ -243,6 +245,8 @@
   </div>
 </div>
 
+<%- include('../partials/admin_fieldwork_operations', { operations, operationSaved, operationError, study }) %>
+<%- include('../partials/admin_analysis_section', { analysis, study, studies }) %>
 <%- include('../partials/footer') %>
 
 <% } %>

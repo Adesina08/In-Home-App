@@ -498,7 +498,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   if (!respondent) return res.status(404).render("error", { message: "Invalid link.", user: null });
   const study = await store.findOne("studies", { id: respondent.study_id });
   const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
-  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
+  const brands = await require("../lib/productCandidates").forStudy(study);
   const practice = req.body.practice === "1";
 
   if (!req.file) {
@@ -667,6 +667,8 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     terminateMatch = findTerminateMatch(rules, answers);
   }
   const isTerminated = !!terminateMatch;
+  let otherText = {};
+  try { otherText = JSON.parse(req.body.other_text_json || "{}"); } catch (_) {}
   const terminateNote = isTerminated
     ? `Terminated: "${terminateMatch.condition_text}" ${{ equals: "=", not_equals: "≠", in: "is one of", not_in: "is none of", includes: "includes" }[terminateMatch.operator] || terminateMatch.operator} "${terminateMatch.value}"`
     : null;
@@ -713,6 +715,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
           ? { path: req.body._pending_media_path, mimetype: req.body._pending_media_mimetype }
           : null,
         aiNote: null,
+        otherText,
         problems,
       });
     }
@@ -738,14 +741,14 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
       const vals = req.body[field];
       if (vals) {
         const arr = Array.isArray(vals) ? vals : [vals];
-        await store.insert("responses", { record_id: recordId, question_id: q.id, value: arr.join("|"), study_version: study.version });
+        await store.insert("responses", { record_id: recordId, question_id: q.id, value: arr.join("|"), other_text_json: otherText[String(q.id)] ? JSON.stringify(otherText[String(q.id)]) : null, study_version: study.version });
       }
     } else if (q.type !== "photo" && q.type !== "video" && req.body[field] !== undefined && req.body[field] !== "") {
-      await store.insert("responses", { record_id: recordId, question_id: q.id, value: req.body[field], study_version: study.version });
+      await store.insert("responses", { record_id: recordId, question_id: q.id, value: req.body[field], other_text_json: otherText[String(q.id)] ? JSON.stringify(otherText[String(q.id)]) : null, study_version: study.version });
     }
   }
 
-  const brands = await store.find("brands", { study_id: study.id, active: 1 }, { sort: { id: 1 } });
+  const brands = await require("../lib/productCandidates").forStudy(study);
 
   // AI enrichment (brand detection / transcription) is always best-effort and
   // must never block or crash a diary submission -- the diary record and the

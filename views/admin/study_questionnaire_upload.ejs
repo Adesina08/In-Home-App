@@ -11,10 +11,11 @@
   <% } %>
 
   <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-6">
+    <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 mb-5 flex items-center justify-between gap-4"><div><strong class="text-blue-900">Start with the INICIO template</strong><p class="text-xs text-blue-700 mt-1">Includes instructions, logic, termination and Other-specify columns.</p></div><a class="console-button is-primary whitespace-nowrap" href="/admin/studies/<%= study.id %>/questionnaire/template.xlsx">Download XLSX template</a></div>
     <div class="font-semibold text-slate-800 mb-1 flex items-center gap-2"><%- icon('upload', 'w-4 h-4 text-signal') %> Upload a Questionnaire</div>
     <p class="text-sm text-slate-500 mb-4">
       Best results: a <strong>.csv or .xlsx</strong> with columns
-      <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">code, text, type, options, required, min, max</code>
+      <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">code, section, question, type, options, required, cadence, condition</code>
       (type = single / multi / numeric / text / date / photo / video / audio; options separated by commas or semicolons).
       A <strong>.docx, .pdf, or .txt</strong> questionnaire is also accepted — it's parsed best-effort from
       lines like <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">Q: ... / Type: ... / Options: ...</code>,

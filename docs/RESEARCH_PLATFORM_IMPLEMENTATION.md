@@ -13,12 +13,18 @@ Implemented in the local checkout:
 - [x] Client media/export grants, base suppression, withdrawal, retention actions and media authorization
 - [x] Read-only production configuration checks, local backup/restore tooling and operational failure logs
 - [x] Automated regression tests, desktop/mobile browser checks and mobile type checking
+- [x] Unified Fieldwork & Analysis dashboard with charts, response trends, crosstabs and operations controls
+- [x] Superadmin-only staff/client provisioning through Twilio SendGrid with expiring temporary credentials
+- [x] Azure OpenAI summaries with automatic stale-data refresh and manual version generation
+- [x] Unified questionnaire builder with downloadable XLSX template, inline skip/termination rules, working Other-specify fields and embedded desktop/mobile preview
+- [x] Country/state study scope, multi-channel reminders, redesigned consent and client KPI configuration
+- [x] Superadmin bulk respondent deletion with linked data and physical-media cleanup
 
-Validation on 2026-09-06:
-- `node --test tests/*.test.js`: 36 tests passed. Includes offline queue restart with disk-backed adapters, multipart retry, private media ownership, profile gating, closed-study capture, report calculations and checksum-verified local restore.
+Validation on 2026-09-08:
+- `node --test tests/*.test.js`: 48 tests passed. Includes offline queue restart with disk-backed adapters, multipart retry, private media ownership, profile gating, closed-study capture, report calculations, staff account delivery, inline questionnaire behaviour, bulk deletion and checksum-verified local restore.
 - `npm run build`: passed.
-- `cd expo-mobile && npm run typecheck`: passed.
-- Isolated browser checks: research workspace, admin dashboard, AI summary, questionnaire builder, interviewer dashboard, client dashboard, client analysis and approved reports at 1440px and 390px; no page overflow, browser script errors or automated WCAG A/AA violations on those pages.
+- `cd expo-mobile && npx tsc --noEmit`: passed.
+- Authenticated browser checks: merged Fieldwork & Analysis dashboard, questionnaire builder, consent, client KPIs, users, data management and AI summary rendered successfully at desktop size with no visible overlap.
 - Isolated browser workflow: assignment, household visit, configured screener/consent registration, training, practice prerequisite enforcement, handover, incentive eligibility, snapshot approval and client grants. A submitted practice record was inserted as a test fixture; this does not verify physical-device capture.
 
 Release verification still required:

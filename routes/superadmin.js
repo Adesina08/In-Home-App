@@ -42,11 +42,17 @@ async function deleteRespondentCascade(respondentId) {
     { projection: { id: 1 } }
   );
   const recordIds = records.map((r) => r.id);
+  const stagedMedia = await store.find("staged_media", { respondent_id: respondentId });
+  for (const media of stagedMedia) await require("../lib/mediaStorage").deleteMedia(media.file_path);
+  await removeWhere("staged_media", { respondent_id: respondentId });
 
   if (recordIds.length) {
+    const mediaRows = await store.find("media", { record_id: { $in: recordIds } });
+    for (const media of mediaRows) await require("../lib/mediaStorage").deleteMedia(media.file_path);
     await removeWhere("responses", { record_id: { $in: recordIds } });
     await removeWhere("media", { record_id: { $in: recordIds } });
     await removeWhere("qc_flags", { record_id: { $in: recordIds } });
+    await removeWhere("coded_verbatims", { record_id: { $in: recordIds } });
   }
 
   await removeWhere("qc_flags", { respondent_id: respondentId });
@@ -54,8 +60,15 @@ async function deleteRespondentCascade(respondentId) {
   await removeWhere("whatsapp_outbox", { respondent_id: respondentId });
   await removeWhere("whatsapp_sessions", { respondent_id: respondentId });
   await removeWhere("respondent_credentials", { respondent_id: respondentId });
+  await removeWhere("otp_codes", { respondent_id: respondentId });
   await removeWhere("push_subscriptions", { respondent_id: respondentId });
   await removeWhere("respondent_profile_snapshots", { respondent_id: respondentId });
+  await removeWhere("end_validations", { respondent_id: respondentId });
+  await removeWhere("follow_up_log", { respondent_id: respondentId });
+  await removeWhere("incentive_ledger", { respondent_id: respondentId });
+  await removeWhere("backchecks", { respondent_id: respondentId });
+  await removeWhere("privacy_requests", { respondent_id: respondentId });
+  await removeWhere("diary_submissions", { respondent_id: respondentId });
   await removeWhere("mobile_sessions", { respondent_id: respondentId });
   await removeWhere("diary_records", { respondent_id: respondentId });
   await removeWhere("respondents", { id: respondentId });
@@ -67,8 +80,15 @@ async function deleteRespondentCascade(respondentId) {
     const remaining = await store.count("respondents", { account_id: respondent.account_id });
     if (!remaining) {
       await removeWhere("mobile_sessions", { account_id: respondent.account_id });
+      const profile = await store.findOne("respondent_profiles", { account_id: respondent.account_id });
+      if (profile && profile.photo_path) await require("../lib/mediaStorage").deleteMedia(profile.photo_path);
+      await removeWhere("respondent_profiles", { account_id: respondent.account_id });
       await removeWhere("respondent_accounts", { id: respondent.account_id });
     }
+  } else if (respondent.profile_id) {
+    const profile = await store.findOne("respondent_profiles", { id: respondent.profile_id });
+    if (profile && profile.photo_path) await require("../lib/mediaStorage").deleteMedia(profile.photo_path);
+    await removeWhere("respondent_profiles", { id: respondent.profile_id });
   }
 
   return respondent;
@@ -151,6 +171,49 @@ router.get("/superadmin", onlySuperadmin, async (req, res) => {
   });
 });
 
+router.get("/data-management", onlySuperadmin, async (req, res) => {
+  const studies = await store.find("studies", {}, { sort: { name: 1 } });
+  const study = studies.find((item) => String(item.id) === String(req.query.study)) || studies[0] || null;
+  const status = String(req.query.status || "");
+  const search = String(req.query.search || "").trim().toLowerCase();
+  let respondents = study ? await store.find("respondents", { study_id: study.id }, { sort: { id: 1 } }) : [];
+  if (status) respondents = respondents.filter((item) => item.activation_status === status);
+  if (search) respondents = respondents.filter((item) => [item.name, item.contact, item.respondent_code].some((value) => String(value || "").toLowerCase().includes(search)));
+  const retention = study ? await require("../lib/researchPrivacy").retentionCandidates(study) : [];
+  const audit = study ? await store.find("research_audit", { study_id: study.id }, { sort: { created_at: -1 }, limit: 30 }) : [];
+  res.render("admin/data_management", { studies, study, respondents, retention, audit, status, search, result: req.query.result || "" });
+});
+
+router.post("/data-management/respondents/delete", onlySuperadmin, async (req, res) => {
+  const studyId = toId(req.body.study_id);
+  const ids = [...new Set([].concat(req.body.respondent_ids || []).map(toId))];
+  if (String(req.body.confirm || "").trim().toUpperCase() !== "DELETE" || !ids.length) return res.status(400).render("error", { message: "Select respondents and type DELETE to confirm.", user: req.session.user });
+  const rows = await store.find("respondents", { id: { $in: ids }, study_id: studyId });
+  if (rows.length !== ids.length) return res.status(400).render("error", { message: "The selection changed or includes respondents outside this study. Refresh and select again.", user: req.session.user });
+  const deleted = [], failed = [];
+  for (const row of rows) {
+    try { await deleteRespondentCascade(row.id); deleted.push(row.id); logAudit(req.session.user.email, "superadmin_delete_respondent", "respondents", row.id, { study_id: studyId, respondent_code: row.respondent_code, batch: true, permanent: true }); }
+    catch (error) { failed.push({ id: row.id, error: error.message }); }
+  }
+  logAudit(req.session.user.email, "superadmin_bulk_delete_respondents", "studies", studyId, { requested: ids.length, deleted, failed });
+  res.redirect(`/admin/data-management?study=${encodeURIComponent(studyId)}&result=${encodeURIComponent(`${deleted.length} deleted${failed.length ? `, ${failed.length} failed` : ""}`)}`);
+});
+
+router.post("/data-management/respondents/:id/withdraw", onlySuperadmin, async (req, res) => {
+  const respondent = await store.findOne("respondents", { id: toId(req.params.id) });
+  if (!respondent) return res.sendStatus(404);
+  await require("../lib/researchPrivacy").withdraw(respondent, req.session.user.email);
+  res.redirect(`/admin/data-management?study=${encodeURIComponent(respondent.study_id)}&result=Withdrawal%20recorded`);
+});
+
+router.post("/data-management/respondents/:id/erase", onlySuperadmin, async (req, res) => {
+  const respondent = await store.findOne("respondents", { id: toId(req.params.id) });
+  const study = respondent && await store.findOne("studies", { id: respondent.study_id });
+  if (!respondent || !study || req.body.confirm !== respondent.respondent_code) return res.status(400).render("error", { message: "Enter the exact respondent code to erase due participation.", user: req.session.user });
+  await require("../lib/researchPrivacy").eraseStudyParticipation(study, respondent, req.session.user.email);
+  res.redirect(`/admin/data-management?study=${encodeURIComponent(study.id)}&result=Retention%20deletion%20completed`);
+});
+
 router.post("/superadmin/respondents/:id/delete", onlySuperadmin, async (req, res) => {
   if (String(req.body.confirm || "").trim().toUpperCase() !== "DELETE") {
     return res.status(400).render("error", {
@@ -219,6 +282,9 @@ router.post("/superadmin/studies/:id/delete", onlySuperadmin, async (req, res) =
   await removeWhere("kpi_config", { study_id: studyId });
   await removeWhere("ai_summaries", { study_id: studyId });
   await removeWhere("respondent_profile_snapshots", { study_id: studyId });
+  for (const collection of ["interviewer_assignments", "fieldwork_visits", "backchecks", "incentive_rules", "incentive_ledger", "client_grants", "report_snapshots", "report_schedules", "research_alerts", "research_audit", "theme_codes", "coded_verbatims", "privacy_requests", "follow_up_log", "end_validations"]) {
+    await removeWhere(collection, { study_id: studyId });
+  }
 
   // Preserve staff/client accounts but detach them from a project that no
   // longer exists.

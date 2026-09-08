@@ -58,15 +58,26 @@ test('cloud removes common words and contact/link tokens', () => {
   assert.deepEqual(wordCloud(['The fresh and fresh https://site.test/secret me@example.org +234 800 123 4567']), [{ word: 'fresh', count: 2 }]);
 });
 test('summary generation awaits the metrics and stores real distributions', async () => {
-  const summary = await generateSummary(study.id, { from: '2026-09-06', to: '2026-09-06', generatedBy: 'test' });
-  const metrics = JSON.parse(summary.metrics_json);
-  assert.equal(metrics.base.submitted_records, 4);
-  assert.equal(metrics.brands.length, 2);
-  assert.equal(metrics.quality.qc_flag_rate_pct, 25);
-  assert.equal(summary.used_ai_model, 0);
-  assert.match(summary.narrative, /4/);
-  assert.equal(JSON.parse(summary.open_text_json).length, 2);
-  await assert.rejects(generateSummary(study.id, { from: '2026-02-30' }));
+  const originalFetch = global.fetch;
+  const originalEnv = { endpoint: process.env.AZURE_OPENAI_ENDPOINT, key: process.env.AZURE_OPENAI_KEY, deployment: process.env.AZURE_OPENAI_DEPLOYMENT, provider: process.env.AI_SUMMARY_PROVIDER };
+  process.env.AI_SUMMARY_PROVIDER = 'azure_openai';
+  process.env.AZURE_OPENAI_ENDPOINT = 'https://example.openai.azure.com'; process.env.AZURE_OPENAI_KEY = 'test-key'; process.env.AZURE_OPENAI_DEPLOYMENT = 'summary-model';
+  global.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'Azure summary based on 4 submitted records.' } }] }) });
+  try {
+    const summary = await generateSummary(study.id, { from: '2026-09-06', to: '2026-09-06', generatedBy: 'test' });
+    const metrics = JSON.parse(summary.metrics_json);
+    assert.equal(metrics.base.submitted_records, 4);
+    assert.equal(metrics.brands.length, 2);
+    assert.equal(metrics.quality.qc_flag_rate_pct, 25);
+    assert.equal(summary.used_ai_model, 1);
+    assert.match(summary.narrative, /4/);
+    assert.equal(JSON.parse(summary.open_text_json).length, 2);
+    await assert.rejects(generateSummary(study.id, { from: '2026-02-30' }));
+  } finally {
+    global.fetch = originalFetch;
+    for (const key of ['endpoint','key','deployment']) { const envKey = 'AZURE_OPENAI_' + key.toUpperCase(); const value = originalEnv[key]; if (value === undefined) delete process.env[envKey]; else process.env[envKey] = value; }
+    if (originalEnv.provider === undefined) delete process.env.AI_SUMMARY_PROVIDER; else process.env.AI_SUMMARY_PROVIDER = originalEnv.provider;
+  }
 });
 
 test('client routes enforce assignment, render inline media and export the same scoped base', async () => {

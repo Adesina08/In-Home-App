@@ -23,6 +23,8 @@ const kpiEngine = require("../lib/kpi");
 const { v4: uuidv4 } = require("uuid");
 const { loadQuestionnaire, CADENCES } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
+const staffEmail = require("../lib/staffEmail");
+const geography = require("../lib/geography");
 
 const router = express.Router();
 router.use(requireRole("admin"));
@@ -88,12 +90,24 @@ async function getStudyOrFirst(req) {
 }
 
 // Staff analysis is read-only and inherits the admin/superadmin role guard above.
-router.get(['/analysis', '/analysis/export'], async (req, res) => {
+router.get('/analysis', async (req, res) => {
+  const studies = await store.find('studies', {}, { sort: { id: 1 } });
+  if (req.query.study !== undefined && !studies.some((s) => s.id === Number(req.query.study))) return res.status(404).render('error', { message: 'Study not found.' });
+  try { require('../lib/studyReport').validatePeriod({ from: req.query.from, to: req.query.to }); }
+  catch (error) { return res.status(400).render('error', { message: error.message }); }
+  if (req.query.segment && !Object.prototype.hasOwnProperty.call(require('../lib/staffAnalysis').SEGMENTS || {}, req.query.segment)) {
+    try { await require('../lib/staffAnalysis').staffAnalysis(studies[0] && studies[0].id, { segment: req.query.segment }); }
+    catch (error) { return res.status(400).render('error', { message: error.message }); }
+  }
+  const query = new URLSearchParams(req.query).toString();
+  return res.redirect(`/admin${query ? `?${query}` : ""}#analysis`);
+});
+router.get('/analysis/export', async (req, res) => {
   const studies = await store.find('studies', {}, { sort: { id: 1 } });
   const study = req.query.study === undefined ? studies[0] : studies.find(s => s.id === Number(req.query.study));
   if (!study) {
     if (studies.length || req.query.study !== undefined) return res.status(404).render('error', { message: 'Study not found.' });
-    return res.render('admin/analysis', { study: null, studies });
+    return res.status(404).render('error', { message: 'Create a study before exporting analysis.' });
   }
   let period;
   try { period = require('../lib/studyReport').validatePeriod({ from: req.query.from, to: req.query.to }); }
@@ -105,8 +119,7 @@ router.get(['/analysis', '/analysis/export'], async (req, res) => {
     if (/^Choose /.test(e.message)) return res.status(400).render('error', { message: e.message });
     throw e;
   }
-  if (req.path.endsWith('/export')) return res.attachment(`study-${study.id}-crosstab.csv`).type('text/csv').send(analysisCsv(data));
-  res.render('admin/analysis', { study, studies, ...period, ...data });
+  return res.attachment(`study-${study.id}-crosstab.csv`).type('text/csv').send(analysisCsv(data));
 });
 
 // ---------- Ops Dashboard ----------
@@ -170,6 +183,25 @@ router.get("/", async (req, res) => {
   const riskCounts = { green: 0, amber: 0, red: 0 };
   for (const r of respondentsForRisk) riskCounts[await classifyRisk(r.id)]++;
 
+  let analysisPeriod;
+  try { analysisPeriod = require("../lib/studyReport").validatePeriod({ from: req.query.from, to: req.query.to }); }
+  catch (error) { return res.status(400).render("error", { message: error.message, user: req.session.user }); }
+  let analysis;
+  try { analysis = await require("../lib/staffAnalysis").staffAnalysis(study.id, { ...analysisPeriod, question: req.query.question, segment: req.query.segment }); }
+  catch (error) { return res.status(400).render("error", { message: error.message, user: req.session.user }); }
+  const [assignments, visits, backchecks, incentiveRules, incentiveLedger, reportSnapshots, reportSchedules, researchAlerts, themeCodes, respondents, users] = await Promise.all([
+    store.find("interviewer_assignments", { study_id: study.id }, { sort: { updated_at: -1 } }),
+    store.find("fieldwork_visits", { study_id: study.id }, { sort: { visit_date: -1 } }),
+    store.find("backchecks", { study_id: study.id }, { sort: { created_at: -1 }, limit: 12 }),
+    store.find("incentive_rules", { study_id: study.id }, { sort: { id: -1 } }),
+    store.find("incentive_ledger", { study_id: study.id }, { sort: { id: -1 }, limit: 20 }),
+    store.find("report_snapshots", { study_id: study.id }, { sort: { created_at: -1 }, limit: 10 }),
+    store.find("report_schedules", { study_id: study.id }, { sort: { id: -1 } }),
+    store.find("research_alerts", { study_id: study.id }, { sort: { created_at: -1 }, limit: 10 }),
+    store.find("theme_codes", { study_id: study.id }, { sort: { name: 1 } }),
+    store.find("respondents", { study_id: study.id, is_practice: 0 }, { sort: { respondent_code: 1 } }),
+    store.find("users", { role: { $in: ["interviewer", "client"] } }, { sort: { name: 1 } }),
+  ]);
   res.render("admin/dashboard", {
     participationSummary:(await require("../lib/studyReport").loadStudyReport(study.id)).analytics.compliance,
     study,
@@ -190,6 +222,10 @@ router.get("/", async (req, res) => {
     // client dashboard later without being derived twice.
     weekly: await weeklyProgress(study),
     recentActivity: await recentActivity(study),
+    analysis: { ...analysisPeriod, ...analysis },
+    operations: { assignments, visits, backchecks, incentiveRules, incentiveLedger, reportSnapshots, reportSchedules, researchAlerts, themeCodes, respondents, users },
+    operationSaved: req.query.saved === "1",
+    operationError: req.query.error || "",
   });
 });
 
@@ -257,13 +293,15 @@ async function recentActivity(study) {
 // ---------- Studies ----------
 router.get("/studies", async (req, res) => {
   const studies = await store.find("studies", {}, { sort: { id: -1 } });
-  res.render("admin/studies", { studies });
+  res.render("admin/studies", { studies, countries: geography.countries() });
 });
 
 router.post("/studies", async (req, res) => {
-  const { name, market, diary_mode, recruitment_mode } = req.body;
+  const { name, diary_mode, recruitment_mode } = req.body;
+  const chosenCountry = geography.country(req.body.market_country_code || req.body.market);
+  if (!chosenCountry) return res.status(400).render("error", { message: "Choose a valid market country.", user: req.session.user });
   const category = toStoredCategories(req.body.category);
-  const { id } = await store.insert("studies", { name, market, category, diary_mode, recruitment_mode });
+  const { id } = await store.insert("studies", { name, market: chosenCountry.name, market_country_code: chosenCountry.isoCode, market_regions: [], category, diary_mode, recruitment_mode });
   // seed default KPI candidates
   const defaults = [
     ["completion_rate", "Diary Completion Rate"],
@@ -286,46 +324,13 @@ router.get("/studies/:id", async (req, res) => {
   res.render("admin/study_settings", {
     study, tab: "settings",
     CATEGORIES, selectedCategories: parseCategories(study.category),
-    readiness: await pilotReadiness(study),
+    countries: geography.countries(),
+    selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
+    selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
   });
 });
 
-/**
- * Pilot readiness. Every item is derived from the database, never ticked by
- * hand -- a checklist an admin can mark complete without doing the work tells
- * you nothing on the morning of launch.
- */
-async function pilotReadiness(study) {
-  const [questions, consent, brands, kpis, respondents] = await Promise.all([
-    store.find("questions", { study_id: study.id, active: 1 }),
-    store.findOne("consent_versions", { study_id: study.id, status: "approved" }),
-    store.count("brands", { study_id: study.id }),
-    // kpi_config, not study_kpis -- the wrong name returns zero silently and
-    // the checklist would report "no KPIs" forever.
-    store.count("kpi_config", { study_id: study.id }),
-    store.count("respondents", { study_id: study.id }),
-  ]);
-  const rules = await store.count("skip_rules", { study_id: study.id });
-
-  const items = [
-    { label: "Study settings configured", done: !!(study.market && study.diary_mode && study.recruitment_mode) },
-    { label: "Questionnaire drafted", done: questions.length > 0, detail: `${questions.length} question${questions.length === 1 ? "" : "s"}` },
-    { label: "Skip logic reviewed", done: rules > 0, detail: rules ? `${rules} rule${rules === 1 ? "" : "s"}` : "none yet", optional: true },
-    { label: "Brands / SKUs configured", done: brands > 0, detail: `${brands}` },
-    { label: "Consent wording approved", done: !!consent },
-    { label: "QC thresholds defined", done: !!(study.back_entry_hours || study.require_photo !== undefined) },
-    { label: "Client KPIs selected", done: kpis > 0, detail: `${kpis}` },
-    { label: "Study dates confirmed", done: !!(study.start_date && study.end_date) },
-    { label: "Questionnaire published", done: !study.has_unpublished_changes && questions.length > 0 },
-    { label: "A respondent has been recruited", done: respondents > 0, detail: `${respondents}` },
-  ];
-  const required = items.filter((i) => !i.optional);
-  return {
-    items,
-    pct: Math.round((required.filter((i) => i.done).length / required.length) * 100),
-    counts: { questions: questions.length, rules, brands, kpis },
-  };
-}
+router.get("/geography/states", (req, res) => res.json({ states: geography.states(req.query.country) }));
 
 router.post("/studies/:id/settings", async (req, res) => {
   const b = req.body;
@@ -347,6 +352,8 @@ router.post("/studies/:id/settings", async (req, res) => {
         closeBlocked: blocking,
         CATEGORIES,
         selectedCategories: parseCategories(study.category),
+        countries: geography.countries(), selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
+        selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
       });
     }
   }
@@ -355,10 +362,24 @@ router.post("/studies/:id/settings", async (req, res) => {
   // stored 0-1, which is what the QC engine compares against. Clamped so a
   // typo'd 900 can't silently disable the rule by making it unreachable.
   const dupPct = Math.min(100, Math.max(1, parseInt(b.duplicate_similarity_pct, 10) || 90));
+  const chosenCountry = geography.country(b.market_country_code);
+  if (!chosenCountry) return res.status(400).render("error", { message: "Choose a valid market country.", user: req.session.user });
+  const allowedRegions = new Map(geography.states(chosenCountry.isoCode).map((region) => [region.code, region]));
+  const regionCodes = [...new Set([].concat(b.market_regions || []).map(String))].filter((code) => allowedRegions.has(code));
+  const reminderChannels = [...new Set([].concat(b.reminder_channels || []).filter((channel) => ["whatsapp", "sms", "email", "in-app"].includes(channel)))];
+  if (!reminderChannels.length) return res.status(400).render("error", { message: "Choose at least one reminder channel.", user: req.session.user });
+  const volumeUnitFactor = b.volume_unit_factor === "" || b.volume_unit_factor === undefined
+    ? null
+    : Number(b.volume_unit_factor);
+  if (volumeUnitFactor !== null && (!Number.isFinite(volumeUnitFactor) || volumeUnitFactor < 0)) {
+    return res.status(400).render("error", { message: "Unit factor must be a number of zero or more.", user: req.session.user });
+  }
 
   await store.update("studies", { id: studyId }, {
     name: b.name,
-    market: b.market,
+    market: chosenCountry.name,
+    market_country_code: chosenCountry.isoCode,
+    market_regions: regionCodes.map((code) => ({ code, name: allowedRegions.get(code).name })),
     category: toStoredCategories(b.category),
     status: b.status,
     diary_mode: b.diary_mode,
@@ -370,11 +391,19 @@ router.post("/studies/:id/settings", async (req, res) => {
     burst_entry_window_hours: parseInt(b.burst_entry_window_hours) || 2,
     reminder_due_hours: b.reminder_due_hours ? parseInt(b.reminder_due_hours) : null,
     reminder_missed_hours: b.reminder_missed_hours ? parseInt(b.reminder_missed_hours) : null,
-    default_reminder_channel: b.default_reminder_channel,
+    reminder_channels: reminderChannels,
     qc_back_entry_enabled: b.qc_back_entry_enabled ? 1 : 0,
     qc_duplicate_enabled: b.qc_duplicate_enabled ? 1 : 0,
     qc_burst_enabled: b.qc_burst_enabled ? 1 : 0,
     invite_brief: (b.invite_brief || "").trim() || null,
+    required_entries_per_period: Math.min(100, Math.max(1, parseInt(b.required_entries_per_period, 10) || 1)),
+    minimum_base_size: Math.min(1000, Math.max(2, parseInt(b.minimum_base_size, 10) || 30)),
+    quantity_question_code: String(b.quantity_question_code || "quantity").trim(),
+    volume_unit: String(b.volume_unit || "").trim() || null,
+    volume_unit_factor: volumeUnitFactor,
+    hybrid_summary_cadence: b.hybrid_summary_cadence === "daily" ? "daily" : "weekly",
+    require_record_approval: b.require_record_approval ? 1 : 0,
+    retention_days: b.retention_days ? Math.min(36500, Math.max(1, parseInt(b.retention_days, 10))) : null,
   });
   logAudit(req.session.user.email, "update_settings", "studies", req.params.id, b);
   res.redirect(`/admin/studies/${req.params.id}?saved=1`);
@@ -385,9 +414,8 @@ router.get("/studies/:id/questionnaire", async (req, res) => {
   const studyId = toId(req.params.id);
   const study = await store.findOne("studies", { id: studyId });
   const questions = await store.find("questions", { study_id: studyId }, { sort: { order_index: 1 } });
-  // This page also carries the Skip Logic and Brand/SKU sections (previously
-  // separate tabs, merged onto one scrollable page) -- so it loads their data
-  // too. Skip Logic's dropdowns/section list only ever consider active
+  // Skip logic is edited inline beside each question. Its dropdowns and
+  // section list only consider active
   // (non-removed) questions, same filter the old standalone route used.
   const activeQuestions = questions.filter((q) => q.active);
   const sections = [...new Set(activeQuestions.map((q) => q.section).filter(Boolean))];
@@ -404,17 +432,8 @@ router.get("/studies/:id/questionnaire", async (req, res) => {
       target_text: questionsById.has(sr.target_question_id) ? questionsById.get(sr.target_question_id).text : null,
       condition_text: questionsById.get(sr.condition_question_id).text,
     }));
-  const brands = await store.find("brands", { study_id: studyId }, { sort: { name: 1 } });
-  // The rebuilt three-pane builder. Mounted behind ?v=2 rather than replacing
-  // the old view outright: this is the most complex interactive screen in the
-  // app, and being able to switch back mid-pilot is worth more than a clean
-  // deletion. Both read the same data and call the same endpoints.
-  const builderView = req.query.v === "2"
-    ? "admin/study_questionnaire_v2"
-    : "admin/study_questionnaire";
-
-  res.render(builderView, {
-    study, questions, activeQuestions, sections, rules, brands, tab: "questionnaire",
+  res.render("admin/study_questionnaire_v2", {
+    study, questions, activeQuestions, sections, rules, tab: "questionnaire",
     user: req.session.user,
     imported: req.query.imported,
     rulesCreated: req.query.rulesCreated,
@@ -446,7 +465,7 @@ router.get("/studies/:id/questionnaire/live-preview", async (req, res) => {
   // checking their wording needs to see the shape of the finished sentence.
   const previewRespondent = { name: "Sample Respondent", respondent_code: "R00-0000" };
   res.render("admin/study_questionnaire_live_preview", {
-    study, questions, rules, previewRespondent, tab: "questionnaire",
+    study, questions, rules, previewRespondent, tab: "questionnaire", embed: req.query.embed === "1",
   });
 });
 
@@ -513,6 +532,28 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
   const b = req.body || {};
   const text = b.text !== undefined ? String(b.text).trim() : q.text;
   if (!text) return res.status(400).json({ error: "Question text can't be empty." });
+  const optionalNumber = (value, label, { integer = false, min = -Infinity, max = Infinity } = {}) => {
+    if (value === "" || value === null || value === undefined) return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed)) || parsed < min || parsed > max) {
+      const error = new Error(`${label} must be ${integer ? "a whole number" : "a number"}${Number.isFinite(min) ? ` from ${min}` : ""}${Number.isFinite(max) ? ` to ${max}` : ""}.`);
+      error.status = 400;
+      throw error;
+    }
+    return parsed;
+  };
+  let parsed;
+  try {
+    parsed = {
+      minValue: b.min_value !== undefined ? optionalNumber(b.min_value, "Minimum value") : q.min_value,
+      maxValue: b.max_value !== undefined ? optionalNumber(b.max_value, "Maximum value") : q.max_value,
+      everyNth: b.every_nth_occasion !== undefined ? optionalNumber(b.every_nth_occasion, "Every nth occasion", { integer: true, min: 1 }) : q.every_nth_occasion,
+      fromHour: b.from_hour_utc !== undefined ? optionalNumber(b.from_hour_utc, "From UTC hour", { integer: true, min: 0, max: 23 }) : q.from_hour_utc,
+      toHour: b.to_hour_utc !== undefined ? optionalNumber(b.to_hour_utc, "Until UTC hour", { integer: true, min: 0, max: 23 }) : q.to_hour_utc,
+    };
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
   const next = {
     code: b.code !== undefined ? (String(b.code).trim() || null) : q.code,
     type: b.type !== undefined ? b.type : q.type,
@@ -525,8 +566,8 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
             return cleaned.length ? JSON.stringify(cleaned) : null;
           })()
         : q.options_json,
-    min_value: b.min_value !== undefined ? (b.min_value === "" || b.min_value === null ? null : parseFloat(b.min_value)) : q.min_value,
-    max_value: b.max_value !== undefined ? (b.max_value === "" || b.max_value === null ? null : parseFloat(b.max_value)) : q.max_value,
+    min_value: parsed.minValue,
+    max_value: parsed.maxValue,
     section: b.section !== undefined ? (String(b.section).trim() || null) : q.section,
     // Stored as a JSON array; an empty array is stored as null so it reads the
     // same as "never configured" -- both mean "every cadence" (lib/questionnaire.js).
@@ -538,7 +579,27 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
             return cleaned.length ? JSON.stringify(cleaned) : null;
           })()
         : q.applicable_cadences,
+    other_specify_options_json: q.other_specify_options_json || null,
+    rotate_options: b.rotate_options !== undefined ? (b.rotate_options ? 1 : 0) : q.rotate_options,
+    every_nth_occasion: parsed.everyNth,
+    from_hour_utc: parsed.fromHour,
+    to_hour_utc: parsed.toHour,
   };
+  if ((next.from_hour_utc === null) !== (next.to_hour_utc === null) || (next.from_hour_utc !== null && next.from_hour_utc === next.to_hour_utc)) return res.status(400).json({ error: "Set both UTC hours with different values, or leave both blank." });
+  if (b.options !== undefined) {
+    const oldOptions = require("../lib/questionnaire").parseOptions(q.options_json || q.options);
+    const newOptions = require("../lib/questionnaire").parseOptions(next.options_json);
+    let oldSpecify = []; try { oldSpecify = JSON.parse(q.other_specify_options_json || "[]"); } catch (_) {}
+    const mappedSpecify = oldSpecify.map((value) => {
+      const index = oldOptions.indexOf(value); return index >= 0 && newOptions[index] ? newOptions[index] : null;
+    }).filter(Boolean);
+    next.other_specify_options_json = mappedSpecify.length ? JSON.stringify(mappedSpecify) : null;
+    for (let index = 0; index < oldOptions.length; index++) {
+      if (oldOptions[index] !== newOptions[index] && newOptions[index]) {
+        await store.update("skip_rules", { study_id: q.study_id, condition_question_id: q.id, operator: "equals", value: oldOptions[index], action: "terminate" }, { value: newOptions[index] });
+      }
+    }
+  }
   await store.update("questions", { id: q.id }, {
     code: next.code,
     type: next.type,
@@ -549,9 +610,37 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     max_value: next.max_value,
     section: next.section,
     applicable_cadences: next.applicable_cadences,
+    other_specify_options_json: next.other_specify_options_json,
+    rotate_options: next.rotate_options,
+    every_nth_occasion: next.every_nth_occasion,
+    from_hour_utc: next.from_hour_utc,
+    to_hour_utc: next.to_hour_utc,
   });
   logAudit(req.session.user.email, "update_question_inline", "questions", q.id, b);
   res.json(await store.findOne("questions", { id: q.id }));
+});
+
+router.post("/studies/:id/questions/:qid/option-behaviour", async (req, res) => {
+  const studyId = toId(req.params.id), questionId = toId(req.params.qid);
+  const q = await store.findOne("questions", { id: questionId, study_id: studyId });
+  if (!q || !["single", "multi"].includes(q.type)) return res.status(404).json({ error: "Choice question not found." });
+  const options = require("../lib/questionnaire").parseOptions(q.options_json || q.options);
+  const option = String(req.body.option || "").trim();
+  if (!options.includes(option)) return res.status(400).json({ error: "Choose an option that belongs to this question." });
+  let specify = [];
+  try { specify = JSON.parse(q.other_specify_options_json || "[]"); } catch (_) {}
+  specify = specify.filter((value) => options.includes(value) && value !== option);
+  if (req.body.allows_specify === true) specify.push(option);
+  await store.update("questions", { id: q.id }, { other_specify_options_json: specify.length ? JSON.stringify(specify) : null });
+  await store.remove("skip_rules", { study_id: studyId, condition_question_id: q.id, operator: "equals", value: option, action: "terminate" });
+  const scope = ["entry", "study"].includes(req.body.terminate_scope) ? req.body.terminate_scope : null;
+  let created = null;
+  if (scope) {
+    const result = await store.insert("skip_rules", { study_id: studyId, target_question_id: null, target_section: null, condition_question_id: q.id, operator: "equals", value: option, action: "terminate", terminate_scope: scope });
+    created = await store.findOne("skip_rules", { id: result.id });
+  }
+  logAudit(req.session.user.email, "update_option_behaviour", "questions", q.id, { option, allows_specify: req.body.allows_specify === true, terminate_scope: scope });
+  res.json({ question: await store.findOne("questions", { id: q.id }), rule: created });
 });
 
 // Persist a full drag-and-drop reorder -- the client sends every active
@@ -597,6 +686,24 @@ router.post("/studies/:id/sections/delete", async (req, res) => {
 router.get("/studies/:id/questionnaire/upload", async (req, res) => {
   const study = await store.findOne("studies", { id: toId(req.params.id) });
   res.render("admin/study_questionnaire_upload", { study, tab: "questionnaire", error: null });
+});
+
+router.get("/studies/:id/questionnaire/template.xlsx", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
+  if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
+  const XLSX = require("xlsx");
+  const rows = [
+    { Code: "Q1", Section: "Screening", Question: "Did you consume the category today?", Type: "single", Options: "Yes|No|Other", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "", "Other specify options": "Other", "Terminate entry options": "No", "Terminate study options": "" },
+    { Code: "Q2", Section: "Consumption", Question: "Which product did you consume?", Type: "multi", Options: "Product A|Product B|Other", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "Show if Q1 equals Yes", "Other specify options": "Other", "Terminate entry options": "", "Terminate study options": "" },
+  ];
+  const instructions = [
+    ["Column", "How to complete it"], ["Type", "single, multi, numeric, scale, rank, text, date, time, photo, video or audio"], ["Options", "Use | between choices. Leave blank for non-choice questions."], ["Cadence", "realtime, daily, weekly, monthly or hybrid. Use | for several."], ["Condition", "Example: Show if Q1 equals Yes"], ["Other specify options", "Copy exact option labels that should open a required text box; use | for several."], ["Terminate entry options", "Exact option labels that end only the current diary entry."], ["Terminate study options", "Exact option labels that end participation. An option cannot appear in both termination columns."],
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Questionnaire");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(instructions), "Instructions");
+  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  res.attachment(`inicio-questionnaire-template-${study.id}.xlsx`).type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").send(buffer);
 });
 
 router.post("/studies/:id/questionnaire/upload", importUpload.single("file"), async (req, res) => {
@@ -651,17 +758,24 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
   const originalRows = JSON.parse(imp.payload_json);
   const maxOrder = (await store.max("questions", "order_index", { study_id: study.id })) || 0;
   let inserted = 0;
+  let rulesCreated = 0;
+  let rulesSkipped = 0;
   const questionIdByTemplateRow = new Map(); // template "#" -> newly inserted question id, included rows only
+  const optionsByTemplateRow = new Map();
   // for...of rather than forEach: each insert is awaited, and the running
   // `inserted` counter feeds the next row's order_index, so they have to stay
   // in sequence.
   for (const [i, r] of editedRows.entries()) {
     if (!r || !r.include || !r.text || !r.text.trim()) continue;
     const optionsArr = (r.options || "")
-      .split(",")
+      .split("|")
       .map((o) => o.trim())
       .filter(Boolean);
     const orig = originalRows[i];
+    const mapBehaviourOptions = (values) => (Array.isArray(values) ? values : []).map((value) => {
+      const index = (orig && Array.isArray(orig.options) ? orig.options : []).indexOf(value);
+      return index >= 0 ? optionsArr[index] : null;
+    }).filter(Boolean);
     const cadences = Array.isArray(orig && orig.applicable_cadences) ? orig.applicable_cadences : [];
     const { id } = await store.insert("questions", {
       study_id: study.id,
@@ -671,13 +785,27 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
       text: r.text.trim(),
       required: r.required ? 1 : 0,
       options_json: optionsArr.length ? JSON.stringify(optionsArr) : null,
+      other_specify_options_json: mapBehaviourOptions(orig && orig.other_specify_options).length ? JSON.stringify(mapBehaviourOptions(orig.other_specify_options)) : null,
       min_value: r.min !== undefined && r.min !== "" ? parseFloat(r.min) : null,
       max_value: r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null,
       section: r.section && r.section.trim() ? r.section.trim() : null,
       applicable_cadences: cadences.length ? JSON.stringify(cadences) : null,
     });
     inserted++;
-    if (orig && orig.row !== undefined) questionIdByTemplateRow.set(orig.row, id);
+    if (orig && orig.row !== undefined) { questionIdByTemplateRow.set(orig.row, id); optionsByTemplateRow.set(orig.row, { original: orig.options || [], edited: optionsArr }); }
+  }
+
+  for (const [idx, row] of originalRows.entries()) {
+    const questionId = questionIdByTemplateRow.get(row.row || idx + 1);
+    if (!questionId) continue;
+    for (const [scope, values] of [["entry", row.terminate_entry_options], ["study", row.terminate_study_options]]) {
+      for (const value of Array.isArray(values) ? values : []) {
+        const mapping = optionsByTemplateRow.get(row.row || idx + 1); const optionIndex = mapping ? mapping.original.indexOf(value) : -1; const storedValue = optionIndex >= 0 ? mapping.edited[optionIndex] : null;
+        if (!storedValue) { rulesSkipped++; continue; }
+        await store.insert("skip_rules", { study_id: study.id, target_question_id: null, target_section: null, condition_question_id: questionId, operator: "equals", value: storedValue, action: "terminate", terminate_scope: scope });
+        rulesCreated++;
+      }
+    }
   }
 
   // Second pass: turn each row's parsed Condition into real skip_rules now that
@@ -686,8 +814,6 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
   // plain "Show if" on a non-anchor row, or a "; show if ..." tacked onto a
   // "Same section as" reference, becomes a per-question rule targeting that row.
   const sectionsRuled = new Set();
-  let rulesCreated = 0;
-  let rulesSkipped = 0;
   for (const [i, orig] of originalRows.entries()) {
     const edited = editedRows[i];
     if (!edited || !edited.include || !questionIdByTemplateRow.has(orig.row)) continue;
@@ -797,25 +923,6 @@ router.post("/studies/:id/skip-logic/:rid/delete", async (req, res) => {
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
-// ---------- Brands / SKU ----------
-// Brand/SKU List now lives as a section on the combined Questionnaire
-// Builder page too -- see GET /studies/:id/questionnaire.
-router.get("/studies/:id/brands", (req, res) => {
-  res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
-});
-
-router.post("/studies/:id/brands", async (req, res) => {
-  const { name, category, sku } = req.body;
-  await store.insert("brands", { study_id: toId(req.params.id), name, category, sku });
-  logAudit(req.session.user.email, "add_brand", "brands", null, req.body);
-  res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
-});
-
-router.post("/studies/:id/brands/:bid/delete", async (req, res) => {
-  await store.update("brands", { id: toId(req.params.bid) }, { active: 0 });
-  res.redirect(`/admin/studies/${req.params.id}/questionnaire#brands`);
-});
-
 // ---------- Consent ----------
 router.get("/studies/:id/consent", async (req, res) => {
   const studyId = toId(req.params.id);
@@ -860,6 +967,10 @@ router.get("/studies/:id/kpis", async (req, res) => {
   // real number while building the KPI, rather than defining it blind and
   // finding out days later that it reads 0% or an em-dash.
   const { results, entryCount } = await kpiEngine.computeAll(study.id, kpis);
+  const [clientUsers, clientGrants] = await Promise.all([
+    store.find("users", { role: "client" }, { sort: { name: 1 } }),
+    store.find("client_grants", { study_id: studyId }, { sort: { id: 1 } }),
+  ]);
 
   res.render("admin/study_kpis", {
     study,
@@ -871,6 +982,8 @@ router.get("/studies/:id/kpis", async (req, res) => {
     describeKpi: (k) => kpiEngine.describeKpi(k, questionsById),
     computed: results,
     entryCount,
+    clientUsers,
+    clientGrants,
     error: req.query.error || null,
     tab: "kpis",
   });
@@ -961,40 +1074,72 @@ router.get("/users", async (req, res) => {
   res.render("admin/users", {
     users, studies,
     // Shown once, immediately after a reset, then gone on the next load.
-    resetEmail: req.query.reset || null,
-    resetTemp: req.query.temp || null,
+    delivery: req.query.delivery || null,
+    deliveryEmail: req.query.email || null,
   });
 });
 
-router.post("/users", async (req, res) => {
-  const { name, email, password, role, study_id } = req.body;
-  const hash = bcrypt.hashSync(password, 10);
+function temporaryPassword() {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let value = "";
+  for (let i = 0; i < 12; i++) value += alphabet[crypto.randomInt(alphabet.length)];
+  return value;
+}
+
+async function issueStaffCredentials(user, actor) {
+  const password = temporaryPassword();
+  const expiresAt = store.nowSql(24 * 60 * 60 * 1000);
+  await store.update("users", { id: user.id }, {
+    password_hash: bcrypt.hashSync(password, 10), must_change_password: 1,
+    temporary_password_expires_at: expiresAt, invite_delivery_status: "pending",
+    invite_delivery_error: null, invite_sent_at: null,
+  });
   try {
-    await store.insert("users", {
+    await staffEmail.sendCredentials({ ...user, password, expiresAt });
+    await store.update("users", { id: user.id }, { invite_delivery_status: "sent", invite_sent_at: store.nowSql(), invite_delivery_error: null });
+    logAudit(actor, "send_user_credentials", "users", user.id, { email: user.email, role: user.role });
+    return { ok: true };
+  } catch (error) {
+    await store.update("users", { id: user.id }, { invite_delivery_status: "failed", invite_delivery_error: String(error.message || error).slice(0, 500) });
+    return { ok: false, error };
+  }
+}
+
+router.post("/users", requireRole("superadmin"), async (req, res) => {
+  const { name, email, role, study_id } = req.body;
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!name || !/^\S+@\S+\.\S+$/.test(normalizedEmail) || !["admin", "interviewer", "client"].includes(role)) {
+    return res.status(400).render("error", { message: "Enter a name, valid email and supported role.", user: req.session.user });
+  }
+  if (await store.findOne("users", { email: normalizedEmail })) return res.status(409).render("error", { message: "A user already exists with that email address.", user: req.session.user });
+  try {
+    const { id } = await store.insert("users", {
       name,
-      email: email.toLowerCase(),
-      password_hash: hash,
+      email: normalizedEmail,
+      password_hash: bcrypt.hashSync(temporaryPassword(), 10),
       role,
       study_id: toId(study_id),
+      must_change_password: 1,
+      invite_delivery_status: "pending",
     });
+    const user = await store.findOne("users", { id });
+    const delivery = await issueStaffCredentials(user, req.session.user.email);
     logAudit(req.session.user.email, "create_user", "users", null, { email, role });
+    return res.redirect(`/admin/users?delivery=${delivery.ok ? "sent" : "failed"}&email=${encodeURIComponent(normalizedEmail)}`);
   } catch (e) {
     return res.render("error", { message: "Could not create user (email may already exist).", user: req.session.user });
   }
-  res.redirect("/admin/users");
 });
 
 // ---------- Password reset ----------
 //
-// Staff and client passwords are reset here rather than by email, because no
-// mail provider is configured -- a self-serve "check your inbox" flow would
-// promise something the app cannot deliver. /forgot-password tells people to
-// ask a research manager; this is what the manager does.
+// Resets issue a new short-lived password through Twilio SendGrid. The value
+// is never rendered in the admin portal or written to the database in plain text.
 //
 // The temporary password is generated, never chosen by the admin: an admin who
 // picks it knows it, and a password two people know is not a password. It is
-// shown exactly once, on the redirect, and stored only as a bcrypt hash.
-router.post("/users/:id/reset-password", async (req, res) => {
+// delivered only to the account email and stored only as a bcrypt hash.
+router.post("/users/:id/reset-password", requireRole("superadmin"), async (req, res) => {
   const id = Number(req.params.id);
   const target = await store.findOne("users", { id });
   if (!target) return res.status(404).render("error", { message: "User not found.", user: req.session.user });
@@ -1010,21 +1155,16 @@ router.post("/users/:id/reset-password", async (req, res) => {
 
   // Ambiguous characters left out (0/O, 1/l/I): this gets read aloud down a
   // phone line or copied off a sticky note.
-  const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let temp = "";
-  for (let i = 0; i < 12; i++) temp += ALPHABET[crypto.randomInt(ALPHABET.length)];
-
-  await store.update("users", { id }, {
-    password_hash: bcrypt.hashSync(temp, 10),
-    must_change_password: 1,
-  });
+  const delivery = await issueStaffCredentials(target, req.session.user.email);
   logAudit(req.session.user.email, "reset_user_password", "users", id, { email: target.email });
+  res.redirect(`/admin/users?delivery=${delivery.ok ? "sent" : "failed"}&email=${encodeURIComponent(target.email)}`);
+});
 
-  // Passed through the URL so it survives the redirect. It is single-use and
-  // useless without the account's email, and the alternative -- rendering the
-  // list inline -- loses the redirect-after-POST that stops a refresh issuing
-  // a second password.
-  res.redirect(`/admin/users?reset=${encodeURIComponent(target.email)}&temp=${encodeURIComponent(temp)}`);
+router.post("/users/:id/resend-credentials", requireRole("superadmin"), async (req, res) => {
+  const target = await store.findOne("users", { id: Number(req.params.id) });
+  if (!target) return res.status(404).render("error", { message: "User not found.", user: req.session.user });
+  const delivery = await issueStaffCredentials(target, req.session.user.email);
+  res.redirect(`/admin/users?delivery=${delivery.ok ? "sent" : "failed"}&email=${encodeURIComponent(target.email)}`);
 });
 
 // ---------- AI summary (spec 4.3, P1) ----------
@@ -1039,11 +1179,14 @@ router.get("/ai-summary", async (req, res) => {
   let error = req.query.error || (requested && !selected ? 'That summary is not available for this study.' : null);
   try { validatePeriod(period); } catch (e) { error = e.message; period = { from: '', to: '' }; }
   const report = await loadStudyReport(study.id, period);
+  let sourceSignature = null;
+  try { sourceSignature = await aiSummary.currentSignature(study.id, period); } catch (_) {}
+  const stale = !selected || !sourceSignature || selected.source_signature !== sourceSignature || selected.provider !== "azure_openai";
   res.render("admin/ai_summary", {
     study, studies, summaries, selected: selected || null, report,
     aiConfigured: aiSummary.isAiModelConfigured(),
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
-    ...period, error,
+    ...period, error, stale,
   });
 });
 
@@ -1058,13 +1201,15 @@ router.post("/ai-summary/generate", async (req, res) => {
     return res.redirect(`/admin/ai-summary?${qs(`&error=${encodeURIComponent("The start date is after the end date.")}`)}`);
   }
   try {
-    const row = await aiSummary.generateSummary(studyId, { from, to, generatedBy: req.session.user.email });
+    const row = await aiSummary.generateSummary(studyId, { from, to, generatedBy: req.session.user.email, force: req.body.force === "1" });
     logAudit(req.session.user.email, "generate_ai_summary", "ai_summaries", row.id, {
       study_id: studyId, from, to, provider: row.provider,
     });
+    if (req.xhr || req.accepts(["json", "html"]) === "json") return res.json({ ok: true, id: row.id });
     res.redirect(`/admin/ai-summary?${qs(`&generated=${row.id}`)}`);
   } catch (e) {
     // A failed model call must not lose the admin's period selection.
+    if (req.xhr || req.accepts(["json", "html"]) === "json") return res.status(502).json({ error: e.message || "Could not generate a summary." });
     res.redirect(`/admin/ai-summary?${qs(`&error=${encodeURIComponent(e.message || "Could not generate a summary.")}`)}`);
   }
 });
@@ -1608,6 +1753,7 @@ async function answerRowsForRecords(recordIds) {
         question_type: q ? q.type : null,
         section: q ? q.section : null,
         answer: resp ? resp.value : null,
+        other_specify: resp && resp.other_text_json ? Object.entries((() => { try { return JSON.parse(resp.other_text_json); } catch (_) { return {}; } })()).map(([option,text]) => `${option}: ${text}`).join(" | ") : null,
         study_version: resp ? resp.study_version : null,
       });
     }
@@ -1756,7 +1902,7 @@ router.post("/media/:id/detect", async (req, res) => {
   const media = await store.findOne("media", { id: Number(req.params.id) });
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
   const record = await store.findOne("diary_records", { id: media.record_id });
-  const brands = await store.find("brands", { study_id: record.study_id, active: 1 }, { sort: { id: 1 } });
+  const brands = await require("../lib/productCandidates").forStudy(await store.findOne("studies", { id: record.study_id }));
   try {
     const provider = getBrandDetectionProvider();
     await provider.detect(media, brands);

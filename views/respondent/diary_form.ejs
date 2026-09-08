@@ -39,6 +39,7 @@
 <input type="hidden" name="capture_time" value="<%= new Date().toISOString() %>" /><input type="hidden" name="occasion_number" value="<%= typeof occasionNumber==='undefined'?1:occasionNumber %>" />
     <input type="hidden" name="_practice" value="<%= practice ? '1' : '0' %>" />
     <input type="hidden" name="_mode" value="<%= typeof mode !== 'undefined' ? mode : 'standard' %>" />
+    <input type="hidden" name="other_text_json" id="otherTextJson" value="{}" />
     <% if (typeof pendingMedia !== 'undefined' && pendingMedia) { %>
       <input type="hidden" name="_pending_media_path" value="<%= pendingMedia.path %>" />
       <input type="hidden" name="_pending_media_mimetype" value="<%= pendingMedia.mimetype %>" />
@@ -87,6 +88,7 @@
     </div>
 
     <% const pf = typeof prefill !== 'undefined' && prefill ? prefill : {}; %>
+    <% const pfOther = typeof otherText !== 'undefined' && otherText ? otherText : {}; %>
     <% let lastSection = undefined; %>
     <% questions.forEach(q => { %>
       <% const pv = q.code && pf[q.code] !== undefined ? pf[q.code] : null; %>
@@ -116,16 +118,18 @@
                 <input type="radio" name="q_<%= q.id %>" value="<%= opt %>" <%= pv === opt ? 'checked' : '' %> <%= q.required ? 'required' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
                 <%= opt %>
               </label>
+              <% if ((q.otherSpecifyOptions || []).includes(opt)) { %><input type="text" data-other-question="<%= q.id %>" data-other-option="<%= opt %>" value="<%= pfOther[String(q.id)] && pfOther[String(q.id)][opt] || '' %>" class="other-specify hidden w-full border border-brand-200 rounded-xl px-4 py-3 text-base" placeholder="Please specify…" /><% } %>
             <% }) %>
           </div>
         <% } else if (q.type === 'multi') { %>
           <div class="space-y-2">
             <% const pvArr = Array.isArray(pv) ? pv : (pv ? [pv] : []); %>
-            <% q.options.forEach(opt => { %>
+            <% q.options.forEach((opt, oi) => { %>
               <label class="flex items-center gap-3 text-base sm:text-sm rounded-xl border border-slate-200 px-4 py-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 active:bg-slate-50 transition">
                 <input type="checkbox" name="q_<%= q.id %>[]" value="<%= opt %>" <%= pvArr.includes(opt) ? 'checked' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
                 <%= opt %>
               </label>
+              <% if ((q.otherSpecifyOptions || []).includes(opt)) { %><input type="text" data-other-question="<%= q.id %>" data-other-option="<%= opt %>" value="<%= pfOther[String(q.id)] && pfOther[String(q.id)][opt] || '' %>" class="other-specify hidden w-full border border-brand-200 rounded-xl px-4 py-3 text-base" placeholder="Please specify…" /><% } %>
             <% }) %>
           </div>
         <% } else if (q.type === 'numeric' || q.type === 'scale') { %>
@@ -206,6 +210,17 @@
 <script src="/public/js/camera-capture.js"></script>
 <script>
   const RULES = <%- JSON.stringify(rules) %>;
+  function updateOtherSpecify() {
+    const payload = {};
+    document.querySelectorAll('.other-specify').forEach(function (input) {
+      const question = document.getElementById('q-wrap-' + input.dataset.otherQuestion);
+      const questionVisible = question && question.style.display !== 'none' && !question.hidden;
+      const selected = questionVisible && Array.from(document.querySelectorAll('.cond-input[data-qid="' + input.dataset.otherQuestion + '"]:checked')).some(function (choice) { return choice.value === input.dataset.otherOption; });
+      input.classList.toggle('hidden', !selected); input.required = selected;
+      if (selected && input.value.trim()) { if (!payload[input.dataset.otherQuestion]) payload[input.dataset.otherQuestion] = {}; payload[input.dataset.otherQuestion][input.dataset.otherOption] = input.value.trim(); }
+    });
+    document.getElementById('otherTextJson').value = JSON.stringify(payload);
+  }
 
   function getConditionValue(qid) {
     const radios = document.querySelectorAll(`input[type=radio][data-qid="${qid}"]:checked`);
@@ -337,6 +352,9 @@
 
   document.addEventListener('input', evaluateSkipLogic);
   document.addEventListener('change', evaluateSkipLogic);
+  document.addEventListener('input', updateOtherSpecify);
+  document.addEventListener('change', updateOtherSpecify);
+  updateOtherSpecify();
   evaluateSkipLogic();
 
   // ---- Local draft autosave (survives a dropped connection or accidental reload) ----

@@ -11,16 +11,7 @@ router.use('/studies/:id/research',async(req,res,next)=>{
   if(!req.study)return res.status(404).render('error',{message:'Study not found.'});
   next();
 });
-router.get('/studies/:id/research',async(req,res)=>{
-  const study=req.study;let period;
-  try { period=validatePeriod(req.query); } catch(e) { return res.status(400).render("error",{message:e.message}); }
-  const query=interpretQuery(req.query.ask);const segment=req.query.segment||query.segment||'gender';
-  if(!SEGMENTS.includes(segment))return res.status(400).render("error",{message:"Choose a supported segment."});
-  const data=await insights(study.id,{...period,segment,question:req.query.question||'',compare:req.query.compare==='1'||query.compare});
-  const collections=['fieldwork_visits','interviewer_assignments','incentive_rules','incentive_ledger','report_schedules','report_snapshots','research_alerts','client_grants','backchecks','privacy_requests','research_audit'];
-  const lists={};for(const name of collections)lists[name]=await store.find(name,{study_id:study.id},{sort:{id:-1},limit:100});
-  res.render('admin/research',{syncIssues:await store.find('diary_submissions',{respondent_id:{$in:(await store.find('respondents',{study_id:study.id})).map(r=>r.id)},state:{$ne:'done'}},{sort:{created_at:-1},limit:50}),retention:await require('../lib/researchPrivacy').retentionCandidates(study),themes:await store.find('theme_codes',{study_id:study.id}),study,data,lists,period,SEGMENTS,query,ask:req.query.ask||'',users:await store.find('users',{}, {projection:{id:1,name:1,email:1,role:1}}),respondents:await store.find('respondents',{study_id:study.id}),summaries:await store.find('ai_summaries',{study_id:study.id},{sort:{id:-1},limit:20}),error:req.query.error||'',saved:req.query.saved==='1'});
-});
+router.get('/studies/:id/research',(req,res)=>res.redirect(`/admin?study=${encodeURIComponent(req.study.id)}#analysis`));
 function positive(value,label,max=100000){const n=Number(value);if(!Number.isFinite(n)||n<=0||n>max)throw new Error(`${label} must be greater than zero and at most ${max}.`);return n;}
 function whole(value,label,max=100000){const n=positive(value,label,max);if(!Number.isInteger(n))throw new Error(`${label} must be a whole number.`);return n;}
 function json(value,fallback){if(!value)return fallback;try{return JSON.parse(value);}catch{throw new Error('Check the JSON configuration.');}}
@@ -101,7 +92,9 @@ router.post('/studies/:id/research/:action',async(req,res)=>{
     }else if(action==='code-theme'){
       const record=await store.findOne('diary_records',{id:Number(b.record_id),study_id:study.id});const theme=await store.findOne('theme_codes',{id:Number(b.theme_id),study_id:study.id});if(!record||!theme)throw new Error('Choose a study record and theme.');await ops.audit(actor,action,study.id,{record_id:record.id,theme_id:theme.id});await ops.insertOnce('coded_verbatims',`${record.id}:${theme.id}`,{study_id:study.id,record_id:record.id,theme_id:theme.id,review_status:'approved',reviewed_by:actor});
     }else throw new Error('Unknown research action.');
-    return res.redirect(`/admin/studies/${study.id}/research?saved=1`);
-  }catch(e){return res.redirect(`/admin/studies/${study.id}/research?error=${encodeURIComponent(e.message)}`);}
+    const fieldworkActions=new Set(['assignment','visit','backcheck','incentive-rule','disable-rule','incentive-evaluate','incentive-pay','record-review']);
+    const anchor=fieldworkActions.has(action)?'fieldwork-operations':'analysis';
+    return res.redirect(`/admin?study=${study.id}&saved=1#${anchor}`);
+  }catch(e){return res.redirect(`/admin?study=${study.id}&error=${encodeURIComponent(e.message)}#fieldwork-operations`);}
 });
 module.exports=router;
