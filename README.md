@@ -61,7 +61,7 @@ Admin → Study → Respondents screen, or generated live via Interviewer → Re
 - `lib/qc.js` — the rule-based QC engine (back-entry window, missing photo, duplicate/
   repetitive, burst entry, range/logic, cross-channel duplicate) + risk classification
 - `lib/reminders.js` — reminder scheduling engine
-- `lib/whatsapp.js` — channel router and providers for SendGrid email, Twilio SMS and Twilio WhatsApp (mock by default; see PRODUCTION_READINESS.md)
+- `lib/whatsapp.js` — channel router and providers for Resend email, Twilio SMS and Twilio WhatsApp (mock by default; see PRODUCTION_READINESS.md)
 - `lib/whatsappDiary.js` — inbound WhatsApp diary conversation, questionnaire validation,
   skip/termination logic and submission into the shared QC/analysis data model
 - `lib/brandDetection.js` — pluggable brand-detection provider for photo/video evidence

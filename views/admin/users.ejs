@@ -13,7 +13,7 @@
       <span class="<%= delivery === 'sent' ? 'text-verified' : 'text-red-600' %> mt-0.5"><%- icon(delivery === 'sent' ? 'check-circle' : 'warning', 'w-5 h-5') %></span>
       <div class="min-w-0">
         <div class="font-semibold text-slate-900"><%= delivery === 'sent' ? 'Credential email sent' : 'Credential email could not be sent' %></div>
-        <p class="text-sm text-slate-600 mt-0.5"><%= deliveryEmail %><%= delivery === 'sent' ? ' received a 24-hour temporary password, username, role and sign-in link.' : ' remains pending. Use Resend after checking the SendGrid configuration.' %></p>
+        <p class="text-sm text-slate-600 mt-0.5"><%= deliveryEmail %><%= delivery === 'sent' ? ' received a 24-hour temporary password, username, role and sign-in link.' : ' remains pending. Check the Resend configuration, then use the resend action below.' %></p>
       </div>
     </div>
   </div>
@@ -54,7 +54,7 @@
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Email / username</label>
         <input name="email" type="email" required class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
       </div>
-      <p class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">INICIO generates a secure temporary password and Twilio SendGrid emails it with the username, role and sign-in link. It expires after 24 hours.</p>
+      <p class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">INICIO generates a secure temporary password and Resend emails it with the username, role and sign-in link. It expires after 24 hours.</p>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Role</label>
         <select name="role" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">

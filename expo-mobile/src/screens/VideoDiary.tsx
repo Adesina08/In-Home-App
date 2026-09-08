@@ -37,10 +37,10 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
   const [index, setIndex] = useState(0);
   const [auto, setAuto] = useState(true);
   const [pace, setPace] = useState(Math.max(3, script.secondsEach));
+  const [showPromptSettings, setShowPromptSettings] = useState(false);
   const [error, setError] = useState('');
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const draftKey = `inicio.video-draft.v1.${respondentId}`;
-  const prompt = script.prompts[index];
 
   useEffect(() => {
     mounted.current = true;
@@ -138,12 +138,22 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
           {foreground ? <CameraView ref={camera} style={styles.camera} facing="front" mode="video" videoQuality="720p" videoBitrate={2500000} onCameraReady={() => setReady(true)} onMountError={e => { setReady(false); setError(e.message); }} /> : null}
           <View style={styles.overlay}>
             <View style={styles.promptHeader}><Text style={styles.eyebrow}>PROMPT {index + 1} / {script.prompts.length}</Text><Text style={styles.clock}>{recording ? '● REC' : 'READY'} · {elapsed}s / {LIMIT}s</Text></View>
-            <ScrollView style={styles.promptScroll}><Text style={styles.promptText}>{prompt?.text}</Text>{prompt?.hint ? <Text style={styles.hint}>{prompt.hint}</Text> : null}</ScrollView>
-            <View style={styles.promptNav}><Pressable accessibilityRole="button" disabled={index === 0} onPress={() => setIndex(i => Math.max(0, i - 1))}><Text style={[styles.back, index === 0 && { opacity: .4 }]}>‹ Previous</Text></Pressable><Pressable accessibilityRole="button" disabled={index >= script.prompts.length - 1} onPress={() => setIndex(i => Math.min(script.prompts.length - 1, i + 1))}><Text style={[styles.back, index >= script.prompts.length - 1 && { opacity: .4 }]}>Next ›</Text></Pressable></View>
+            <ScrollView style={styles.promptScroll}>
+              {script.prompts.map((item, i) => <Pressable key={item.id} accessibilityRole="button" onPress={() => setIndex(i)} style={styles.promptItem}>
+                <Text style={i === index ? styles.promptItemActive : styles.promptItemText}>{i + 1}. {item.text}</Text>
+                {i === index && item.hint ? <Text style={styles.hint}>{item.hint}</Text> : null}
+              </Pressable>)}
+            </ScrollView>
           </View>
         </View>
-        <View style={styles.controls}><Pressable accessibilityRole="button" onPress={() => setAuto(value => !value)}><Text style={styles.back}>{auto ? 'Pause auto prompts' : 'Resume auto prompts'}</Text></Pressable><View style={styles.pace}><Pressable accessibilityRole="button" accessibilityLabel="Faster prompts" onPress={() => setPace(p => Math.max(3, p - 1))}><Text style={styles.back}>−</Text></Pressable><Text style={styles.copy}>{pace}s / prompt</Text><Pressable accessibilityRole="button" accessibilityLabel="Slower prompts" onPress={() => setPace(p => Math.min(90, p + 1))}><Text style={styles.back}>+</Text></Pressable></View></View>
-        <Text style={styles.copy}>Pausing prompts keeps the camera recording. You can move between prompts yourself.</Text>
+        <View style={styles.controls}>
+          <Pressable accessibilityRole="button" onPress={() => setShowPromptSettings(value => !value)}><Text style={styles.back}>{showPromptSettings ? 'Hide auto-advance settings' : 'Auto-advance settings'}</Text></Pressable>
+          {showPromptSettings ? <>
+            <Pressable accessibilityRole="button" onPress={() => setAuto(value => !value)}><Text style={styles.back}>{auto ? 'Pause auto prompts' : 'Resume auto prompts'}</Text></Pressable>
+            <View style={styles.pace}><Pressable accessibilityRole="button" accessibilityLabel="Faster prompts" onPress={() => setPace(p => Math.max(3, p - 1))}><Text style={styles.back}>−</Text></Pressable><Text style={styles.copy}>{pace}s / prompt</Text><Pressable accessibilityRole="button" accessibilityLabel="Slower prompts" onPress={() => setPace(p => Math.min(90, p + 1))}><Text style={styles.back}>+</Text></Pressable></View>
+            <Text style={styles.copy}>Pausing prompts keeps the camera recording. You can move between prompts yourself.</Text>
+          </> : null}
+        </View>
         {script.truncated ? <Text style={styles.copy}>Some study questions exceed this recording’s time limit. Cover the prompts shown; the team will review your answers.</Text> : null}
 
       </>}
@@ -160,9 +170,12 @@ return StyleSheet.create({
   content: { paddingHorizontal: 20, paddingBottom: 32, gap: 14 }, title: { color: dark?'#F8FAFC':'#0F172A', fontSize: 25, fontWeight: '800' }, copy: { color: dark?'#B7C5D9':'#64748B', fontSize: 13, lineHeight: 20 },
   back: { color: dark?'#B0C8FF':'#1D4ED8', fontSize: 14, fontWeight: '700', paddingVertical: 10, paddingHorizontal: 4 }, eyebrow: { color: dark?'#B0C8FF':'#1D4ED8', fontSize: 10, letterSpacing: 1.1, fontWeight: '800' },
   viewfinder: { height: cameraHeight, borderRadius: 22, overflow: 'hidden', backgroundColor: '#14233B', borderColor: '#304466', borderWidth: 1 }, camera: { width: '100%', height: '100%' },
-  overlay: { position: 'absolute', top: 12, left: 12, right: 12, padding: 14, borderRadius: 16, backgroundColor: dark?'rgba(8,18,34,.94)':'rgba(255,255,255,.96)' }, promptHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
-  clock: { color: dark?'#FFFFFF':'#334155', fontSize: 10, fontWeight: '800' }, promptScroll: { maxHeight: Math.max(80, Math.min(150, cameraHeight - 132)), marginTop: 10 }, promptText: { color: dark?'#FFFFFF':'#0F172A', fontSize: 21, lineHeight: 28, fontWeight: '700' }, hint: { color: dark?'#D3DFF0':'#64748B', fontSize: 13, lineHeight: 19, marginTop: 8 },
-  promptNav: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }, controls: { gap: 4 }, pace: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  overlay: { position: 'absolute', top: 12, left: 12, right: 12, padding: 14, borderRadius: 16, backgroundColor: dark?'rgba(8,18,34,.44)':'rgba(255,255,255,.46)' }, promptHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
+  clock: { color: dark?'#FFFFFF':'#334155', fontSize: 10, fontWeight: '800' }, promptScroll: { maxHeight: Math.max(120, Math.min(230, cameraHeight - 70)), marginTop: 10 },
+  promptText: { color: dark?'#FFFFFF':'#0F172A', fontSize: 21, lineHeight: 28, fontWeight: '700' },
+  promptItem: { paddingVertical: 6 }, promptItemActive: { color: dark?'#FFFFFF':'#0F172A', fontSize: 19, lineHeight: 25, fontWeight: '700' }, promptItemText: { color: dark?'#C3D2E6':'#64748B', fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  hint: { color: dark?'#D3DFF0':'#64748B', fontSize: 13, lineHeight: 19, marginTop: 4 },
+  controls: { gap: 4 }, pace: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   button: { backgroundColor: '#375BC7', minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 14 }, secondary: { backgroundColor: '#334B70', borderColor: '#496188', borderWidth: 1 }, buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   permission: { padding: 22, borderRadius: 20, backgroundColor: dark?'#182A44':'#FFFFFF', gap: 18 }, error: { color: dark?'#FFB5B5':'#B42318', fontSize: 13, lineHeight: 20 },
 });

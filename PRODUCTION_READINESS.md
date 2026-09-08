@@ -2,7 +2,7 @@
 
 This app is a **working functional prototype**: every P0 flow in the MVP spec runs end to end (onboarding, diary engine, QC, reminders, dashboards, export), the Developer/Config console means none of the business inputs are hardcoded, a questionnaire can be uploaded from a spreadsheet or document and previewed before it's committed, the respondent diary offers three entry methods (Standard Form, AI-assisted Video, and Voice Note), and the whole app — including the respondent diary — is an installable mobile PWA with one consistent visual design system.
 
-**As of this revision, Azure AI Vision for brand detection and video field pre-fill, Azure AI Speech for voice-note transcription, Azure OpenAI for study summaries, Twilio SendGrid for staff credential email, and pluggable media storage have real integrations.** They remain inactive until the corresponding credentials are supplied. What's still pending is everything that needs an account, a domain, or an organizational decision this checkout cannot provide: provider credentials, a real domain and TLS, staff SSO, a managed production database, a secrets vault, backups, an approved retention policy, and monitoring.
+**As of this revision, Azure AI Vision for brand detection and video field pre-fill, Azure AI Speech for voice-note transcription, Azure OpenAI for study summaries, Resend for staff credential email, and pluggable media storage have real integrations.** They remain inactive until the corresponding credentials are supplied. What's still pending is everything that needs an account, a domain, or an organizational decision this checkout cannot provide: provider credentials, a real domain and TLS, staff SSO, a managed production database, a secrets vault, backups, an approved retention policy, and monitoring.
 
 A companion document, the **Azure Deployment Runbook**, walks through provisioning every Azure resource this app can use (App Service hosting, AI Vision, AI Speech, Blob Storage, Key Vault) end to end with exact Portal steps and CLI commands, sized to fit an Azure free-account $200/30-day credit. This document (PRODUCTION_READINESS.md) stays focused on *what* needs doing and *where in the code* it plugs in; the runbook is the *how* for the Azure-specific pieces.
 
@@ -40,7 +40,7 @@ TWILIO_CHANNEL=sms                  # or: whatsapp
 APP_BASE_URL=https://your-app-host  # so background reminders can include a working link
 ```
 
-INICIO can route SMS and WhatsApp at the same time. Set `TWILIO_SMS_FROM_NUMBER` and `TWILIO_WHATSAPP_FROM_NUMBER` for separate channel senders; they take precedence over legacy `TWILIO_FROM_NUMBER`. Email contacts are delivered through SendGrid. OTPs follow the respondent's preferred channel, with ordinary app/phone participation using SMS and WhatsApp participation using WhatsApp.
+INICIO can route SMS and WhatsApp at the same time. Set `TWILIO_SMS_FROM_NUMBER` and `TWILIO_WHATSAPP_FROM_NUMBER` for separate channel senders; they take precedence over legacy `TWILIO_FROM_NUMBER`. Email contacts are delivered through Resend. OTPs follow the respondent's preferred channel, with ordinary app/phone participation using SMS and WhatsApp participation using WhatsApp.
 
 `TWILIO_AUTH_TOKEN` works in place of the API key pair, and `TWILIO_FROM_NUMBER` in place of the Messaging Service, if you'd rather start simple.
 
@@ -72,11 +72,11 @@ Admin → **Message Log** shows every message the app has sent or would have sen
 
 Leave `MESSAGING_PROVIDER` unset. Everything still works: reminders and QC run normally, and the "send the link" buttons say plainly that nothing was delivered rather than claiming success. The QR code hand-over is the working path in the field, and it needs no provider at all.
 
-### Staff and client credentials through Twilio SendGrid
+### Staff and client credentials through Resend
 
-Only a superadmin can create or reset a staff/client account. The email address is the username; INICIO generates a temporary password, stores only its bcrypt hash, expires it after 24 hours, and forces a password change after first sign-in. Configure `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, and `APP_BASE_URL`. If delivery fails, the account remains marked failed in User Management and the superadmin can resend without exposing the password in the portal.
+Only a superadmin can create or reset a staff/client account. The email address is the username; INICIO generates a temporary password, stores only its bcrypt hash, expires it after 24 hours, and forces a password change after first sign-in. Configure `RESEND_API_KEY`, `RESEND_FROM`, and `APP_BASE_URL`. The split `RESEND_FROM_EMAIL`/`RESEND_FROM_NAME` form remains supported. If delivery fails, the account remains marked failed in User Management and the superadmin can resend without exposing the password in the portal.
 
-The same verified SendGrid sender now delivers respondent OTPs, invitation links and email reminders when the respondent contact is an email address. Every attempt is recorded in Message Log as `sendgrid_email`; a rejected SendGrid request is reported as failed and its OTP is discarded rather than leaving an unusable code active.
+The same verified Resend sender now delivers respondent OTPs, invitation links and email reminders when the respondent contact is an email address. Every attempt is recorded in Message Log as `resend_email`; a rejected Resend request is reported as failed and its OTP is discarded rather than leaving an unusable code active.
 
 ### Meta Cloud API
 

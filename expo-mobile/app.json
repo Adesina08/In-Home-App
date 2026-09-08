@@ -33,6 +33,12 @@
       "expo-secure-store",
       "expo-font",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "INICIO uses Face ID to unlock your diary when Remember me is turned on."
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "INICIO uses your microphone only when you choose to record a voice note for a diary entry."

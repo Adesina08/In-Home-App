@@ -633,7 +633,7 @@ router.post("/studies/:id/questions/:qid/option-behaviour", async (req, res) => 
   if (req.body.allows_specify === true) specify.push(option);
   await store.update("questions", { id: q.id }, { other_specify_options_json: specify.length ? JSON.stringify(specify) : null });
   await store.remove("skip_rules", { study_id: studyId, condition_question_id: q.id, operator: "equals", value: option, action: "terminate" });
-  const scope = ["entry", "study"].includes(req.body.terminate_scope) ? req.body.terminate_scope : null;
+  const scope = req.body.terminate_scope === "study" ? "study" : null;
   let created = null;
   if (scope) {
     const result = await store.insert("skip_rules", { study_id: studyId, target_question_id: null, target_section: null, condition_question_id: q.id, operator: "equals", value: option, action: "terminate", terminate_scope: scope });
@@ -1133,7 +1133,7 @@ router.post("/users", requireRole("superadmin"), async (req, res) => {
 
 // ---------- Password reset ----------
 //
-// Resets issue a new short-lived password through Twilio SendGrid. The value
+// Resets issue a new short-lived password through Resend. The value
 // is never rendered in the admin portal or written to the database in plain text.
 //
 // The temporary password is generated, never chosen by the admin: an admin who

@@ -1,6 +1,5 @@
 import "./global.css";
 import React, { useEffect, useState } from "react";
-import { View } from "react-native";
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { StatusBar } from "expo-status-bar";
@@ -25,6 +24,7 @@ import {
 } from "@expo-google-fonts/ibm-plex-mono";
 import AppRedesign from "./AppRedesign";
 import InterviewerApp from "./InterviewerApp";
+import { LogoLoader } from "./src/components/LogoLoader";
 
 type AppMode = "respondent" | "interviewer";
 const MODE_KEY = "inicio.appMode";
@@ -54,7 +54,7 @@ function AppContent() {
   }
 
   if (!interLoaded || !bricolageLoaded || !monoLoaded || !mode) {
-    return <View className="flex-1 bg-[#FAF9F7]" />;
+    return <LogoLoader />;
   }
 
   if (mode === "interviewer") {

@@ -2,7 +2,7 @@
 
 This deployment routes respondent messages as follows:
 
-- Email contact: SendGrid email
+- Email contact: Resend email
 - Phone contact with `preferred_channel=whatsapp`: Twilio WhatsApp
 - Other phone contact: Twilio SMS
 - Explicit study reminder channel: that channel, provided the respondent has a compatible contact
@@ -16,9 +16,8 @@ Open Azure Portal → App Services → the INICIO app → Settings → Environme
 ```text
 APP_BASE_URL=https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net
 
-SENDGRID_API_KEY=<the SG key copied from SendGrid>
-SENDGRID_FROM_EMAIL=adesina.adeyemo@inicio-insights.com
-SENDGRID_FROM_NAME=INICIO Diary
+RESEND_API_KEY=<a newly generated Resend API key>
+RESEND_FROM=tech team <iniciomis@inicio-insights.com>
 
 MESSAGING_PROVIDER=twilio
 TWILIO_ACCOUNT_SID=<the AC value from Twilio Account Dashboard>
@@ -31,6 +30,15 @@ WHATSAPP_BOT_NUMBER=+14155238886
 VERIFY_TWILIO_WEBHOOKS=true
 WHATSAPP_MEDIA_MAX_BYTES=16777216
 ```
+
+`RESEND_FROM` is the preferred sender setting. The older split form,
+`RESEND_FROM_EMAIL` plus `RESEND_FROM_NAME`, and the `SENDER_EMAIL` alias are
+also accepted. Do not configure both forms unless they represent the same
+address; `RESEND_FROM` takes precedence.
+
+If a Resend API key has appeared in chat, logs, screenshots, source code, or a
+committed environment file, revoke it and generate a new one before adding it
+to Azure.
 
 Leave `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, and the Messaging Service SID settings empty during the trial unless those resources have deliberately been created. The Auth Token is required for Twilio webhook signature verification and inbound media download.
 
@@ -61,7 +69,7 @@ The Sandbox is for testing only. Each test phone must join it. Free-form WhatsAp
 ## Controlled verification order
 
 1. Confirm `/health/ready` returns HTTP 200.
-2. Send one invitation or OTP to the verified SendGrid sender/recipient and confirm receipt plus a `sendgrid_email` Message Log row.
+2. Send one invitation or OTP to the verified Resend sender/recipient and confirm receipt plus a `resend_email` Message Log row.
 3. After Twilio error 63038's rolling limit resets, send one SMS to a verified trial recipient and inspect its Message Log row.
 4. Send a message from the joined WhatsApp phone to open the 24-hour window, then request one WhatsApp OTP and inspect its Message Log row.
 5. Only then set `RESPONDENT_OTP_BYPASS=false`.

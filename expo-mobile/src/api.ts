@@ -4,6 +4,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const API_BASE = (process.env.EXPO_PUBLIC_API_URL || "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net").replace(/\/$/, "");
 const TOKEN_KEY = "inicio.mobile.token";
+const REMEMBER_EXPIRY_KEY = "inicio.mobile.remember.expiresAt";
+export const REMEMBER_WINDOW_DAYS = 30;
 
 export type MobileEnrolment = {
   respondent: {
@@ -50,19 +52,61 @@ export type RespondentProfile = {
 // every authenticated request afterwards. AsyncStorage is a real, working
 // implementation on web; native (iOS/Android) keeps using SecureStore so the
 // token stays in the platform keychain there.
-export async function getToken() {
-  if (Platform.OS === "web") return AsyncStorage.getItem(TOKEN_KEY);
-  return SecureStore.getItemAsync(TOKEN_KEY);
+async function storageGet(key: string) {
+  if (Platform.OS === "web") return AsyncStorage.getItem(key);
+  return SecureStore.getItemAsync(key);
+}
+async function storageSet(key: string, value: string) {
+  if (Platform.OS === "web") return AsyncStorage.setItem(key, value);
+  return SecureStore.setItemAsync(key, value);
+}
+async function storageDelete(key: string) {
+  if (Platform.OS === "web") return AsyncStorage.removeItem(key);
+  return SecureStore.deleteItemAsync(key);
 }
 
-export async function setToken(token: string | null) {
-  if (Platform.OS === "web") {
-    if (token) await AsyncStorage.setItem(TOKEN_KEY, token);
-    else await AsyncStorage.removeItem(TOKEN_KEY);
+// When "Remember me" isn't on, the token lives only in this module-level
+// variable so it disappears when the app process is killed — the next
+// launch finds nothing persisted and falls back to full login, per design.
+let memoryToken: string | null = null;
+
+export async function getToken() {
+  if (memoryToken) return memoryToken;
+  return storageGet(TOKEN_KEY);
+}
+
+export async function setToken(token: string | null, options: { remember?: boolean } = {}) {
+  memoryToken = null;
+  if (!token) {
+    await Promise.all([storageDelete(TOKEN_KEY), storageDelete(REMEMBER_EXPIRY_KEY)]);
     return;
   }
-  if (token) await SecureStore.setItemAsync(TOKEN_KEY, token);
-  else await SecureStore.deleteItemAsync(TOKEN_KEY);
+  if (options.remember) {
+    await storageSet(TOKEN_KEY, token);
+  } else {
+    memoryToken = token;
+    await Promise.all([storageDelete(TOKEN_KEY), storageDelete(REMEMBER_EXPIRY_KEY)]);
+  }
+}
+
+// A persisted token means the user checked "Remember me" (or, for a token
+// saved before this feature existed, is on the legacy always-on session —
+// treated the same way so it gets gated onto the new model on next launch).
+export async function getRememberedSession() {
+  const token = await storageGet(TOKEN_KEY);
+  if (!token) return null;
+  const expiresAtRaw = await storageGet(REMEMBER_EXPIRY_KEY);
+  return { token, expiresAt: expiresAtRaw ? Number(expiresAtRaw) : null };
+}
+
+export async function extendRememberedSession() {
+  const expiresAt = Date.now() + REMEMBER_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  await storageSet(REMEMBER_EXPIRY_KEY, String(expiresAt));
+  return expiresAt;
+}
+
+export async function clearRememberedSession() {
+  await Promise.all([storageDelete(TOKEN_KEY), storageDelete(REMEMBER_EXPIRY_KEY)]);
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

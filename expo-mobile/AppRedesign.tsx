@@ -21,8 +21,9 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as LocalAuthentication from "expo-local-authentication";
 import { useColorScheme } from "nativewind";
-import { api, API_BASE, getToken, MobileEnrolment, setToken } from "./src/api";
+import { api, API_BASE, clearRememberedSession, extendRememberedSession, getRememberedSession, getToken, MobileEnrolment, setToken } from "./src/api";
 import { VideoDiaryScreen, VideoDraft } from "./src/screens/VideoDiary";
 import { HomeScreen, DisplayRecord } from "./src/screens/Home";
 import { EntriesScreen } from "./src/screens/Entries";
@@ -30,6 +31,7 @@ import { ActivityScreen } from "./src/screens/Activity";
 import { ProfileScreen } from "./src/screens/Profile";
 import { LoginDoodleField, ScreenDoodleField } from "./src/components/Doodles";
 import { Icon as LineIcon } from "./src/icons";
+import { LogoLoader } from "./src/components/LogoLoader";
 
 import { enqueue, listQueue, syncQueue, removeQueued, packetId, preserveMedia, DiaryPacket } from "./src/diaryQueue";
 
@@ -307,6 +309,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [recoveryContact, setRecoveryContact] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [enrolments, setEnrolments] = useState<MobileEnrolment[]>([]);
@@ -391,8 +394,16 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       setMode(resolved);
       setNativeWindScheme(resolved);
       try {
-        if (await getToken()) await loadProfileGate();
-        else setScreen("login");
+        const remembered = await getRememberedSession();
+        if (!remembered) { setScreen("login"); return; }
+        if (remembered.expiresAt !== null && Date.now() > remembered.expiresAt) {
+          await clearRememberedSession();
+          setScreen("login");
+          return;
+        }
+        if (!(await unlockWithDeviceSecurity())) { setScreen("login"); return; }
+        await extendRememberedSession();
+        await loadProfileGate();
       } catch(e:any) {
         if(!e.status&&await getToken()){const raw=await AsyncStorage.getItem('inicio.offline.enrolments');const cached=raw?JSON.parse(raw):[];setEnrolments(cached);if(cached.length===1)await openStudy(cached[0],false);else setScreen('studies');}
         else{await setToken(null);await AsyncStorage.removeItem('inicio.offline.enrolments');setScreen('login');}
@@ -400,13 +411,42 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     })();
   }, []);
 
+  // With nothing enrolled at all (rare — a fresh emulator, e.g.), there is no
+  // device prompt to show, so let the remembered session through rather than
+  // permanently locking the user out of a state we can't gate.
+  async function unlockWithDeviceSecurity() {
+    try {
+      const level = await LocalAuthentication.getEnrolledLevelAsync();
+      if (level === LocalAuthentication.SecurityLevel.NONE) return true;
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Unlock Inicio Diary",
+        cancelLabel: "Use password instead",
+        disableDeviceFallback: false,
+      });
+      return result.success;
+    } catch { return true; }
+  }
+
+  async function toggleRememberMe() {
+    const next = !rememberMe;
+    if (next) {
+      const level = await LocalAuthentication.getEnrolledLevelAsync().catch(() => LocalAuthentication.SecurityLevel.NONE);
+      if (level === LocalAuthentication.SecurityLevel.NONE) {
+        Alert.alert("Set up a device lock first", "To remember you securely for 30 days, add a PIN, pattern, password, or fingerprint/Face ID in your phone's settings.");
+        return;
+      }
+    }
+    setRememberMe(next);
+  }
+
   async function login() {
     setError("");
     if (!username.trim() || !password) return setError("Enter your username and password.");
     setBusy(true);
     try {
       const result = await api.login(username.trim(), password);
-      await setToken(result.token);
+      await setToken(result.token, { remember: rememberMe });
+      if (rememberMe) await extendRememberedSession();
       setPassword("");
       await loadProfileGate();
     } catch (e: any) { setError(e.message || "Unable to sign in."); }
@@ -439,7 +479,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setBusy(true);
     try {
       const result = await api.verifyCode(recoveryContact.trim(), recoveryCode.trim());
-      await setToken(result.token);
+      await setToken(result.token, { remember: rememberMe });
+      if (rememberMe) await extendRememberedSession();
       setPassword("");
       setRecoveryCode("");
       await loadProfileGate();
@@ -642,9 +683,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   if(screen==='participation'&&selected&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Your participation</Text><Card t={t}><Text style={{color:t.text}}>Allow authorised client researchers to view your study photos, video and audio?</Text><ChoiceList t={t} options={[["yes","Yes, share study media"],["no","No, keep media with the research team"]]} value={participation.mediaConsent?'yes':'no'} onChange={async value=>{try{await api.mediaConsent(selected.respondent.id,value==='yes');await openParticipation();}catch(e:any){Alert.alert('Could not save',e.message);}}}/></Card>{participation.closeoutDue&&!participation.closeoutCompleted?<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Final study validation</Text>{participation.questions.map((q:any)=><View key={q.code}><Text style={{color:t.text}}>{q.text}{q.required?' *':''}</Text>{q.type==='single'?<ChoiceList t={t} options={q.options.map((o:string)=>[o,o])} value={closeoutAnswers[q.code]||''} onChange={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))}/>:<TextInput value={closeoutAnswers[q.code]||''} onChangeText={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))} style={[styles.input,{color:t.text,borderColor:t.border}]} />}</View>)}<PrimaryButton t={t} title="Submit final validation" onPress={async()=>{try{await api.closeout(selected.respondent.id,closeoutAnswers);await openParticipation();}catch(e:any){Alert.alert('Check your answers',e.message);}}}/></Card>:null}{participation.closeoutCompleted?<Text style={{color:t.green}}>Final validation completed.</Text>:null}<Pressable onPress={()=>Alert.alert('Withdraw from this study?','You will stop participating. The research team will process your data according to the study retention policy.',[{text:'Keep participating',style:'cancel'},{text:'Withdraw',style:'destructive',onPress:async()=>{try{await api.withdraw(selected.respondent.id);await logout();}catch(e:any){Alert.alert('Could not withdraw',e.message);}}}])}><Text style={{color:t.red}}>Withdraw from study</Text></Pressable></ScrollView></AppFrame>;
   if(screen==='sync')return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Saved on this device</Text><Text style={{color:t.muted}}>Entries remain here until the server confirms receipt. Pending entries retry while the app is open.</Text><PrimaryButton title="Retry sync" t={t} onPress={()=>refreshSync(true)} />{!pendingEntries.length?<Text style={{color:t.text}}>All queued entries have synced.</Text>:pendingEntries.map(p=><Card key={p.id} t={t}><Text style={{color:t.text}}>{p.fields.occurrence_time} · {p.kind}</Text><Text style={{color:t.muted}}>{p.state==='needs_attention'?'Needs attention':'Waiting to sync'} · {p.media.length} saved files</Text>{p.error?<Text style={{color:t.red}}>{p.error}</Text>:null}{p.state==='needs_attention'&&p.kind==='standard'?<Pressable onPress={()=>reviewQueued(p)}><Text style={{color:t.blue}}>Review and edit saved entry</Text></Pressable>:null}<Pressable onPress={()=>Alert.alert('Delete this saved entry?','This removes its answers and media from this device.',[{text:'Keep entry',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await removeQueued(p.respondentId,p.id);await refreshSync();}}])}><Text style={{color:t.red}}>Delete saved entry</Text></Pressable></Card>)}</ScrollView></AppFrame>;
 
-  if (screen === "loading") return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator size="large" color={t.blue} /></View></AppFrame>;
+  if (screen === "loading") return <LogoLoader />;
 
-  if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><View style={styles.passwordLabelRow}><Text style={[styles.label, { color: t.muted }]}>Password</Text><Pressable accessibilityRole="button" onPress={openPasswordRecovery} hitSlop={8}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Forgotten password?</Text></Pressable></View><View style={[styles.inputShell, { borderColor: t.border, backgroundColor: t.bg }]}><TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.inputEmbedded, { color: t.text }]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "Hide password" : "Show password"} onPress={() => setShowPassword((visible) => !visible)} hitSlop={6} style={styles.passwordToggle}><LineIcon name={showPassword ? "eyeSlash" : "eye"} size={20} color={t.muted} /></Pressable></View>{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
+  if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><View style={styles.passwordLabelRow}><Text style={[styles.label, { color: t.muted }]}>Password</Text><Pressable accessibilityRole="button" onPress={openPasswordRecovery} hitSlop={8}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Forgotten password?</Text></Pressable></View><View style={[styles.inputShell, { borderColor: t.border, backgroundColor: t.bg }]}><TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.inputEmbedded, { color: t.text }]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "Hide password" : "Show password"} onPress={() => setShowPassword((visible) => !visible)} hitSlop={6} style={styles.passwordToggle}><LineIcon name={showPassword ? "eyeSlash" : "eye"} size={20} color={t.muted} /></Pressable></View><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: rememberMe }} accessibilityLabel="Remember me for 30 days" onPress={toggleRememberMe} style={styles.rememberRow} hitSlop={6}><View style={[styles.checkbox, { borderColor: rememberMe ? t.blue : t.border, backgroundColor: rememberMe ? t.blue : t.bg }]}>{rememberMe ? <LineIcon name="checkSmall" size={13} color={t.white} /> : null}</View><Text style={[styles.rememberText, { color: t.muted }]}>Remember me for 30 days</Text></Pressable>{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
 
   if (screen === "forgotPassword") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("login"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Back to sign in</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="lock" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Forgotten password?</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the phone number or email used for your invitation. We’ll send a one-time code so you can securely open your diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Phone number or email</Text><TextInput value={recoveryContact} onChangeText={setRecoveryContact} autoCapitalize="none" autoCorrect={false} placeholder="Your phone number or email" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12, lineHeight: 17 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Sending code…" : "Send verification code"} onPress={requestRecoveryCode} disabled={busy} t={t} arrow={false} /><Text style={[styles.recoveryNote, { color: t.subtle }]}>This signs you in with a one-time code. It does not change your existing password.</Text></View></ScrollView></KeyboardAvoidingView></AppFrame>;
 
@@ -798,12 +839,15 @@ const styles = StyleSheet.create({
   inputShell: { height: 46, borderWidth: 1, borderRadius: 12, flexDirection: "row", alignItems: "center", overflow: "hidden" },
   inputEmbedded: { flex: 1, height: "100%", paddingLeft: 14, paddingRight: 6, fontSize: 15 },
   passwordToggle: { width: 46, height: 46, alignItems: "center", justifyContent: "center" },
+  rememberRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, paddingVertical: 4 },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  rememberText: { fontSize: 13, fontWeight: "600" },
   textArea: { height: 96, paddingTop: 12, textAlignVertical: "top" },
   primaryButtonShell: { width: "100%", minHeight: 48, borderRadius: 12, borderWidth: 1, marginTop: 2, overflow: "hidden", elevation: 2, shadowColor: "#091426", shadowOffset: { width: 0, height: 2 }, shadowOpacity: .12, shadowRadius: 4 },
   primaryButton: { width: "100%", minHeight: 46, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 18 },
   primaryButtonDisabled: { opacity: .5 },
   primaryButtonPressed: { opacity: .84 },
-  primaryButtonText: { fontSize: 15, fontWeight: "900" },
+  primaryButtonText: { fontSize: 15, fontWeight: "900", textAlign: "center" },
   buttonArrow: { fontSize: 20, marginTop: -2 },
   outlineButton: { minHeight: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 2 },
   outlineButtonText: { fontSize: 14, fontWeight: "800" },

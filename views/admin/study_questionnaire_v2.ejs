@@ -99,19 +99,6 @@
     ['text', 'Short text'], ['longtext', 'Long text'], ['date', 'Date'],
     ['time', 'Time'], ['photo', 'Photo'], ['video', 'Video'], ['audio', 'Audio'],
   ];
-  // Which diary_mode(s) each question applies to. Empty selection == every
-  // cadence -- the same default a question gets when nobody has touched this
-  // control at all, so leaving every box unchecked is not a way to hide a
-  // question by accident.
-  var CADENCES = [
-    ['realtime', 'Real-time'], ['daily', 'Daily'], ['weekly', 'Weekly'],
-    ['monthly', 'Monthly'], ['hybrid', 'Hybrid'],
-  ];
-  function cadencesOf(q) {
-    if (Array.isArray(q.applicable_cadences)) return q.applicable_cadences;
-    try { var p = JSON.parse(q.applicable_cadences || '[]'); return Array.isArray(p) ? p : []; }
-    catch (e) { return []; }
-  }
   var OPS = { equals: 'is', not_equals: 'is not', in: 'is one of', not_in: 'is none of', includes: 'includes' };
 
   function esc(s) {
@@ -146,7 +133,7 @@
     try { var p = JSON.parse(raw || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
   }
   function specifyOptions(q) { try { var p=JSON.parse(q.other_specify_options_json||'[]'); return Array.isArray(p)?p:[]; } catch(e){ return []; } }
-  function terminationFor(qid, option) { var rule=rules.find(function(r){ return r.action==='terminate' && Number(r.condition_question_id)===Number(qid) && r.operator==='equals' && r.value===option; }); return rule ? (rule.terminate_scope||'entry') : ''; }
+  function terminationFor(qid, option) { return rules.some(function(r){ return r.action==='terminate' && Number(r.condition_question_id)===Number(qid) && r.operator==='equals' && r.value===option; }); }
   function canAiFill(q) { return AI_FILLABLE.indexOf(q.type) > -1 && optionsOf(q).length > 0; }
 
   // ---------- left pane ----------
@@ -201,10 +188,6 @@
         '<label class="flex items-center gap-2 mt-6"><input type="checkbox" id="fRequired" ' + (q.required ? 'checked' : '') + ' class="h-4 w-4 rounded border-slate-300 accent-signal" />' +
           '<span class="text-sm text-slate-700">Required</span></label>' +
       '</div>' +
-      '<div class="mt-4"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Applies to</div>' +
-      '<div id="cadenceRow" class="flex flex-wrap gap-3"></div>' +
-      '<p class="text-[11px] text-slate-400 mt-1.5">Leave all unchecked for every cadence &mdash; the same as a question created before this existed.</p></div>' +
-      '<div class="mt-4 pt-4 border-t border-slate-100"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Question timing & rotation</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2"><label class="text-[11px] text-slate-500">Every nth occasion<input id="fEveryNth" type="number" min="1" value="'+esc(q.every_nth_occasion||'')+'" class="mt-1 w-full border rounded-lg p-2 text-sm" /></label><label class="text-[11px] text-slate-500">From UTC hour<input id="fFromHour" type="number" min="0" max="23" value="'+esc(q.from_hour_utc??'')+'" class="mt-1 w-full border rounded-lg p-2 text-sm" /></label><label class="text-[11px] text-slate-500">Until UTC hour<input id="fToHour" type="number" min="0" max="23" value="'+esc(q.to_hour_utc??'')+'" class="mt-1 w-full border rounded-lg p-2 text-sm" /></label><label class="flex items-center gap-2 mt-5 text-xs"><input id="fRotate" type="checkbox" '+(q.rotate_options?'checked':'')+' /> Rotate options</label></div></div>' +
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
@@ -219,26 +202,8 @@
       '</div>';
 
     if (AI_FILLABLE.indexOf(q.type) > -1) renderOptions(q, opts);
-    renderCadences(q);
     wireEditor(q);
     renderRules(q);
-  }
-
-  function renderCadences(q) {
-    var host = document.getElementById('cadenceRow');
-    if (!host) return;
-    var current = cadencesOf(q);
-    host.innerHTML = CADENCES.map(function (c) {
-      return '<label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">' +
-        '<input type="checkbox" class="cadence-in h-4 w-4 rounded border-slate-300 accent-signal" value="' + c[0] + '"' +
-        (current.indexOf(c[0]) > -1 ? ' checked' : '') + ' />' + c[1] + '</label>';
-    }).join('');
-    host.querySelectorAll('.cadence-in').forEach(function (box) {
-      box.addEventListener('change', function () {
-        var picked = Array.prototype.slice.call(host.querySelectorAll('.cadence-in:checked')).map(function (b) { return b.value; });
-        patch(q.id, { applicable_cadences: picked });
-      });
-    });
   }
 
   function renderOptions(q, opts) {
@@ -249,7 +214,7 @@
       return '<div class="grid grid-cols-[20px_minmax(140px,1fr)_150px_auto_auto] items-center gap-2">' +
         '<span class="font-mono text-[10px] text-slate-400 w-4 text-right tabular-nums">' + (i + 1) + '</span>' +
         '<input class="opt-in flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm" value="' + esc(o) + '" data-i="' + i + '" />' +
-        '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'"><option value="">Continue</option><option value="entry" '+(terminationFor(q.id,o)==='entry'?'selected':'')+'>End entry</option><option value="study" '+(terminationFor(q.id,o)==='study'?'selected':'')+'>End participation</option></select>'+
+        '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'"><option value="">Continue</option><option value="study" '+(terminationFor(q.id,o)?'selected':'')+'>Terminate</option></select>'+
         '<label class="text-[11px] text-slate-600 whitespace-nowrap"><input type="checkbox" class="opt-specify" data-option="'+esc(o)+'" '+(specify.indexOf(o)>-1?'checked':'')+' /> Other text</label>'+
         '<button class="opt-del text-slate-400 hover:text-red-600 text-sm px-1" data-i="' + i + '">&times;</button></div>';
     }).join('') || '<div class="text-xs text-slate-400">No options yet — this question cannot be answered until it has some.</div>';
@@ -282,10 +247,6 @@
     on('fSection', 'change', function (e) { patch(q.id, { section: e.target.value }); });
     on('fCode', 'change', function (e) { patch(q.id, { code: e.target.value }); });
     on('fRequired', 'change', function (e) { patch(q.id, { required: e.target.checked ? 1 : 0 }); });
-    on('fEveryNth', 'change', function(e){ patch(q.id, { every_nth_occasion:e.target.value }); });
-    on('fFromHour', 'change', function(e){ patch(q.id, { from_hour_utc:e.target.value, to_hour_utc:document.getElementById('fToHour').value }); });
-    on('fToHour', 'change', function(e){ patch(q.id, { to_hour_utc:e.target.value, from_hour_utc:document.getElementById('fFromHour').value }); });
-    on('fRotate', 'change', function(e){ patch(q.id, { rotate_options:e.target.checked ? 1 : 0 }); });
     on('delQ', 'click', async function () {
       if (!confirm('Delete this question? Answers already collected against it are kept.')) return;
       try {
