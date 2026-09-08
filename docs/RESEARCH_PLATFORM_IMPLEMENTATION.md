@@ -1,6 +1,6 @@
 # Research platform implementation
 
-Scope authorized: all audit recommendations except WhatsApp diary completion and reminder orchestration. Existing logo theme and inline study media remain.
+Scope authorized: all audit recommendations, with WhatsApp diary completion now being developed alongside the mobile app. Existing logo theme and inline study media remain.
 
 Implemented in the local checkout:
 - [x] Shared research KPI definitions, eligibility, occurrence/capture/submit/sync timestamps
@@ -19,9 +19,16 @@ Implemented in the local checkout:
 - [x] Unified questionnaire builder with downloadable XLSX template, inline skip/termination rules, working Other-specify fields and embedded desktop/mobile preview
 - [x] Country/state study scope, multi-channel reminders, redesigned consent and client KPI configuration
 - [x] Superadmin bulk respondent deletion with linked data and physical-media cleanup
+- [x] First WhatsApp diary slice: command-based start/status/cancel, text and structured questionnaire answers, skip/termination rules, submission, QC and analysis integration
+- [x] Secure inbound WhatsApp photo/video/audio capture with trusted-host checks, authenticated bounded downloads, private storage, question linkage and AI-processing handoff
+- [x] Contact/preference-aware OTP, invitation and reminder routing across SendGrid email, Twilio SMS and Twilio WhatsApp, with independent phone senders and shared delivery logging
+
+WhatsApp work still in progress:
+- [ ] Complete WhatsApp end-of-study validation and richer reminder-to-diary entry points
+- [ ] Validate the full webhook and approved-template journey against the intended Twilio WhatsApp Business sender
 
 Validation on 2026-09-08:
-- `node --test tests/*.test.js`: 48 tests passed. Includes offline queue restart with disk-backed adapters, multipart retry, private media ownership, profile gating, closed-study capture, report calculations, staff account delivery, inline questionnaire behaviour, bulk deletion and checksum-verified local restore.
+- `node --test tests/*.test.js`: 54 tests passed. Includes offline queue restart with disk-backed adapters, multipart retry, private media ownership, profile gating, closed-study capture, WhatsApp diary completion/retry/media handling, channel-aware SendGrid/Twilio delivery, report calculations, staff account delivery, inline questionnaire behaviour, bulk deletion and checksum-verified local restore.
 - `npm run build`: passed.
 - `cd expo-mobile && npx tsc --noEmit`: passed.
 - Authenticated browser checks: merged Fieldwork & Analysis dashboard, questionnaire builder, consent, client KPIs, users, data management and AI summary rendered successfully at desktop size with no visible overlap.

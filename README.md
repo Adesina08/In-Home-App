@@ -3,6 +3,7 @@
 A working functional prototype of the 3-week MVP spec: respondent onboarding (F2F + remote),
 the diary engine with skip logic, photo/video evidence, a rule-based QC engine + worklist +
 Green/Amber/Red risk classification, a reminder engine with a pluggable WhatsApp adapter,
+and a conversational WhatsApp diary flow with questionnaire answers and private media capture,
 an admin ops dashboard, a client dashboard, CSV export, and a **Developer/Config console**
 so none of the business inputs (questionnaire, brands/SKUs, consent wording, diary
 frequency, reminder schedule, recall window, QC thresholds, client KPIs) are hardcoded.
@@ -60,7 +61,9 @@ Admin → Study → Respondents screen, or generated live via Interviewer → Re
 - `lib/qc.js` — the rule-based QC engine (back-entry window, missing photo, duplicate/
   repetitive, burst entry, range/logic, cross-channel duplicate) + risk classification
 - `lib/reminders.js` — reminder scheduling engine
-- `lib/whatsapp.js` — pluggable WhatsApp provider (mock by default; see PRODUCTION_READINESS.md)
+- `lib/whatsapp.js` — channel router and providers for SendGrid email, Twilio SMS and Twilio WhatsApp (mock by default; see PRODUCTION_READINESS.md)
+- `lib/whatsappDiary.js` — inbound WhatsApp diary conversation, questionnaire validation,
+  skip/termination logic and submission into the shared QC/analysis data model
 - `lib/brandDetection.js` — pluggable brand-detection provider for photo/video evidence
   (mock by default; a real Azure AI Vision implementation is one `.env` flip away, see
   PRODUCTION_READINESS.md B9)

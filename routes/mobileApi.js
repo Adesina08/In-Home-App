@@ -103,7 +103,7 @@ router.post("/auth/request-code", async (req, res) => {
       if (e.code !== "COOLDOWN") return res.status(502).json({ error: e.message || "We couldn't send a code just now." });
     }
   }
-  res.json({ ok: true, simulated: !messaging.isRealMessagingConfigured(), ttlMinutes: otp.TTL_MINUTES });
+  res.json({ ok: true, simulated: !messaging.isRealMessagingConfigured(contact), ttlMinutes: otp.TTL_MINUTES });
 });
 
 router.post("/auth/verify", async (req, res) => {

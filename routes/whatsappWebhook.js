@@ -5,6 +5,7 @@ const accounts = require("../lib/respondentAccounts");
 const profiles = require("../lib/respondentProfiles");
 const { normalizeContact } = require("../lib/otp");
 const { logAudit } = require("../lib/audit");
+const whatsappDiary = require("../lib/whatsappDiary");
 
 const router = express.Router();
 
@@ -23,6 +24,14 @@ function reply(res, message) {
 
 function senderContact(req) {
   return normalizeContact(String(req.body.From || "").replace(/^whatsapp:/i, ""));
+}
+
+function inboundMedia(req) {
+  const count = Math.min(10, Math.max(0, Number(req.body.NumMedia) || 0));
+  return Array.from({ length: count }, (_, index) => ({
+    url: String(req.body[`MediaUrl${index}`] || ""),
+    contentType: String(req.body[`MediaContentType${index}`] || ""),
+  })).filter((item) => item.url);
 }
 
 function verifyTwilioSignature(req) {
@@ -252,7 +261,7 @@ async function handleStudyConsent(contact, session, body) {
 
   const study = await store.findOne("studies", { id: respondent.study_id });
   return {
-    message: `Thank you. You're enrolled in ${study ? study.name : "the study"} and WhatsApp is your preferred channel. The study team can now send your diary reminders and prompts here.`,
+    message: `Thank you. You're enrolled in ${study ? study.name : "the study"} and WhatsApp is your preferred channel. Reply DIARY to start your first diary entry.`,
   };
 }
 
@@ -261,26 +270,36 @@ router.post("/", async (req, res) => {
   const contact = senderContact(req);
   if (!contact) return reply(res, "We couldn't read your WhatsApp number. Please contact the study team.");
   const body = String(req.body.Body || "").trim();
+  const existingSession = await sessionFor(contact);
+  if (req.body.MessageSid && existingSession && existingSession.last_message_sid === req.body.MessageSid && existingSession.last_reply) {
+    return reply(res, existingSession.last_reply);
+  }
 
   const join = /^JOIN\s+(.+)$/i.exec(body);
   if (join) {
     const token = String(join[1] || "").trim().replace(/^.*\/invite\//, "").split(/[?#]/)[0];
     const result = await startInvite(contact, token);
+    const joinedSession = await sessionFor(contact);
+    if (joinedSession && req.body.MessageSid) await saveSession(contact, { last_message_sid: req.body.MessageSid, last_reply: result.message });
     return reply(res, result.message);
   }
 
-  const session = await sessionFor(contact);
+  const session = existingSession;
   if (!session) {
     return reply(res, "To begin, open your INICIO invitation and choose WhatsApp. It will start this chat with your study invitation automatically.");
   }
 
+  const saveCurrentSession = (patch) => saveSession(contact, patch);
+
   let result;
   if (session.step === "profile") result = await handleProfile(contact, session, body);
   else if (session.step === "study_consent") result = await handleStudyConsent(contact, session, body);
-  else if (session.step === "ready") result = { message: "You're already enrolled. Your study team will send study messages to this WhatsApp number." };
+  else if (session.step === "ready") result = { message: await whatsappDiary.readyMessage(session, body, saveCurrentSession) };
+  else if (session.step === "diary") result = { message: await whatsappDiary.handleDiaryAnswer(session, body, saveCurrentSession, inboundMedia(req)) };
   else if (session.step === "declined") result = { message: "You previously declined this study. Contact the study team if you want to change that choice." };
   else result = { message: "Please reopen your INICIO invitation and choose WhatsApp again." };
 
+  if (req.body.MessageSid) await saveSession(contact, { last_message_sid: req.body.MessageSid, last_reply: result.message });
   reply(res, result.message);
 });
 

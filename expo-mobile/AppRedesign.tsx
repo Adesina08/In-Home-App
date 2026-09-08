@@ -29,6 +29,7 @@ import { EntriesScreen } from "./src/screens/Entries";
 import { ActivityScreen } from "./src/screens/Activity";
 import { ProfileScreen } from "./src/screens/Profile";
 import { LoginDoodleField, ScreenDoodleField } from "./src/components/Doodles";
+import { Icon as LineIcon } from "./src/icons";
 
 import { enqueue, listQueue, syncQueue, removeQueued, packetId, preserveMedia, DiaryPacket } from "./src/diaryQueue";
 
@@ -39,6 +40,8 @@ type Screen =
   | "sync"
   | "loading"
   | "login"
+  | "forgotPassword"
+  | "verifyLoginCode"
   | "profileGate"
   | "studies"
   | "home"
@@ -241,7 +244,22 @@ function BookMark({ t, large = false }: { t: Theme; large?: boolean }) {
 }
 
 function PrimaryButton({ title, onPress, disabled = false, t, inverse = false, arrow = true }: any) {
-  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primaryButton, { backgroundColor: inverse ? t.card2 : t.blue }, disabled && { opacity: .5 }, pressed && !disabled && { opacity: .84 }]}><Text style={[styles.primaryButtonText, { color: inverse ? t.blue : t.white }]}>{title}</Text>{arrow ? <Text style={[styles.buttonArrow, { color: inverse ? t.blue : t.white }]}>→</Text> : null}</Pressable>;
+  const backgroundColor = inverse ? t.card2 : t.blue;
+  const borderColor = inverse ? t.borderStrong : t.blueDark;
+  return (
+    <View style={[styles.primaryButtonShell, { backgroundColor, borderColor }, disabled && styles.primaryButtonDisabled]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => [styles.primaryButton, pressed && !disabled && styles.primaryButtonPressed]}
+      >
+        <Text style={[styles.primaryButtonText, { color: inverse ? t.blue : t.white }]}>{title}</Text>
+        {arrow ? <Text style={[styles.buttonArrow, { color: inverse ? t.blue : t.white }]}>→</Text> : null}
+      </Pressable>
+    </View>
+  );
 }
 
 function OutlineButton({ title, onPress, t }: any) {
@@ -288,6 +306,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [error, setError] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [recoveryContact, setRecoveryContact] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
   const [enrolments, setEnrolments] = useState<MobileEnrolment[]>([]);
   const [selected, setSelected] = useState<MobileEnrolment | null>(null);
   const [home, setHome] = useState<any>(null);
@@ -389,6 +410,40 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       setPassword("");
       await loadProfileGate();
     } catch (e: any) { setError(e.message || "Unable to sign in."); }
+    finally { setBusy(false); }
+  }
+
+  function openPasswordRecovery() {
+    setError("");
+    setRecoveryCode("");
+    setScreen("forgotPassword");
+  }
+
+  async function requestRecoveryCode() {
+    setError("");
+    if (!recoveryContact.trim()) return setError("Enter the phone number or email used for your invitation.");
+    setBusy(true);
+    try {
+      const result = await api.requestCode(recoveryContact.trim());
+      if (result.simulated) {
+        return setError("Code delivery is not available yet. Use your original invitation link or contact the research team for help.");
+      }
+      setScreen("verifyLoginCode");
+    } catch (e: any) { setError(e.message || "Unable to send a verification code."); }
+    finally { setBusy(false); }
+  }
+
+  async function verifyRecoveryCode() {
+    setError("");
+    if (!recoveryCode.trim()) return setError("Enter the verification code we sent you.");
+    setBusy(true);
+    try {
+      const result = await api.verifyCode(recoveryContact.trim(), recoveryCode.trim());
+      await setToken(result.token);
+      setPassword("");
+      setRecoveryCode("");
+      await loadProfileGate();
+    } catch (e: any) { setError(e.message || "Unable to verify that code."); }
     finally { setBusy(false); }
   }
 
@@ -589,7 +644,11 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   if (screen === "loading") return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator size="large" color={t.blue} /></View></AppFrame>;
 
-  if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><Text style={[styles.label, { color: t.muted }]}>Password</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
+  if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><View style={styles.passwordLabelRow}><Text style={[styles.label, { color: t.muted }]}>Password</Text><Pressable accessibilityRole="button" onPress={openPasswordRecovery} hitSlop={8}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Forgotten password?</Text></Pressable></View><View style={[styles.inputShell, { borderColor: t.border, backgroundColor: t.bg }]}><TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.inputEmbedded, { color: t.text }]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "Hide password" : "Show password"} onPress={() => setShowPassword((visible) => !visible)} hitSlop={6} style={styles.passwordToggle}><LineIcon name={showPassword ? "eyeSlash" : "eye"} size={20} color={t.muted} /></Pressable></View>{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
+
+  if (screen === "forgotPassword") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("login"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Back to sign in</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="lock" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Forgotten password?</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the phone number or email used for your invitation. We’ll send a one-time code so you can securely open your diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Phone number or email</Text><TextInput value={recoveryContact} onChangeText={setRecoveryContact} autoCapitalize="none" autoCorrect={false} placeholder="Your phone number or email" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12, lineHeight: 17 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Sending code…" : "Send verification code"} onPress={requestRecoveryCode} disabled={busy} t={t} arrow={false} /><Text style={[styles.recoveryNote, { color: t.subtle }]}>This signs you in with a one-time code. It does not change your existing password.</Text></View></ScrollView></KeyboardAvoidingView></AppFrame>;
+
+  if (screen === "verifyLoginCode") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("forgotPassword"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Change phone number or email</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="mail" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Enter your code</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the verification code sent to {recoveryContact}.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Verification code</Text><TextInput value={recoveryCode} onChangeText={setRecoveryCode} keyboardType="number-pad" autoCapitalize="none" maxLength={6} placeholder="6-digit code" placeholderTextColor={t.subtle} style={[styles.input, styles.codeInput, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Checking code…" : "Open my diary"} onPress={verifyRecoveryCode} disabled={busy} t={t} arrow={false} /><Pressable accessibilityRole="button" disabled={busy} onPress={requestRecoveryCode} style={styles.resendButton}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Send a new code</Text></Pressable></View></ScrollView></KeyboardAvoidingView></AppFrame>;
 
   if (screen === "profileGate") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"><View style={styles.simpleTop}><Brand t={t} /><Pressable onPress={logout}><Text style={{ color: t.muted, fontWeight: "700" }}>Sign out</Text></Pressable></View><Text style={[styles.screenTitle, { color: t.text }]}>Your details</Text><Text style={[styles.screenCopy, { color: t.muted }]}>Complete your one-time Inicio Diary profile.</Text><Card t={t} style={{ gap: 10 }}><Text style={[styles.label, { color: t.muted }]}>Name</Text><TextInput value={profileForm.name} onChangeText={(v) => setProfileForm((p) => ({ ...p, name: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><FieldError message={profileErrors.name} t={t} /><Text style={[styles.label, { color: t.muted }]}>Where do you currently live?</Text><TextInput value={profileForm.location} onChangeText={(v) => setProfileForm((p) => ({ ...p, location: v }))} placeholder="City / state / area" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><FieldError message={profileErrors.location} t={t} /><Text style={[styles.label, { color: t.muted }]}>Age</Text><TextInput value={profileForm.age} onChangeText={(v) => setProfileForm((p) => ({ ...p, age: v }))} keyboardType="number-pad" style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Gender</Text><ChoiceList options={GENDERS} value={profileForm.gender} onChange={(v) => setProfileForm((p) => ({ ...p, gender: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>Education</Text><ChoiceList options={EDUCATION} value={profileForm.education_level} onChange={(v) => setProfileForm((p) => ({ ...p, education_level: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>Occupation</Text><TextInput value={profileForm.occupation} onChangeText={(v) => setProfileForm((p) => ({ ...p, occupation: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Religion</Text><TextInput value={profileForm.religion} onChangeText={(v) => setProfileForm((p) => ({ ...p, religion: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Marital status</Text><ChoiceList options={MARITAL} value={profileForm.marital_status} onChange={(v) => setProfileForm((p) => ({ ...p, marital_status: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>May Inicio contact you about future research?</Text><ChoiceList options={[["yes", "Yes"], ["no", "No"]]} value={profileForm.recontact_consent} onChange={(v) => setProfileForm((p) => ({ ...p, recontact_consent: v }))} t={t} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Saving…" : "Save profile & continue"} onPress={saveProfile} disabled={busy} t={t} /></Card></ScrollView></KeyboardAvoidingView></AppFrame>;
 
@@ -734,8 +793,16 @@ const styles = StyleSheet.create({
   loginFields: { gap: 8, marginTop: 18 },
   label: { fontSize: 12, fontWeight: "700", marginTop: 2 },
   input: { height: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, fontSize: 15 },
+  passwordLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 },
+  forgotPasswordLink: { fontSize: 12, fontWeight: "800" },
+  inputShell: { height: 46, borderWidth: 1, borderRadius: 12, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+  inputEmbedded: { flex: 1, height: "100%", paddingLeft: 14, paddingRight: 6, fontSize: 15 },
+  passwordToggle: { width: 46, height: 46, alignItems: "center", justifyContent: "center" },
   textArea: { height: 96, paddingTop: 12, textAlignVertical: "top" },
-  primaryButton: { minHeight: 46, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 18, marginTop: 2 },
+  primaryButtonShell: { width: "100%", minHeight: 48, borderRadius: 12, borderWidth: 1, marginTop: 2, overflow: "hidden", elevation: 2, shadowColor: "#091426", shadowOffset: { width: 0, height: 2 }, shadowOpacity: .12, shadowRadius: 4 },
+  primaryButton: { width: "100%", minHeight: 46, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 18 },
+  primaryButtonDisabled: { opacity: .5 },
+  primaryButtonPressed: { opacity: .84 },
   primaryButtonText: { fontSize: 15, fontWeight: "900" },
   buttonArrow: { fontSize: 20, marginTop: -2 },
   outlineButton: { minHeight: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 2 },
@@ -744,6 +811,14 @@ const styles = StyleSheet.create({
   firstTimeTitle: { fontSize: 12, fontWeight: "900" },
   firstTimeCopy: { fontSize: 11, lineHeight: 14, marginTop: 2 },
   secureText: { fontSize: 10, textAlign: "center", marginTop: 8 },
+  recoveryWrap: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 28, justifyContent: "center", gap: 28 },
+  backLink: { fontSize: 13, fontWeight: "800", alignSelf: "flex-start" },
+  recoveryHeading: { alignItems: "center" },
+  recoveryIcon: { width: 64, height: 64, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  recoveryCopy: { maxWidth: 340, fontSize: 13, lineHeight: 19, textAlign: "center", marginTop: 8 },
+  recoveryNote: { fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 4 },
+  codeInput: { textAlign: "center", fontSize: 20, fontWeight: "800", letterSpacing: 6 },
+  resendButton: { minHeight: 40, alignItems: "center", justifyContent: "center" },
   simpleTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   screenTitle: { fontSize: 26, fontWeight: "900", letterSpacing: -.4 },
   screenCopy: { fontSize: 13, lineHeight: 18 },

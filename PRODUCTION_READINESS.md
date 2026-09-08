@@ -40,6 +40,8 @@ TWILIO_CHANNEL=sms                  # or: whatsapp
 APP_BASE_URL=https://your-app-host  # so background reminders can include a working link
 ```
 
+INICIO can route SMS and WhatsApp at the same time. Set `TWILIO_SMS_FROM_NUMBER` and `TWILIO_WHATSAPP_FROM_NUMBER` for separate channel senders; they take precedence over legacy `TWILIO_FROM_NUMBER`. Email contacts are delivered through SendGrid. OTPs follow the respondent's preferred channel, with ordinary app/phone participation using SMS and WhatsApp participation using WhatsApp.
+
 `TWILIO_AUTH_TOKEN` works in place of the API key pair, and `TWILIO_FROM_NUMBER` in place of the Messaging Service, if you'd rather start simple.
 
 **Using a Twilio account that another project already uses.** This is fine — a Twilio account is designed to serve many applications. Three things keep them from tangling:
@@ -52,6 +54,16 @@ APP_BASE_URL=https://your-app-host  # so background reminders can include a work
 
 **Numbers must be in international format** (`+2348012345678`). A local-format number is rejected before the API call with a message naming the number, rather than coming back as an opaque Twilio error code. Worth checking the respondent contacts already captured in the pilot data.
 
+### Inbound WhatsApp diary and media
+
+Set the approved WhatsApp sender as `WHATSAPP_BOT_NUMBER`, then configure that sender's incoming-message webhook in Twilio as an HTTP POST to:
+
+```
+https://your-app-host/webhooks/twilio/whatsapp
+```
+
+Keep `VERIFY_TWILIO_WEBHOOKS=true`. Inbound signature verification and authenticated media downloads require `TWILIO_AUTH_TOKEN` even when outbound messages use an API key. Attachments are accepted only from HTTPS Twilio media/API hosts, capped by `WHATSAPP_MEDIA_MAX_BYTES` (16 MB by default), and then copied into the configured private media store; the temporary Twilio URL is never saved as the research record.
+
 ### Checking it works
 
 Admin → **Message Log** shows every message the app has sent or would have sent, with its exact text, the number it went to, and the failure reason for anything that didn't land. The banner at the top says plainly whether messages are really being delivered or only simulated — a screen full of tidy-looking rows while nothing leaves the server is exactly how a pilot discovers on day three that no respondent was ever contacted.
@@ -63,6 +75,8 @@ Leave `MESSAGING_PROVIDER` unset. Everything still works: reminders and QC run n
 ### Staff and client credentials through Twilio SendGrid
 
 Only a superadmin can create or reset a staff/client account. The email address is the username; INICIO generates a temporary password, stores only its bcrypt hash, expires it after 24 hours, and forces a password change after first sign-in. Configure `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, and `APP_BASE_URL`. If delivery fails, the account remains marked failed in User Management and the superadmin can resend without exposing the password in the portal.
+
+The same verified SendGrid sender now delivers respondent OTPs, invitation links and email reminders when the respondent contact is an email address. Every attempt is recorded in Message Log as `sendgrid_email`; a rejected SendGrid request is reported as failed and its OTP is discarded rather than leaving an unusable code active.
 
 ### Meta Cloud API
 

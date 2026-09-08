@@ -67,7 +67,7 @@ router.get("/verify", async (req, res) => {
     contact: req.session.pendingLoginContact,
     error: null,
     notice: req.query.resent ? "A new code is on its way." : null,
-    simulated: !messaging.isRealMessagingConfigured(),
+    simulated: !messaging.isRealMessagingConfigured(req.session.pendingLoginContact),
     ttlMinutes: otp.TTL_MINUTES,
     user: null,
   });
@@ -90,7 +90,7 @@ router.post("/verify", async (req, res) => {
   const render = (error) =>
     res.status(400).render("me/verify", {
       contact, error, notice: null,
-      simulated: !messaging.isRealMessagingConfigured(),
+      simulated: !messaging.isRealMessagingConfigured(contact),
       ttlMinutes: otp.TTL_MINUTES, user: null,
     });
 
@@ -117,7 +117,7 @@ router.post("/verify/resend", async (req, res) => {
     } catch (e) {
       return res.status(e.code === "COOLDOWN" ? 429 : 502).render("me/verify", {
         contact, error: e.message, notice: null,
-        simulated: !messaging.isRealMessagingConfigured(),
+        simulated: !messaging.isRealMessagingConfigured(contact),
         ttlMinutes: otp.TTL_MINUTES, user: null,
       });
     }
