@@ -546,12 +546,16 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
   let parsed;
   try {
     parsed = {
-      minValue: b.min_value !== undefined ? optionalNumber(b.min_value, "Minimum value") : q.min_value,
-      maxValue: b.max_value !== undefined ? optionalNumber(b.max_value, "Maximum value") : q.max_value,
-      maxSelections: b.max_selections !== undefined ? optionalNumber(b.max_selections, "Maximum selections", { integer: true, min: 1, max: 100 }) : q.max_selections,
-      everyNth: b.every_nth_occasion !== undefined ? optionalNumber(b.every_nth_occasion, "Every nth occasion", { integer: true, min: 1 }) : q.every_nth_occasion,
-      fromHour: b.from_hour_utc !== undefined ? optionalNumber(b.from_hour_utc, "From UTC hour", { integer: true, min: 0, max: 23 }) : q.from_hour_utc,
-      toHour: b.to_hour_utc !== undefined ? optionalNumber(b.to_hour_utc, "Until UTC hour", { integer: true, min: 0, max: 23 }) : q.to_hour_utc,
+      minValue: b.min_value !== undefined ? optionalNumber(b.min_value, "Minimum value") : (q.min_value ?? null),
+      maxValue: b.max_value !== undefined ? optionalNumber(b.max_value, "Maximum value") : (q.max_value ?? null),
+      maxSelections: b.max_selections !== undefined ? optionalNumber(b.max_selections, "Maximum selections", { integer: true, min: 1, max: 100 }) : (q.max_selections ?? null),
+      everyNth: b.every_nth_occasion !== undefined ? optionalNumber(b.every_nth_occasion, "Every nth occasion", { integer: true, min: 1 }) : (q.every_nth_occasion ?? null),
+      // Legacy Mongo rows can predate these optional fields entirely. Missing
+      // and null both mean "no time window"; preserving undefined here makes
+      // the equality check below misread two absent values as an invalid
+      // same-hour window and rejects every unrelated autosave with HTTP 400.
+      fromHour: b.from_hour_utc !== undefined ? optionalNumber(b.from_hour_utc, "From UTC hour", { integer: true, min: 0, max: 23 }) : (q.from_hour_utc ?? null),
+      toHour: b.to_hour_utc !== undefined ? optionalNumber(b.to_hour_utc, "Until UTC hour", { integer: true, min: 0, max: 23 }) : (q.to_hour_utc ?? null),
     };
   } catch (error) {
     return res.status(400).json({ error: error.message });

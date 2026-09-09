@@ -58,4 +58,19 @@ test('inline questionnaire timing and rotation settings persist and invalid valu
   });
   assert.equal(invalid.status, 400);
   assert.equal((await store.findOne('questions', { id: inserted.id })).every_nth_occasion, 3);
+
+  // Production contains imported Mongo rows created before optional timing
+  // fields existed. An unrelated autosave must normalize both absent values
+  // to null rather than rejecting them as an equal start/end hour window.
+  const legacy = await store.insert('questions', { study_id: 1, text: 'Legacy question', type: 'text', active: 1 });
+  const legacyResponse = await fetch(`${base}/admin/studies/1/questions/${legacy.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-test-role': 'admin' },
+    body: JSON.stringify({ applicable_cadences: ['realtime'] }),
+  });
+  assert.equal(legacyResponse.status, 200);
+  const normalized = await store.findOne('questions', { id: legacy.id });
+  assert.equal(normalized.from_hour_utc, null);
+  assert.equal(normalized.to_hour_utc, null);
+  assert.equal(normalized.applicable_cadences, '["realtime"]');
 });
