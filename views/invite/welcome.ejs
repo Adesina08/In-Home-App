@@ -1,9 +1,10 @@
-<%- include('../partials/onboarding_header', { phase: 3, title: "How would you like to take part? — " + study.name, user: null, showThemeToggle: true }) %>
+<% const returning = typeof returningAccount !== 'undefined' && returningAccount; %>
+<%- include('../partials/onboarding_header', { phase: 3, title: (returning ? "Choose how to continue — " : "How would you like to take part? — ") + study.name, user: null, showThemeToggle: true }) %>
 
 <div class="max-w-md mx-auto">
   <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
     <div class="text-center mb-6">
-      <h1 class="text-xl font-bold text-slate-900">How would you like to take part?</h1>
+      <h1 class="text-xl font-bold text-slate-900"><%= returning ? 'Welcome back' : 'How would you like to take part?' %></h1>
       <p class="text-sm text-slate-500 mt-2"><%= study.name %></p>
     </div>
 
@@ -24,7 +25,11 @@
       </div>
     </div>
 
-    <p class="text-xs text-slate-500 mb-4 leading-relaxed">Whichever option you choose, the next step is to create your reusable <strong>INICIO Diary</strong> username and password.</p>
+    <% if (returning) { %>
+      <p class="text-xs text-slate-500 mb-4 leading-relaxed">Your <strong>INICIO Diary</strong> login is already set up. Choose how you'd like to continue this study.</p>
+    <% } else { %>
+      <p class="text-xs text-slate-500 mb-4 leading-relaxed">Whichever option you choose, the next step is to create your reusable <strong>INICIO Diary</strong> username and password.</p>
+    <% } %>
 
     <div class="space-y-3">
       <form method="POST" action="/invite/<%= respondent.unique_token %>/choose">
@@ -33,7 +38,7 @@
           <span class="w-10 h-10 rounded-xl bg-brand-700 text-white flex items-center justify-center shrink-0"><%- icon('smartphone', 'w-5 h-5') %></span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-semibold text-slate-900">Use the INICIO Diary Mobile App</span>
-            <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Create your login next, then download and install INICIO Diary on Android.</span>
+            <span class="block text-xs text-slate-500 leading-relaxed mt-0.5"><%= returning ? 'Download INICIO Diary again, or open it if it is already installed.' : 'Create your login next, then download and install INICIO Diary on Android.' %></span>
             <span class="inline-flex mt-2 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-1 bg-brand-50 text-brand-700">Recommended</span>
           </span>
           <%- icon('arrow-right', 'w-4 h-4 text-brand-600 mt-1 shrink-0') %>
@@ -47,7 +52,7 @@
             <span class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><%- icon('chat', 'w-5 h-5') %></span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-semibold text-slate-900">Use WhatsApp</span>
-              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5">Create your INICIO Diary login next, then continue the study through WhatsApp.</span>
+              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5"><%= returning ? 'Continue this study through WhatsApp.' : 'Create your INICIO Diary login next, then continue the study through WhatsApp.' %></span>
             </span>
             <%- icon('arrow-right', 'w-4 h-4 text-emerald-600 mt-1 shrink-0') %>
           </button>
@@ -63,7 +68,7 @@
       <% } %>
     </div>
 
-    <% if (!declined) { %>
+    <% if (!declined && !returning) { %>
       <form method="POST" action="/invite/<%= respondent.unique_token %>/decline" class="mt-6 pt-5 border-t border-slate-100 text-center">
         <button class="text-xs font-medium text-slate-500 hover:text-slate-800 transition">No thanks — I'd rather not take part</button>
         <p class="text-[11px] text-slate-400 mt-1.5">One tap, and we won't contact you about this study again.</p>
