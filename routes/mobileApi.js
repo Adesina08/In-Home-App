@@ -12,7 +12,7 @@ const { findTerminateMatch } = require("../lib/skipLogic");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { persistUpload } = require("../lib/mediaStorage");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
-const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
+const { analyseLocalMedia, analyseStoredMedia } = require("../lib/mediaTranscriptAnalysis");
 const { logAudit } = require("../lib/audit");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
 const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
@@ -98,7 +98,7 @@ router.post("/auth/request-code", async (req, res) => {
   const account = await accounts.findByContact(contact);
   if (account) {
     try {
-      await otp.sendCode({ contact, respondentId: null, purpose: "account_login" });
+      await otp.sendCode({ contact, respondentId: null, purpose: "account_password_reset" });
     } catch (e) {
       if (e.code !== "COOLDOWN") return res.status(502).json({ error: e.message || "We couldn't send a code just now." });
     }
@@ -106,17 +106,37 @@ router.post("/auth/request-code", async (req, res) => {
   res.json({ ok: true, simulated: !messaging.isRealMessagingConfigured(contact), ttlMinutes: otp.TTL_MINUTES });
 });
 
+// Verifying the code does not sign anyone in -- it only proves the person
+// reached the contact on file, and earns a short-lived ticket redeemable once
+// for setting a new password (see /auth/reset-password below).
 router.post("/auth/verify", async (req, res) => {
   const contact = String(req.body.contact || "").trim();
   const code = String(req.body.code || "").trim();
   if (!contact || !code) return res.status(400).json({ error: "Enter the code we sent you." });
-  const result = await otp.verifyCode({ contact, code, purpose: "account_login" });
+  const result = await otp.verifyCode({ contact, code, purpose: "account_password_reset" });
   if (!result.ok) return res.status(400).json({ error: result.reason || "That code isn't right." });
   const account = await accounts.findByContact(contact);
   if (!account) return res.status(400).json({ error: "That code isn't right." });
-  await accounts.markVerified(account.id);
-  const session = await mobileAuth.issueSession({ accountId: account.id });
-  logAudit(`account:${account.contact}`, "mobile_login", "respondent_accounts", account.id, {});
+  const ticket = await mobileAuth.issuePasswordResetTicket(account.id);
+  logAudit(`account:${account.contact}`, "account_password_reset_verified", "respondent_accounts", account.id, {});
+  res.json({ resetToken: ticket.token, expiresAt: ticket.expiresAt });
+});
+
+router.post("/auth/reset-password", async (req, res) => {
+  const resetToken = String(req.body.resetToken || "").trim();
+  const password = String(req.body.password || "");
+  if (!resetToken) return res.status(400).json({ error: "Please verify your code again." });
+  const accountId = await mobileAuth.consumePasswordResetTicket(resetToken);
+  if (!accountId) return res.status(400).json({ error: "That code has expired. Please request a new one." });
+  try {
+    await accounts.resetPassword(accountId, password);
+  } catch (e) {
+    return res.status(400).json({ error: e.message || "We couldn't reset your password. Please try again." });
+  }
+  await accounts.markVerified(accountId);
+  const account = await accounts.getById(accountId);
+  const session = await mobileAuth.issueSession({ accountId });
+  logAudit(`account:${account.contact}`, "account_password_reset_completed", "respondent_accounts", account.id, {});
   res.json({ token: session.token, expiresAt: session.expiresAt, account: publicAccount(account) });
 });
 
@@ -226,6 +246,25 @@ router.get("/respondents/:id/diary/video-script", requireMobileAuth, async (req,
   const { questions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const script = buildVideoPrompts(questions);
   res.json(script);
+});
+
+// Standard-mode media is previewed on the device. Audio and video can also be
+// sent here before the diary is submitted so the respondent sees the real
+// transcript and AI response-quality score while the question is still open.
+// Nothing is persisted by this preview endpoint; the final submission repeats
+// the analysis against the durable media row so the research record is complete.
+router.post("/respondents/:id/diary/media-analysis", requireMobileAuth, upload.single("media"), submission.cleanupUploads, async (req, res) => {
+  const respondent = await ownedRespondent(req, req.params.id);
+  if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
+  if (!await diaryGate(respondent, res)) return;
+  if (!req.file) return res.status(400).json({ error: "Attach an audio or video recording to analyse." });
+
+  const { questions } = await loadQuestionnaire(respondent.study_id, { respondentId: respondent.id });
+  const question = questions.find((item) => item.id === Number(req.body.question_id));
+  if (!question || !["audio", "video"].includes(question.type)) return res.status(400).json({ error: "This recording does not match an audio or video diary question." });
+
+  const result = await analyseLocalMedia({ filePath: req.file.path, mediaType: question.type, question });
+  res.json({ questionId: question.id, ...result });
 });
 
 // Video mode: the respondent's part ends here. The video is saved as evidence
@@ -342,20 +381,23 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
   }
 
   let brandProvider = null;
-  let audioProvider = null;
   try { brandProvider = getBrandDetectionProvider(); } catch (e) { console.error("Mobile brand detection unavailable:", e.message); }
-  try { audioProvider = getAudioTranscriptionProvider(); } catch (e) { console.error("Mobile audio transcription unavailable:", e.message); }
   const brands = await require("../lib/productCandidates").forStudy(study);
+  const mediaAnalysisJobs = [];
 
   for (const f of req.files || []) {
     const storedPath = await persistUpload(f);
     const mime = String(f.mimetype || "");
-    const mediaType = mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "photo";
-    const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: mediaType, file_path: storedPath });
-    const mediaRow = { id: mediaId, record_id: recordId, media_type: mediaType, file_path: storedPath };
-    if (mediaType === "audio" && audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
+    const questionIdMatch = String(f.fieldname || "").match(/^(?:photo|video|audio)_q_(\d+)$/);
+    const question = questionIdMatch ? questions.find((item) => item.id === Number(questionIdMatch[1])) : null;
+    const fieldType = String(f.fieldname || "").match(/^(photo|video|audio)(?:_q_\d+)?$/)?.[1];
+    const mediaType = fieldType || (mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "photo");
+    const { id: mediaId } = await store.insert("media", { record_id: recordId, question_id: question?.id || null, media_type: mediaType, mimetype: mime, file_path: storedPath });
+    const mediaRow = { id: mediaId, record_id: recordId, question_id: question?.id || null, media_type: mediaType, file_path: storedPath };
+    if ((mediaType === "audio" || mediaType === "video") && question) mediaAnalysisJobs.push(analyseStoredMedia(mediaRow, question));
     if (mediaType !== "audio" && brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
   }
+  const mediaResults = await Promise.all(mediaAnalysisJobs);
 
   if (isSubmit && !isPractice) {
     await store.update("respondents", { id: respondent.id, activation_status: { $ne: "active" } }, { activation_status: "active" });
@@ -371,7 +413,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
 
   logAudit(respondent.respondent_code, isTerminated ? "mobile_diary_terminated" : (isSubmit ? "mobile_diary_submit" : "mobile_diary_draft"), "diary_records", recordId, { practice: !!isPractice });
   await submission.finish(req,recordId,isTerminated?"screened_out":isSubmit?"submitted":"draft");
-  res.status(201).json({ recordId, status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft") });
+  res.status(201).json({ recordId, status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"), mediaResults });
 });
 
 router.use(async (err, req, res, next) => {

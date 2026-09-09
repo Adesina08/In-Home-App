@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
 import { api } from './api';
 export type QueuedMedia={uri:string;fileName?:string|null;mimeType?:string|null;field:string};
 export type DiaryPacket={id:string;respondentId:number;kind:'standard'|'video';fields:Record<string,string>;media:QueuedMedia[];state:'pending'|'needs_attention';attempts:number;error?:string;createdAt:string};
@@ -32,7 +33,7 @@ export async function syncQueue(id:number,manual=false):Promise<void>{
       if(packet.state==='needs_attention'&&!manual)continue;
       try{
         const form=new FormData();Object.entries(packet.fields).forEach(([k,v])=>form.append(k,v));form.append('submission_id',packet.id);
-        for(const m of packet.media){const info=await FileSystem.getInfoAsync(m.uri);if(!info.exists)throw Object.assign(new Error('Saved evidence is missing from this device. Review this entry before retrying.'),{status:422});form.append(m.field,{uri:m.uri,name:m.fileName||'evidence',type:m.mimeType||'application/octet-stream'} as any);}
+        for(const m of packet.media){const info=await FileSystem.getInfoAsync(m.uri);if(!info.exists)throw Object.assign(new Error('Saved evidence is missing from this device. Review this entry before retrying.'),{status:422});form.append(m.field,new File(m.uri));}
         const receipt=packet.kind==='video'?await api.analyzeVideo(id,form):await api.submitDiary(id,form);
         if(!receipt?.recordId||!['submitted','screened_out','draft'].includes(receipt.status))throw new Error('The server did not confirm receipt. This entry remains saved for retry.');
         await removeQueued(id,packet.id);

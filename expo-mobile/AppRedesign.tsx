@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -16,15 +17,20 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import {
   useAudioRecorder,
+  useAudioPlayer,
+  useAudioPlayerStatus,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from "expo-audio";
+import { File as ExpoFile } from "expo-file-system";
+import { useVideoPlayer, VideoView } from "expo-video";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useColorScheme } from "nativewind";
 import { api, API_BASE, clearRememberedSession, extendRememberedSession, getRememberedSession, getToken, MobileEnrolment, setToken } from "./src/api";
 import { VideoDiaryScreen, VideoDraft } from "./src/screens/VideoDiary";
+import { StandardVideoCaptureScreen } from "./src/screens/StandardVideoCapture";
 import { HomeScreen, DisplayRecord } from "./src/screens/Home";
 import { EntriesScreen } from "./src/screens/Entries";
 import { ActivityScreen } from "./src/screens/Activity";
@@ -44,6 +50,7 @@ type Screen =
   | "login"
   | "forgotPassword"
   | "verifyLoginCode"
+  | "setNewPassword"
   | "profileGate"
   | "studies"
   | "home"
@@ -52,12 +59,21 @@ type Screen =
   | "profile"
   | "diaryMode"
   | "diary"
+  | "diaryQuestionVideo"
   | "diaryVideo"
   | "diaryVideoDone";
 type AnswerMap = Record<string, string | string[]>;
 type OtherTextMap = Record<string, Record<string, string>>;
 type MediaAsset = { uri: string; fileName?: string | null; mimeType?: string | null };
 type MediaMap = Record<string, MediaAsset>;
+type MediaAnalysis = {
+  transcriptStatus: "processing" | "done" | "unavailable" | "error" | "pending";
+  transcriptText?: string | null;
+  scoreStatus?: "processing" | "done" | "unavailable" | "error";
+  score?: number | null;
+  scoreRationale?: string | null;
+};
+type MediaAnalysisMap = Record<string, MediaAnalysis>;
 type ProfileForm = {
   name: string;
   location: string;
@@ -264,6 +280,48 @@ function PrimaryButton({ title, onPress, disabled = false, t, inverse = false, a
   );
 }
 
+function secondsLabel(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function AudioEvidencePreview({ asset, t }: { asset: MediaAsset; t: Theme }) {
+  const player = useAudioPlayer({ uri: asset.uri });
+  const status = useAudioPlayerStatus(player);
+  const toggle = async () => {
+    if (status.playing) return player.pause();
+    if (status.duration && status.currentTime >= status.duration - .1) await player.seekTo(0);
+    player.play();
+  };
+  return <Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause audio preview" : "Play audio preview"} onPress={toggle} style={[styles.audioPreview, { backgroundColor: t.card2, borderColor: t.border }]}><View style={[styles.previewPlay, { backgroundColor: t.blue }]}><Text style={{ color: t.white, fontWeight: "900" }}>{status.playing ? "Ⅱ" : "▶"}</Text></View><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800", fontSize: 13 }}>{status.playing ? "Playing voice note" : "Play voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>{secondsLabel(status.currentTime)}{status.duration ? ` / ${secondsLabel(status.duration)}` : ""}</Text></View></Pressable>;
+}
+
+function VideoEvidencePreview({ asset }: { asset: MediaAsset }) {
+  const player = useVideoPlayer(asset.uri);
+  return <VideoView player={player} style={styles.videoPreview} nativeControls contentFit="contain" />;
+}
+
+function CapturedEvidence({ type, asset, analysis, t }: { type: "photo" | "video" | "audio"; asset: MediaAsset; analysis?: MediaAnalysis; t: Theme }) {
+  return <View style={[styles.mediaPreviewCard, { backgroundColor: t.card, borderColor: t.border }]}>
+    {type === "photo" ? <Image source={{ uri: asset.uri }} style={styles.photoPreview} resizeMode="contain" accessibilityLabel="Captured photo preview" /> : null}
+    {type === "video" ? <VideoEvidencePreview asset={asset} /> : null}
+    {type === "audio" ? <AudioEvidencePreview asset={asset} t={t} /> : null}
+    <View style={styles.previewStatusRow}><Text style={{ color: t.green, fontSize: 11, fontWeight: "800" }}>✓ Preview ready</Text><Text style={{ color: t.muted, fontSize: 11 }}>Capture again to replace</Text></View>
+    {type !== "photo" && analysis ? <View style={[styles.transcriptCard, { backgroundColor: t.bg2, borderColor: t.border }]}>
+      <Text style={{ color: t.text, fontWeight: "900", fontSize: 12 }}>Instant transcript</Text>
+      {analysis.transcriptStatus === "processing" ? <View style={styles.analysisBusy}><ActivityIndicator size="small" color={t.blue} /><Text style={[styles.smallMuted, { color: t.muted }]}>Transcribing and scoring…</Text></View> : null}
+      {analysis.transcriptStatus === "done" ? <Text style={{ color: t.text, fontSize: 13, lineHeight: 19 }}>{analysis.transcriptText}</Text> : null}
+      {analysis.transcriptStatus === "pending" ? <Text style={[styles.smallMuted, { color: t.amber }]}>Offline preview only. Transcription and scoring will run when this entry syncs.</Text> : null}
+      {analysis.transcriptStatus === "unavailable" ? <Text style={[styles.smallMuted, { color: t.muted }]}>Transcription unavailable. The recording is still saved and playable.</Text> : null}
+      {analysis.transcriptStatus === "error" ? <Text style={[styles.smallMuted, { color: t.red }]}>The recording could not be transcribed. Capture it again or submit it for retry.</Text> : null}
+      {analysis.transcriptStatus === "done" && analysis.scoreStatus === "done" ? <View style={styles.scoreRow}><View style={[styles.scorePill, { backgroundColor: t.blueSoft }]}><Text style={{ color: t.blue, fontWeight: "900" }}>{analysis.score}/100</Text></View><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800", fontSize: 12 }}>AI response-quality score</Text><Text style={[styles.smallMuted, { color: t.muted }]}>{analysis.scoreRationale}</Text></View></View> : null}
+      {analysis.transcriptStatus === "done" && analysis.scoreStatus !== "done" ? <Text style={[styles.smallMuted, { color: t.muted }]}>AI score unavailable. This does not affect the saved transcript.</Text> : null}
+    </View> : null}
+  </View>;
+}
+
 function OutlineButton({ title, onPress, t }: any) {
   return <Pressable onPress={onPress} style={({ pressed }) => [styles.outlineButton, { borderColor: t.borderStrong, backgroundColor: t.card2 }, pressed && { opacity: .8 }]}><Text style={[styles.outlineButtonText, { color: t.text }]}>{title}</Text></Pressable>;
 }
@@ -312,6 +370,10 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [rememberMe, setRememberMe] = useState(false);
   const [recoveryContact, setRecoveryContact] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [enrolments, setEnrolments] = useState<MobileEnrolment[]>([]);
   const [selected, setSelected] = useState<MobileEnrolment | null>(null);
   const [home, setHome] = useState<any>(null);
@@ -319,10 +381,15 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [otherText, setOtherText] = useState<OtherTextMap>({});
   const [media, setMedia] = useState<MediaMap>({});
+  const [mediaAnalysis, setMediaAnalysis] = useState<MediaAnalysisMap>({});
   const [recordingQuestionId, setRecordingQuestionId] = useState<number | null>(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recordingLock = useRef(false);
+  const activeRecordingQuestion = useRef<number | null>(null);
   const [problems, setProblems] = useState<any[]>([]);
   const [videoScript, setVideoScript] = useState<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number } | null>(null);
+  const [standardVideoQuestion, setStandardVideoQuestion] = useState<any>(null);
+  const exitPromptOpen = useRef(false);
   const [photoSource,setPhotoSource] = useState<{uri:string;headers:Record<string,string>}|undefined>();
   const [photoBusy,setPhotoBusy] = useState(false);
   const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
@@ -358,7 +425,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       const asset=picked.assets[0];
       if(asset.fileSize&&asset.fileSize>3*1024*1024){Alert.alert('Choose a smaller image','Profile images must be smaller than 3 MB.');return;}
       setPhotoBusy(true);
-      const form=new FormData();form.append('photo',{uri:asset.uri,name:asset.fileName||'profile.jpg',type:asset.mimeType||'image/jpeg'} as any);
+      const form=new FormData();form.append('photo',new ExpoFile(asset.uri));
       const result=await api.uploadProfilePhoto(form);await showProfilePhoto(result.profile);
     } catch(e:any){Alert.alert('Could not upload photo',e.message);}
     finally{setPhotoBusy(false);}
@@ -479,12 +546,30 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setBusy(true);
     try {
       const result = await api.verifyCode(recoveryContact.trim(), recoveryCode.trim());
+      setResetToken(result.resetToken);
+      setRecoveryCode("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setScreen("setNewPassword");
+    } catch (e: any) { setError(e.message || "Unable to verify that code."); }
+    finally { setBusy(false); }
+  }
+
+  async function submitNewPassword() {
+    setError("");
+    if (newPassword.length < 8) return setError("Password must be at least 8 characters.");
+    if (newPassword !== confirmNewPassword) return setError("The passwords do not match.");
+    setBusy(true);
+    try {
+      const result = await api.resetPassword(resetToken, newPassword);
       await setToken(result.token, { remember: rememberMe });
       if (rememberMe) await extendRememberedSession();
       setPassword("");
-      setRecoveryCode("");
+      setResetToken("");
+      setNewPassword("");
+      setConfirmNewPassword("");
       await loadProfileGate();
-    } catch (e: any) { setError(e.message || "Unable to verify that code."); }
+    } catch (e: any) { setError(e.message || "Unable to reset your password."); }
     finally { setBusy(false); }
   }
 
@@ -535,16 +620,16 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [participationKind,setParticipationKind]=useState('occasion');
   const [entryKey,setEntryKey]=useState(packetId());
   const [occasionNumber,setOccasionNumber]=useState(1);
-  useEffect(()=>{if(screen!=='diary'||!draftKey)return;const timer=setTimeout(()=>AsyncStorage.setItem(draftKey,JSON.stringify({answers,otherText,media,captureTime,occurrenceTime,entryKey,participationKind})).catch(()=>{}),300);return()=>clearTimeout(timer);},[answers,otherText,media,captureTime,occurrenceTime,entryKey,participationKind,screen,draftKey]);
+  useEffect(()=>{if(screen!=='diary'||!draftKey)return;const timer=setTimeout(()=>AsyncStorage.setItem(draftKey,JSON.stringify({answers,otherText,media,mediaAnalysis,captureTime,occurrenceTime,entryKey,participationKind})).catch(()=>{}),300);return()=>clearTimeout(timer);},[answers,otherText,media,mediaAnalysis,captureTime,occurrenceTime,entryKey,participationKind,screen,draftKey]);
   async function reviewQueued(packet:DiaryPacket){
     if(packet.kind!=='standard')return;
     try{
       const q=await api.questionnaire(packet.respondentId);const evidence:MediaMap={};
       for(const m of packet.media){const id=m.field.split('_q_')[1];if(id)evidence[id]=await preserveMedia(m,`draft-${packet.respondentId}`);}
-      const draft={answers:JSON.parse(packet.fields.answers_json||'{}'),otherText:JSON.parse(packet.fields.other_text_json||'{}'),media:evidence,captureTime:packet.fields.capture_time,occurrenceTime:packet.fields.occurrence_time,entryKey:packetId(),participationKind:packet.fields.participation_kind||'occasion'};
+      const draft={answers:JSON.parse(packet.fields.answers_json||'{}'),otherText:JSON.parse(packet.fields.other_text_json||'{}'),media:evidence,mediaAnalysis:{},captureTime:packet.fields.capture_time,occurrenceTime:packet.fields.occurrence_time,entryKey:packetId(),participationKind:packet.fields.participation_kind||'occasion'};
       await AsyncStorage.setItem(`inicio.draft.${packet.respondentId}`,JSON.stringify(draft));
       await removeQueued(packet.respondentId,packet.id);
-      setQuestionnaire(q);setAnswers(draft.answers);setOtherText(draft.otherText);setMedia(evidence);setCaptureTime(draft.captureTime);setOccurrenceTime(draft.occurrenceTime);setEntryKey(draft.entryKey);setParticipationKind(draft.participationKind);setOccasionNumber(q.occasionNumber||1);setScreen('diary');setPendingEntries(await listQueue(packet.respondentId));
+      setQuestionnaire(q);setAnswers(draft.answers);setOtherText(draft.otherText);setMedia(evidence);setMediaAnalysis({});setCaptureTime(draft.captureTime);setOccurrenceTime(draft.occurrenceTime);setEntryKey(draft.entryKey);setParticipationKind(draft.participationKind);setOccasionNumber(q.occasionNumber||1);setScreen('diary');setPendingEntries(await listQueue(packet.respondentId));
     }catch(e:any){Alert.alert('Could not open saved entry',e.message);}
   }
   async function refreshSync(manual=false){if(!selected)return;await syncQueue(selected.respondent.id,manual);setPendingEntries(await listQueue(selected.respondent.id));}
@@ -555,6 +640,36 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     const listener=AppState.addEventListener('change',state=>{if(state==='active')refreshSync().catch(()=>{});});
     return()=>{clearInterval(timer);listener.remove();};
   },[selected?.respondent.id]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const confirmExit = () => {
+      if (exitPromptOpen.current) return;
+      exitPromptOpen.current = true;
+      Alert.alert("Close Inicio Diary?", "Your saved drafts and queued entries will remain on this device.", [
+        { text: "Stay", style: "cancel", onPress: () => { exitPromptOpen.current = false; } },
+        { text: "Close app", onPress: () => { exitPromptOpen.current = false; BackHandler.exitApp(); } },
+      ], { cancelable: true, onDismiss: () => { exitPromptOpen.current = false; } });
+    };
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (busy || screen === "loading") return true;
+      if (screen === "diaryVideo" || screen === "diaryQuestionVideo") return false;
+      if (screen === "forgotPassword") { setError(""); setScreen("login"); return true; }
+      if (screen === "verifyLoginCode") { setError(""); setScreen("forgotPassword"); return true; }
+      if (screen === "setNewPassword") { setError(""); setScreen("verifyLoginCode"); return true; }
+      if (screen === "entries" || screen === "activity" || screen === "profile" || screen === "sync") { setScreen("home"); return true; }
+      if (screen === "participation" || screen === "rewards") { setScreen("profile"); return true; }
+      if (screen === "diary") {
+        if (recordingQuestionId !== null) { Alert.alert("Recording in progress", "Stop the voice recording before going back."); return true; }
+        setScreen("diaryMode"); return true;
+      }
+      if (screen === "diaryMode" || screen === "diaryVideoDone") { setScreen("home"); return true; }
+      if (screen === "home" && enrolments.length > 1) { setScreen("studies"); return true; }
+      confirmExit();
+      return true;
+    });
+    return () => listener.remove();
+  }, [screen, busy, recordingQuestionId, enrolments.length]);
 
   async function startDiary() {
     if (!selected) return;
@@ -568,7 +683,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       setOccasionNumber((q.occasionNumber||1)+(await listQueue(selected.respondent.id)).filter(p=>p.fields.practice!=='1').length);
       const saved = draftKey ? await AsyncStorage.getItem(draftKey) : null;
       const draft=saved?JSON.parse(saved):{};
-      setAnswers(draft.answers||{});setOtherText(draft.otherText||{});setMedia(draft.media||{});setCaptureTime(draft.captureTime||new Date().toISOString());setOccurrenceTime(draft.occurrenceTime||new Date().toISOString());setEntryKey(draft.entryKey||packetId());setParticipationKind(draft.participationKind||'occasion');setScreen("diary");
+      setAnswers(draft.answers||{});setOtherText(draft.otherText||{});setMedia(draft.media||{});setMediaAnalysis(draft.mediaAnalysis||{});setCaptureTime(draft.captureTime||new Date().toISOString());setOccurrenceTime(draft.occurrenceTime||new Date().toISOString());setEntryKey(draft.entryKey||packetId());setParticipationKind(draft.participationKind||'occasion');setScreen("diary");
     } catch (e: any) {
       if (e.profileRequired) await loadProfileGate();
       else Alert.alert("Diary unavailable", e.message);
@@ -601,7 +716,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     if (!draftKey) return;
     const durable:MediaMap={};for(const [id,asset] of Object.entries(media)){durable[id]=await preserveMedia({...asset,field:id},`draft-${selected?.respondent.id}`);}
     setMedia(durable);
-    await AsyncStorage.setItem(draftKey, JSON.stringify({ answers, otherText, media:durable,captureTime,occurrenceTime,entryKey,participationKind,savedAt: new Date().toISOString() }));
+    await AsyncStorage.setItem(draftKey, JSON.stringify({ answers, otherText, media:durable,mediaAnalysis,captureTime,occurrenceTime,entryKey,participationKind,savedAt: new Date().toISOString() }));
     Alert.alert("Draft saved", "Your answers are stored on this device. You can continue later.");
   }
 
@@ -615,14 +730,44 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setProblems((old) => old.filter((p) => p.questionId !== questionId));
   }
 
-  async function pickEvidence(q: any) {
+  async function analyseEvidence(q: any, asset: MediaAsset) {
+    if (!selected || !["audio", "video"].includes(q.type)) return;
+    const id = String(q.id);
+    setMediaAnalysis((old) => ({ ...old, [id]: { transcriptStatus: "processing", scoreStatus: "processing" } }));
     try {
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: q.type === "video" ? ["videos"] : ["images"], quality: .82, videoMaxDuration: 45 } as any);
-      if (!result.canceled && result.assets?.[0]) { const saved=await preserveMedia({...result.assets[0],field:String(q.id)},`draft-${selected?.respondent.id}`);setMedia((old) => ({ ...old, [String(q.id)]:saved })); }
+      const form = new FormData();
+      form.append("question_id", id);
+      form.append("media", new ExpoFile(asset.uri));
+      const result = await api.analyseMedia(selected.respondent.id, form);
+      setMediaAnalysis((old) => ({ ...old, [id]: result }));
+    } catch (e: any) {
+      const offline = !e.status;
+      setMediaAnalysis((old) => ({
+        ...old,
+        [id]: {
+          transcriptStatus: offline ? "pending" : "error",
+          scoreStatus: "unavailable",
+          scoreRationale: offline ? "Waiting for a connection." : (e.message || "Analysis failed."),
+        },
+      }));
+    }
+  }
+
+  async function pickEvidence(q: any) {
+    if (q.type === "video") {
+      setStandardVideoQuestion(q);
+      setScreen("diaryQuestionVideo");
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: .82 } as any);
+      if (!result.canceled && result.assets?.[0]) { const saved=await preserveMedia({...result.assets[0],field:String(q.id)},`draft-${selected?.respondent.id}`);setMedia((old) => ({ ...old, [String(q.id)]:saved }));setMediaAnalysis((old)=>{const next={...old};delete next[String(q.id)];return next;}); }
     } catch (e: any) { Alert.alert("Camera unavailable", e.message || "Could not open the camera."); }
   }
 
   async function startRecording(questionId: number) {
+    if (recordingLock.current || activeRecordingQuestion.current !== null) return;
+    recordingLock.current = true;
     try {
       const permission = await requestRecordingPermissionsAsync();
       if (!permission.granted) {
@@ -630,16 +775,22 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
         return;
       }
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await audioRecorder.prepareToRecordAsync();
+      const current = audioRecorder.getStatus();
+      if (!current.canRecord) await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
+      activeRecordingQuestion.current = questionId;
       setRecordingQuestionId(questionId);
     } catch (e: any) {
+      try { if (audioRecorder.getStatus().canRecord) await audioRecorder.stop(); } catch {}
       Alert.alert("Microphone unavailable", e.message || "Could not start recording.");
+    } finally {
+      recordingLock.current = false;
     }
   }
 
   async function stopRecording(questionId: number) {
-    if (recordingQuestionId !== questionId) return;
+    if (recordingLock.current || activeRecordingQuestion.current !== questionId) return;
+    recordingLock.current = true;
     try {
       await audioRecorder.stop();
       if (audioRecorder.uri) {
@@ -648,11 +799,16 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
           ...old,
           [String(questionId)]: durable,
         }));
+        const question=questionnaire?.questions?.find((item:any)=>item.id===questionId);
+        if(question)analyseEvidence(question,durable);
       }
     } catch (e: any) {
       Alert.alert("Recording failed", e.message || "Could not save the voice note.");
     } finally {
+      activeRecordingQuestion.current = null;
       setRecordingQuestionId(null);
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(()=>{});
+      recordingLock.current = false;
     }
   }
 
@@ -664,7 +820,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       const evidence=Object.entries(media).map(([id,asset])=>{const q=questionnaire.questions.find((q:any)=>String(q.id)===id);return {...asset,field:`${q?.type||'photo'}_q_${id}`,mimeType:asset.mimeType||(q?.type==='audio'?'audio/m4a':q?.type==='video'?'video/mp4':'image/jpeg')};});
       await enqueue({id:entryKey,respondentId:selected.respondent.id,kind:'standard',fields:{action:'submit',entry_mode:'standard',occurrence_time:occurrenceTime,capture_time:captureTime,submit_time:new Date().toISOString(),answers_json:JSON.stringify(answers),other_text_json:JSON.stringify(otherText),participation_kind:participationKind,practice:questionnaire.study.practiceRequired?'1':'0',occasion_number:String(occasionNumber)},media:evidence,state:'pending',attempts:0,createdAt:new Date().toISOString()});
       if(draftKey)await AsyncStorage.removeItem(draftKey);
-      setAnswers({});setOtherText({});setMedia({});setScreen('sync');await refreshSync();
+      setAnswers({});setOtherText({});setMedia({});setMediaAnalysis({});setScreen('sync');await refreshSync();
       try{setHome(await api.home(selected.respondent.id));}catch{}
     } catch (e: any) {
       if (e.profileRequired) await loadProfileGate();
@@ -687,9 +843,11 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   if (screen === "login") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.loginTop}><BookMark t={t} large /><Text style={[styles.loginTitle, { color: t.text }]}>Inicio Diary</Text><Text style={[styles.loginSubtitle, { color: t.muted }]}>Sign in to your consumption diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Your username" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} /><View style={styles.passwordLabelRow}><Text style={[styles.label, { color: t.muted }]}>Password</Text><Pressable accessibilityRole="button" onPress={openPasswordRecovery} hitSlop={8}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Forgotten password?</Text></Pressable></View><View style={[styles.inputShell, { borderColor: t.border, backgroundColor: t.bg }]}><TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" placeholder="Your password" placeholderTextColor={t.subtle} style={[styles.inputEmbedded, { color: t.text }]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "Hide password" : "Show password"} onPress={() => setShowPassword((visible) => !visible)} hitSlop={6} style={styles.passwordToggle}><LineIcon name={showPassword ? "eyeSlash" : "eye"} size={20} color={t.muted} /></Pressable></View><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: rememberMe }} accessibilityLabel="Remember me for 30 days" onPress={toggleRememberMe} style={styles.rememberRow} hitSlop={6}><View style={[styles.checkbox, { borderColor: rememberMe ? t.blue : t.border, backgroundColor: rememberMe ? t.blue : t.bg }]}>{rememberMe ? <LineIcon name="checkSmall" size={13} color={t.white} /> : null}</View><Text style={[styles.rememberText, { color: t.muted }]}>Remember me for 30 days</Text></Pressable>{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Opening…" : "Open my diary"} onPress={login} disabled={busy} t={t} arrow={false} /></View><View style={[styles.firstTimeCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph="⌘" t={t} /><View style={{ flex: 1 }}><Text style={[styles.firstTimeTitle, { color: t.text }]}>First time here?</Text><Text style={[styles.firstTimeCopy, { color: t.muted }]}>Open the invitation link or scan the QR code you received to set up your login.</Text></View></View><Text style={[styles.secureText, { color: t.subtle }]}>Inicio Diary · Secure respondent access</Text></ScrollView></KeyboardAvoidingView></AppFrame>;
 
-  if (screen === "forgotPassword") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("login"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Back to sign in</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="lock" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Forgotten password?</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the phone number or email used for your invitation. We’ll send a one-time code so you can securely open your diary.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Phone number or email</Text><TextInput value={recoveryContact} onChangeText={setRecoveryContact} autoCapitalize="none" autoCorrect={false} placeholder="Your phone number or email" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12, lineHeight: 17 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Sending code…" : "Send verification code"} onPress={requestRecoveryCode} disabled={busy} t={t} arrow={false} /><Text style={[styles.recoveryNote, { color: t.subtle }]}>This signs you in with a one-time code. It does not change your existing password.</Text></View></ScrollView></KeyboardAvoidingView></AppFrame>;
+  if (screen === "forgotPassword") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("login"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Back to sign in</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="lock" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Forgotten password?</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the phone number or email used for your invitation. We’ll send a one-time code so you can set a new password.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Phone number or email</Text><TextInput value={recoveryContact} onChangeText={setRecoveryContact} autoCapitalize="none" autoCorrect={false} placeholder="Your phone number or email" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12, lineHeight: 17 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Sending code…" : "Send verification code"} onPress={requestRecoveryCode} disabled={busy} t={t} arrow={false} /></View></ScrollView></KeyboardAvoidingView></AppFrame>;
 
-  if (screen === "verifyLoginCode") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("forgotPassword"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Change phone number or email</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="mail" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Enter your code</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the verification code sent to {recoveryContact}.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Verification code</Text><TextInput value={recoveryCode} onChangeText={setRecoveryCode} keyboardType="number-pad" autoCapitalize="none" maxLength={6} placeholder="6-digit code" placeholderTextColor={t.subtle} style={[styles.input, styles.codeInput, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Checking code…" : "Open my diary"} onPress={verifyRecoveryCode} disabled={busy} t={t} arrow={false} /><Pressable accessibilityRole="button" disabled={busy} onPress={requestRecoveryCode} style={styles.resendButton}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Send a new code</Text></Pressable></View></ScrollView></KeyboardAvoidingView></AppFrame>;
+  if (screen === "verifyLoginCode") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><Pressable accessibilityRole="button" onPress={() => { setError(""); setScreen("forgotPassword"); }}><Text style={[styles.backLink, { color: t.blue }]}>← Change phone number or email</Text></Pressable><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="mail" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Enter your code</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Enter the verification code sent to {recoveryContact}.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>Verification code</Text><TextInput value={recoveryCode} onChangeText={setRecoveryCode} keyboardType="number-pad" autoCapitalize="none" maxLength={6} placeholder="6-digit code" placeholderTextColor={t.subtle} style={[styles.input, styles.codeInput, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Checking code…" : "Verify code"} onPress={verifyRecoveryCode} disabled={busy} t={t} arrow={false} /><Pressable accessibilityRole="button" disabled={busy} onPress={requestRecoveryCode} style={styles.resendButton}><Text style={[styles.forgotPasswordLink, { color: t.blue }]}>Send a new code</Text></Pressable></View></ScrollView></KeyboardAvoidingView></AppFrame>;
+
+  if (screen === "setNewPassword") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.recoveryWrap} keyboardShouldPersistTaps="handled"><LoginDoodleField color={t.blue} /><View style={styles.recoveryHeading}><View style={[styles.recoveryIcon, { backgroundColor: t.blueSoft }]}><LineIcon name="lock" size={26} color={t.blue} /></View><Text style={[styles.loginTitle, { color: t.text }]}>Set a new password</Text><Text style={[styles.recoveryCopy, { color: t.muted }]}>Choose a new password for your account. It must be at least 8 characters.</Text></View><View style={styles.loginFields}><Text style={[styles.label, { color: t.muted }]}>New password</Text><View style={[styles.inputShell, { borderColor: t.border, backgroundColor: t.bg }]}><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry={!showNewPassword} autoCapitalize="none" placeholder="New password" placeholderTextColor={t.subtle} style={[styles.inputEmbedded, { color: t.text }]} /><Pressable accessibilityRole="button" accessibilityLabel={showNewPassword ? "Hide password" : "Show password"} onPress={() => setShowNewPassword((visible) => !visible)} hitSlop={6} style={styles.passwordToggle}><LineIcon name={showNewPassword ? "eyeSlash" : "eye"} size={20} color={t.muted} /></Pressable></View><Text style={[styles.label, { color: t.muted }]}>Confirm new password</Text><TextInput value={confirmNewPassword} onChangeText={setConfirmNewPassword} secureTextEntry={!showNewPassword} autoCapitalize="none" placeholder="Confirm new password" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Saving…" : "Save new password"} onPress={submitNewPassword} disabled={busy} t={t} arrow={false} /></View></ScrollView></KeyboardAvoidingView></AppFrame>;
 
   if (screen === "profileGate") return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"><View style={styles.simpleTop}><Brand t={t} /><Pressable onPress={logout}><Text style={{ color: t.muted, fontWeight: "700" }}>Sign out</Text></Pressable></View><Text style={[styles.screenTitle, { color: t.text }]}>Your details</Text><Text style={[styles.screenCopy, { color: t.muted }]}>Complete your one-time Inicio Diary profile.</Text><Card t={t} style={{ gap: 10 }}><Text style={[styles.label, { color: t.muted }]}>Name</Text><TextInput value={profileForm.name} onChangeText={(v) => setProfileForm((p) => ({ ...p, name: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><FieldError message={profileErrors.name} t={t} /><Text style={[styles.label, { color: t.muted }]}>Where do you currently live?</Text><TextInput value={profileForm.location} onChangeText={(v) => setProfileForm((p) => ({ ...p, location: v }))} placeholder="City / state / area" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><FieldError message={profileErrors.location} t={t} /><Text style={[styles.label, { color: t.muted }]}>Age</Text><TextInput value={profileForm.age} onChangeText={(v) => setProfileForm((p) => ({ ...p, age: v }))} keyboardType="number-pad" style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Gender</Text><ChoiceList options={GENDERS} value={profileForm.gender} onChange={(v) => setProfileForm((p) => ({ ...p, gender: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>Education</Text><ChoiceList options={EDUCATION} value={profileForm.education_level} onChange={(v) => setProfileForm((p) => ({ ...p, education_level: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>Occupation</Text><TextInput value={profileForm.occupation} onChangeText={(v) => setProfileForm((p) => ({ ...p, occupation: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Religion</Text><TextInput value={profileForm.religion} onChangeText={(v) => setProfileForm((p) => ({ ...p, religion: v }))} style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg2 }]} /><Text style={[styles.label, { color: t.muted }]}>Marital status</Text><ChoiceList options={MARITAL} value={profileForm.marital_status} onChange={(v) => setProfileForm((p) => ({ ...p, marital_status: v }))} t={t} /><Text style={[styles.label, { color: t.muted }]}>May Inicio contact you about future research?</Text><ChoiceList options={[["yes", "Yes"], ["no", "No"]]} value={profileForm.recontact_consent} onChange={(v) => setProfileForm((p) => ({ ...p, recontact_consent: v }))} t={t} />{error ? <Text style={{ color: t.red, fontSize: 12 }}>{error}</Text> : null}<PrimaryButton title={busy ? "Saving…" : "Save profile & continue"} onPress={saveProfile} disabled={busy} t={t} /></Card></ScrollView></KeyboardAvoidingView></AppFrame>;
 
@@ -813,7 +971,24 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   if (screen === "diaryVideo" && selected && videoScript)
     return <AppFrame t={t} mode={mode}><VideoDiaryScreen mode={mode} respondentId={selected.respondent.id} script={videoScript} onBack={() => setScreen("diaryMode")} onSubmit={submitRecordedVideo} /></AppFrame>;
 
-  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("home")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: t.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: t.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: t.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{q.type === "video" ? "Record video" : "Take photo"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens your camera — no gallery photos.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPressIn={() => startRecording(q.id)} onPressOut={() => stopRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… release to stop" : "Press and hold to record"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <Text style={{ color: t.green, marginTop: 6, fontSize: 11 }}>✓ Evidence captured</Text> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
+  if (screen === "diaryQuestionVideo" && selected && standardVideoQuestion)
+    return <StandardVideoCaptureScreen
+      mode={mode}
+      respondentId={selected.respondent.id}
+      questionId={standardVideoQuestion.id}
+      questionText={standardVideoQuestion.text}
+      onBack={() => { setStandardVideoQuestion(null); setScreen("diary"); }}
+      onCaptured={(asset) => {
+        const question = standardVideoQuestion;
+        setMedia((old) => ({ ...old, [String(question.id)]: asset }));
+        setMediaAnalysis((old) => { const next = { ...old }; delete next[String(question.id)]; return next; });
+        setStandardVideoQuestion(null);
+        setScreen("diary");
+        analyseEvidence(question, asset);
+      }}
+    />;
+
+  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: t.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: t.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: t.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… tap to stop" : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
 }
@@ -844,11 +1019,11 @@ const styles = StyleSheet.create({
   rememberText: { fontSize: 13, fontWeight: "600" },
   textArea: { height: 96, paddingTop: 12, textAlignVertical: "top" },
   primaryButtonShell: { width: "100%", minHeight: 48, borderRadius: 12, borderWidth: 1, marginTop: 2, overflow: "hidden", elevation: 2, shadowColor: "#091426", shadowOffset: { width: 0, height: 2 }, shadowOpacity: .12, shadowRadius: 4 },
-  primaryButton: { width: "100%", minHeight: 46, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 18 },
+  primaryButton: { width: "100%", minHeight: 46, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 48, position: "relative" },
   primaryButtonDisabled: { opacity: .5 },
   primaryButtonPressed: { opacity: .84 },
   primaryButtonText: { fontSize: 15, fontWeight: "900", textAlign: "center" },
-  buttonArrow: { fontSize: 20, marginTop: -2 },
+  buttonArrow: { position: "absolute", right: 18, top: 10, fontSize: 20, lineHeight: 24 },
   outlineButton: { minHeight: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 2 },
   outlineButtonText: { fontSize: 14, fontWeight: "800" },
   firstTimeCard: { borderWidth: 1, borderRadius: 14, padding: 12, flexDirection: "row", gap: 10, alignItems: "center", marginTop: 80 },
@@ -947,6 +1122,16 @@ const styles = StyleSheet.create({
   answerChips: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   answerChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 7 },
   evidenceCard: { borderWidth: 1, borderRadius: 14, minHeight: 58, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 10 },
+  mediaPreviewCard: { borderWidth: 1, borderRadius: 14, padding: 10, gap: 9, marginTop: 8, overflow: "hidden" },
+  photoPreview: { width: "100%", height: 210, borderRadius: 10, backgroundColor: "#101827" },
+  videoPreview: { width: "100%", height: 230, borderRadius: 10, backgroundColor: "#101827" },
+  audioPreview: { minHeight: 58, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 10 },
+  previewPlay: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  previewStatusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  transcriptCard: { borderWidth: 1, borderRadius: 12, padding: 11, gap: 8 },
+  analysisBusy: { flexDirection: "row", alignItems: "center", gap: 8 },
+  scoreRow: { flexDirection: "row", alignItems: "flex-start", gap: 9, marginTop: 2 },
+  scorePill: { minWidth: 62, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, alignItems: "center" },
   voiceRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   diaryFooter: { height: 72, borderTopWidth: 1, paddingHorizontal: 24, flexDirection: "row", alignItems: "center", gap: 10 },
   footerSecondary: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },

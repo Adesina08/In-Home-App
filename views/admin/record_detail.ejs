@@ -114,7 +114,9 @@
             <div class="mt-2.5 text-xs">
               <span class="text-slate-400">Brand detection:</span>
               <% if (m.detection_status === 'done' && m.detected_brand) { %>
-                <span class="font-semibold text-emerald-700"><%= m.detected_brand %></span>
+                <span class="font-semibold text-emerald-700"><%= m.detected_brand %><% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>% logo confidence)<% } %></span>
+              <% } else if (m.detection_status === 'needs_review' && m.detected_brand) { %>
+                <span class="font-semibold text-amber-700"><%= m.detected_brand %> — needs review<% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>)<% } %></span>
               <% } else if (m.detection_status === 'done') { %>
                 <span class="text-slate-500">ran, no brand matched</span>
               <% } else { %>
@@ -123,7 +125,7 @@
             </div>
           <% } %>
 
-          <% if (m.media_type === 'audio') { %>
+          <% if (m.media_type === 'audio' || m.media_type === 'video') { %>
             <div class="mt-2.5">
               <div class="text-xs text-slate-400 mb-1">Transcript</div>
               <% if (m.transcript_status === 'done' && m.transcript_text) { %>
@@ -132,6 +134,11 @@
                 <div class="text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-300 rounded-lg px-3 py-2.5">
                   <%= m.transcript_status === 'unavailable' ? 'Not transcribed — no speech provider configured. The recording above is still playable.' : 'Transcription ' + m.transcript_status + '.' %>
                 </div>
+              <% } %>
+              <% if (m.transcript_score_status === 'done' && m.transcript_score !== null && m.transcript_score !== undefined) { %>
+                <div class="mt-2 text-xs text-slate-600"><strong class="text-slate-800">AI response-quality score: <%= m.transcript_score %>/100</strong><% if (m.transcript_score_reason) { %> · <%= m.transcript_score_reason %><% } %></div>
+              <% } else if (m.transcript_status === 'done') { %>
+                <div class="mt-2 text-xs text-slate-400">AI response-quality score unavailable.</div>
               <% } %>
             </div>
           <% } %>

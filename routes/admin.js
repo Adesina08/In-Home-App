@@ -11,6 +11,7 @@ const { runReminderEngine } = require("../lib/reminders");
 const { parseUpload, parseConditionText } = require("../lib/questionnaireParser");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
+const { analyseStoredMedia } = require("../lib/mediaTranscriptAnalysis");
 const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
 const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
@@ -1772,8 +1773,16 @@ async function mediaRowsForRecords(recordIds) {
     upload_time: m.upload_time,
     detection_status: m.detection_status,
     detected_brand: m.detected_brand,
+    detection_confidence: m.detection_confidence,
+    detection_method: m.detection_method,
+    detection_review_status: m.detection_review_status,
+    detection_verified_by: m.detection_verified_by,
+    detection_verified_at: m.detection_verified_at,
     transcript_status: m.transcript_status,
     transcript_text: m.transcript_text,
+    transcript_score_status: m.transcript_score_status,
+    transcript_score: m.transcript_score,
+    transcript_score_reason: m.transcript_score_reason,
   }));
 }
 
@@ -1916,13 +1925,42 @@ router.post("/media/:id/detect", async (req, res) => {
   res.redirect(req.get("Referrer") || `/admin/studies/${record.study_id}/media`);
 });
 
+router.post("/media/:id/brand-review", async (req, res) => {
+  const media = await store.findOne("media", { id: Number(req.params.id) });
+  if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
+  const record = await store.findOne("diary_records", { id: media.record_id });
+  if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
+  const study = await store.findOne("studies", { id: record.study_id });
+  const brands = await require("../lib/productCandidates").forStudy(study);
+  const action = req.body.action;
+  const candidate = brands.find((brand) => brand.name === media.detected_brand);
+  if (!candidate || !["confirm", "reject"].includes(action)) {
+    return res.status(400).render("error", { message: "This brand candidate cannot be reviewed.", user: req.session.user });
+  }
+
+  await store.update("media", { id: media.id }, {
+    detection_status: action === "confirm" ? "done" : "rejected",
+    detected_brand: action === "confirm" ? candidate.name : null,
+    detection_review_status: action === "confirm" ? "confirmed" : "rejected",
+    detection_verified_by: req.session.user.email,
+    detection_verified_at: store.nowSql(),
+    detection_method: action === "confirm" ? `${media.detection_method || "candidate"}_human_verified` : media.detection_method,
+  });
+  logAudit(req.session.user.email, `brand_detection_${action}ed`, "media", media.id, { candidate: candidate.name });
+  res.redirect(req.get("Referrer") || `/admin/studies/${record.study_id}/media`);
+});
+
 router.post("/media/:id/transcribe", async (req, res) => {
   const media = await store.findOne("media", { id: Number(req.params.id) });
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
   const record = await store.findOne("diary_records", { id: media.record_id });
   try {
-    const provider = getAudioTranscriptionProvider();
-    await provider.transcribe(media);
+    const question = media.question_id ? await store.findOne("questions", { id: media.question_id, study_id: record.study_id }) : null;
+    if (question) await analyseStoredMedia(media, question);
+    else {
+      const provider = getAudioTranscriptionProvider();
+      await provider.transcribe(media);
+    }
     logAudit(req.session.user.email, "audio_transcription_run", "media", media.id, {});
   } catch (e) {
     await store.update("media", { id: media.id }, {
