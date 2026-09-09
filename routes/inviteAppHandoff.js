@@ -2,7 +2,7 @@
 // Inicio Diary login experience.
 //
 // New respondent: /invite/:token -> presurvey -> channel -> account -> ready
-// Returning to the same invitation after setup: /invite/:token -> ready
+// Returning respondent: /invite/:token -> choose app or WhatsApp again
 // Installed Android app: /mobile/login -> diary
 const express = require("express");
 const store = require("../lib/store");
@@ -14,6 +14,25 @@ const router = express.Router();
 function apkUrl() {
   return (process.env.ANDROID_APK_URL || "").trim() || "/public/downloads/inicio-diary.apk";
 }
+
+function whatsappReady() {
+  return (process.env.WHATSAPP_BOT_NUMBER || "").trim() || null;
+}
+
+function whatsappChatUrl(inviteToken) {
+  const configured = whatsappReady();
+  if (!configured) return null;
+  const digits = configured.replace(/^whatsapp:/i, "").replace(/\D/g, "");
+  if (!digits) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(`JOIN ${inviteToken}`)}`;
+}
+
+const CADENCE = {
+  realtime: "each time you consume something, as it happens",
+  daily: "once a day",
+  weekly: "once a week",
+  monthly: "once a month",
+};
 
 async function loadInvite(req, res) {
   const respondent = await store.findOne("respondents", { unique_token: req.params.token });
@@ -51,17 +70,77 @@ function renderReady(res, respondent, study, account) {
   });
 }
 
-// A completed app invitation must never fall through to /mobile/login in the
-// browser. Re-opening the invite/QR shows the app handoff screen instead.
+function renderReturningChoice(res, respondent, study) {
+  return res.render("invite/welcome", {
+    respondent,
+    study,
+    cadence: CADENCE[study.diary_mode] || "from time to time",
+    apkUrl: apkUrl(),
+    whatsappNumber: whatsappReady(),
+    declined: false,
+    returningAccount: true,
+    user: null,
+  });
+}
+
+// Re-scanning a completed invitation must not lock the respondent into the
+// channel they chose previously. Show the channel choice again so someone who
+// used WhatsApp can later download the app, and an app user can move back to
+// WhatsApp without needing a new invitation.
 router.get("/:token", async (req, res, next) => {
   const respondent = await store.findOne("respondents", { unique_token: req.params.token });
   if (!respondent) return next();
-  if (!respondent.presurvey_completed_at || respondent.chosen_mode !== "app") return next();
+  if (!respondent.presurvey_completed_at || respondent.activation_status === "disqualified") return next();
+
   const account = await readyAccount(respondent);
   if (!account) return next();
+
   const study = await store.findOne("studies", { id: respondent.study_id });
   if (!study) return next();
-  return renderReady(res, respondent, study, account);
+
+  return renderReturningChoice(res, respondent, study);
+});
+
+// Returning respondents already have credentials, so their channel choice can
+// complete immediately: app -> ready/download handoff, WhatsApp -> chat.
+// First-time respondents fall through to routes/invite.js, which sends them to
+// account creation before either handoff.
+router.post("/:token/choose", async (req, res, next) => {
+  const respondent = await store.findOne("respondents", { unique_token: req.params.token });
+  if (!respondent || !respondent.presurvey_completed_at || respondent.activation_status === "disqualified") {
+    return next();
+  }
+
+  const account = await readyAccount(respondent);
+  if (!account) return next();
+
+  const requested = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
+  const mode = requested === "apk" ? "app" : requested;
+  const preferredChannel = mode === "whatsapp" ? "whatsapp" : "app";
+
+  await store.update("respondents", { id: respondent.id }, {
+    chosen_mode: mode,
+    preferred_channel: preferredChannel,
+  });
+  logAudit(
+    `respondent:${respondent.respondent_code}`,
+    "invite_mode_chosen",
+    "respondents",
+    respondent.id,
+    { mode, returning_account: true }
+  );
+
+  if (mode === "app") {
+    return res.redirect(`/invite/${respondent.unique_token}/ready`);
+  }
+
+  const wa = whatsappChatUrl(respondent.unique_token);
+  if (wa) return res.redirect(wa);
+
+  return res.status(503).render("error", {
+    message: "WhatsApp participation is not configured for this deployment yet. Please choose the INICIO Diary mobile app instead.",
+    user: null,
+  });
 });
 
 router.get("/:token/ready", async (req, res) => {
