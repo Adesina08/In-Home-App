@@ -104,7 +104,7 @@
           types the browser can't: a checkbox group has no `required`
           attribute of its own, so a required multi-select was marked with an
           asterisk the form never actually asked for. %>
-      <div class="q-wrap border-t border-slate-100 pt-5<%= qProblem ? ' bg-red-50/40 -mx-2 px-2 rounded-xl' : '' %>" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>" data-every-nth="<%= q.every_nth_occasion||'' %>" data-from-hour="<%= q.from_hour_utc??'' %>" data-to-hour="<%= q.to_hour_utc??'' %>" data-qtype="<%= q.type %>" data-required="<%= q.required ? '1' : '0' %>" data-section="<%= q.section || '' %>">
+      <div class="q-wrap border-t border-slate-100 pt-5<%= qProblem ? ' bg-red-50/40 -mx-2 px-2 rounded-xl' : '' %>" id="q-wrap-<%= q.id %>" data-qid="<%= q.id %>" data-every-nth="<%= q.every_nth_occasion||'' %>" data-from-hour="<%= q.from_hour_utc??'' %>" data-to-hour="<%= q.to_hour_utc??'' %>" data-qtype="<%= q.type %>" data-required="<%= q.required ? '1' : '0' %>" data-max-selections="<%= q.type === 'multi' && q.max_selections ? q.max_selections : '' %>" data-section="<%= q.section || '' %>">
         <label class="block text-base sm:text-sm font-medium text-slate-700 mb-2">
           <%- renderPipeHtml(q.text, { respondent, study }) %> <% if(q.required){ %><span class="text-red-500">*</span><% } %>
           <% if (qProblem) { %><span class="block text-xs font-normal text-red-600 mt-1"><%= qProblem.message %></span><% } %>
@@ -122,6 +122,7 @@
             <% }) %>
           </div>
         <% } else if (q.type === 'multi') { %>
+          <% if (q.max_selections) { %><p class="text-xs text-slate-500 -mt-1 mb-2">Select up to <%= q.max_selections %>.</p><% } %>
           <div class="space-y-2">
             <% const pvArr = Array.isArray(pv) ? pv : (pv ? [pv] : []); %>
             <% q.options.forEach((opt, oi) => { %>
@@ -438,6 +439,28 @@
   // Submitting through XHR rather than a plain form post, purely so there is an
   // upload-progress event to read. On any failure the page falls back to a
   // normal submit, so a browser quirk can never strand a finished entry.
+  function enforceMultiSelectionLimit(changedInput) {
+    if (!changedInput || changedInput.type !== 'checkbox') return true;
+    const wrap = changedInput.closest('.q-wrap[data-qtype="multi"]');
+    if (!wrap) return true;
+    const max = Number(wrap.dataset.maxSelections || 0);
+    if (!Number.isInteger(max) || max < 1) return true;
+    const checked = wrap.querySelectorAll('input[type="checkbox"]:checked').length;
+    if (checked <= max) return true;
+    changedInput.checked = false;
+    const label = wrap.querySelector('label');
+    validationText.textContent = `${(label ? label.textContent.replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim() : 'This question')} — select up to ${max}.`;
+    validationNotice.classList.remove('hidden');
+    validationNotice.classList.add('flex');
+    wrap.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return false;
+  }
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.matches('.q-wrap[data-qtype="multi"] input[type="checkbox"]')) {
+      enforceMultiSelectionLimit(e.target);
+    }
+  });
+
   form.addEventListener('submit', function (e) {
     if (!window.XMLHttpRequest || !window.FormData || form.dataset.fallback) return;
     e.preventDefault();
@@ -502,6 +525,21 @@
       if (wrap && getComputedStyle(wrap).display === 'none') return false;
       return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     };
+
+    // Multi-select limits are a response constraint, not skip logic. Enforce
+    // them here for immediate feedback and again on the server for integrity.
+    const overLimitMulti = Array.from(document.querySelectorAll('.q-wrap[data-qtype="multi"][data-max-selections]:not([data-max-selections=""])'))
+      .find((w) => getComputedStyle(w).display !== 'none' && w.querySelectorAll('input[type="checkbox"]:checked').length > Number(w.dataset.maxSelections));
+    if (overLimitMulti) {
+      e.preventDefault();
+      const max = Number(overLimitMulti.dataset.maxSelections);
+      const label = overLimitMulti.querySelector('label');
+      validationText.textContent = `${(label ? label.textContent.replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim() : 'One of the questions above')} — select up to ${max}.`;
+      validationNotice.classList.remove('hidden');
+      validationNotice.classList.add('flex');
+      overLimitMulti.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
 
     // A required multi-select: the browser has no notion of "at least one of
     // this checkbox group", so it's checked here.
