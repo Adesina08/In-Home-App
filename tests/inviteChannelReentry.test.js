@@ -33,7 +33,7 @@ before(async () => {
     username: "returning.user",
     password_hash: "already-has-credentials",
   });
-  respondent = await store.insert("respondents", {
+  const insertedRespondent = await store.insert("respondents", {
     study_id: study.id,
     account_id: account.id,
     name: "Returning Respondent",
@@ -45,6 +45,8 @@ before(async () => {
     preferred_channel: "whatsapp",
     activation_status: "activated",
   });
+  respondent = await store.findOne("respondents", { id: insertedRespondent.id });
+  assert.ok(respondent, "test respondent should exist after insert");
 
   const app = express();
   app.set("views", path.join(__dirname, "../views"));
