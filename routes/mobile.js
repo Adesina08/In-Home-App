@@ -9,6 +9,10 @@ const router = express.Router();
 // remains the single mount point in server.js while the web login and native
 // client share the same respondent-account rules.
 router.use("/api", require("./mobileNativeAuth"));
+// Password recovery is kept in its own public bearer-free router and mounted
+// before mobileApi so reset requests always use the account's registered
+// phone/email rather than trusting the contact spelling supplied by the app.
+router.use("/api", require("./mobilePasswordRecovery"));
 router.use("/api/respondents/:id", require("./mobileProfileGate"));
 router.use("/api", require("./mobileApi"));
 // mobileProfileApi backs the one-time profile-gate step (GET/PUT /mobile/api/profile)
