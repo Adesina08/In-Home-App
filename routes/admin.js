@@ -22,7 +22,7 @@ const { nextRespondentCode } = require("../lib/respondentCode");
 const messaging = require("../lib/whatsapp");
 const kpiEngine = require("../lib/kpi");
 const { v4: uuidv4 } = require("uuid");
-const { loadQuestionnaire, CADENCES } = require("../lib/questionnaire");
+const { loadQuestionnaire, isQuestionActive, CADENCES } = require("../lib/questionnaire");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 const staffEmail = require("../lib/staffEmail");
 const geography = require("../lib/geography");
@@ -414,11 +414,12 @@ router.post("/studies/:id/settings", async (req, res) => {
 router.get("/studies/:id/questionnaire", async (req, res) => {
   const studyId = toId(req.params.id);
   const study = await store.findOne("studies", { id: studyId });
-  const questions = await store.find("questions", { study_id: studyId }, { sort: { order_index: 1 } });
-  // Skip logic is edited inline beside each question. Its dropdowns and
-  // section list only consider active
-  // (non-removed) questions, same filter the old standalone route used.
-  const activeQuestions = questions.filter((q) => q.active);
+  const storedQuestions = await store.find("questions", { study_id: studyId }, { sort: { order_index: 1 } });
+  // The builder and respondent preview must agree on what "active" means.
+  // Legacy Mongo rows can have active missing/boolean even though SQLite used
+  // INTEGER 1; only an explicit false/0 is considered removed.
+  const questions = storedQuestions.filter(isQuestionActive);
+  const activeQuestions = questions;
   const sections = [...new Set(activeQuestions.map((q) => q.section).filter(Boolean))];
   // The skip-rule joins done in JS: LEFT onto the target question, INNER onto
   // the condition question. Both sides are questions of this same study, so
@@ -452,15 +453,14 @@ router.post("/studies/:id/questionnaire/publish", async (req, res) => {
   res.redirect(`/admin/studies/${req.params.id}/questionnaire?${suffix}`);
 });
 
-// Read-only, respondent-view preview of the questionnaire as it stands right
-// now -- reuses the exact same active-question + skip-rule query the live
-// respondent diary form uses (lib/questionnaire.js), so what an admin sees
-// here (including which questions the skip logic shows/hides as they click
-// around) matches production exactly. Nothing here is ever saved.
+// Read-only preview of the WORKING DRAFT. Respondent-facing channels read the
+// immutable published snapshot matching studies.version; Preview deliberately
+// reads the draft so an admin can test wording and skip logic before publishing.
+// Nothing entered here is ever saved as respondent data.
 router.get("/studies/:id/questionnaire/live-preview", async (req, res) => {
   const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
-  const { questions, rules } = await loadQuestionnaire(study.id);
+  const { questions, rules } = await loadQuestionnaire(study.id, {}, { draft: true });
   // Stand-in respondent so {respondent_name}-style pipe tokens render as a
   // realistic example here instead of the bare "…" fallback -- an admin
   // checking their wording needs to see the shape of the finished sentence.
@@ -548,6 +548,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     parsed = {
       minValue: b.min_value !== undefined ? optionalNumber(b.min_value, "Minimum value") : q.min_value,
       maxValue: b.max_value !== undefined ? optionalNumber(b.max_value, "Maximum value") : q.max_value,
+      maxSelections: b.max_selections !== undefined ? optionalNumber(b.max_selections, "Maximum selections", { integer: true, min: 1, max: 100 }) : q.max_selections,
       everyNth: b.every_nth_occasion !== undefined ? optionalNumber(b.every_nth_occasion, "Every nth occasion", { integer: true, min: 1 }) : q.every_nth_occasion,
       fromHour: b.from_hour_utc !== undefined ? optionalNumber(b.from_hour_utc, "From UTC hour", { integer: true, min: 0, max: 23 }) : q.from_hour_utc,
       toHour: b.to_hour_utc !== undefined ? optionalNumber(b.to_hour_utc, "Until UTC hour", { integer: true, min: 0, max: 23 }) : q.to_hour_utc,
@@ -569,6 +570,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
         : q.options_json,
     min_value: parsed.minValue,
     max_value: parsed.maxValue,
+    max_selections: parsed.maxSelections,
     section: b.section !== undefined ? (String(b.section).trim() || null) : q.section,
     // Stored as a JSON array; an empty array is stored as null so it reads the
     // same as "never configured" -- both mean "every cadence" (lib/questionnaire.js).
@@ -609,6 +611,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     options_json: next.options_json,
     min_value: next.min_value,
     max_value: next.max_value,
+    max_selections: next.max_selections,
     section: next.section,
     applicable_cadences: next.applicable_cadences,
     other_specify_options_json: next.other_specify_options_json,

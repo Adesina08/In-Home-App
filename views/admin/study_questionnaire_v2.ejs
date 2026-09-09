@@ -1,5 +1,6 @@
 <%- include('../partials/header', { title: 'Questionnaire — INICIO Diary', user: user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study: study, tab: 'questionnaire' }) %>
+<% const hasDraft = ![0, false, '0', null, undefined].includes(study.questionnaire_dirty); %>
 
 <%#
   Questionnaire builder — rebuilt.
@@ -26,32 +27,32 @@
     <div class="font-mono text-xs text-slate-500 mt-1">
       <span id="qCount"><%= questions.length %></span> questions ·
       <span id="rCount"><%= rules.length %></span> logic rules ·
-      v<%= study.version %>
-      <% if (study.has_unpublished_changes) { %>
-        <span class="text-unverified font-semibold">· unpublished changes</span>
-      <% } %>
+      Published v<%= study.version || 1 %>
+      <span id="draftState" class="text-unverified font-semibold <%= hasDraft ? '' : 'hidden' %>">· Draft changes saved</span>
     </div>
   </div>
   <div class="flex items-center gap-2">
     <a href="/admin/studies/<%= study.id %>/questionnaire/template.xlsx" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition">Download template</a>
     <a href="/admin/studies/<%= study.id %>/questionnaire/upload"
        class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('upload', 'w-4 h-4') %> Import</a>
-    <button type="button" id="openPreview" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('eye', 'w-4 h-4') %>Preview</button>
-    <% if (study.has_unpublished_changes) { %>
-      <form method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish">
-        <button class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition"><%- icon('check', 'w-4 h-4') %> Publish v<%= (study.version || 1) + 1 %></button>
-      </form>
-    <% } %>
+    <button type="button" id="openPreview" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('eye', 'w-4 h-4') %>Preview draft</button>
+    <form id="publishForm" method="POST" action="/admin/studies/<%= study.id %>/questionnaire/publish" class="<%= hasDraft ? '' : 'hidden' %>">
+      <button class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition"><%- icon('check', 'w-4 h-4') %> Publish v<%= (study.version || 1) + 1 %></button>
+    </form>
   </div>
 </div>
 
-<%# Unpublished-change state is load-bearing: an edit here does not reach
-    respondents until it is published, and the old page said so only in small
-    grey text. %>
-<% if (study.has_unpublished_changes) { %>
-  <div class="flex items-start gap-2.5 bg-unverified-soft border border-unverified/30 rounded-xl px-4 py-3 mb-4 text-sm text-unverified">
-    <%- icon('warning', 'w-4 h-4 shrink-0 mt-0.5') %>
-    <div>Respondents are still answering <strong>v<%= study.version %></strong>. Your changes go live when you publish.</div>
+<%# Draft edits are autosaved but isolated from the immutable published
+    snapshot until Publish is pressed. Keep that state visible rather than
+    making the researcher infer it from a transient toast. %>
+<div id="draftBanner" class="<%= hasDraft ? 'flex' : 'hidden' %> items-start gap-2.5 bg-unverified-soft border border-unverified/30 rounded-xl px-4 py-3 mb-4 text-sm text-unverified">
+  <%- icon('warning', 'w-4 h-4 shrink-0 mt-0.5') %>
+  <div><strong>Draft changes are saved.</strong> Respondents are still answering published <strong>v<%= study.version || 1 %></strong>. Use Preview draft to test these changes, then publish when ready.</div>
+</div>
+<% if (published && published !== 'none') { %>
+  <div class="flex items-start gap-2.5 bg-verified-soft border border-verified/30 rounded-xl px-4 py-3 mb-4 text-sm text-verified">
+    <span class="font-semibold">✓</span>
+    <div>Questionnaire <strong>v<%= published %></strong> is now published. The previous version remains preserved in version history.</div>
   </div>
 <% } %>
 
@@ -119,7 +120,16 @@
   }
 
   var toast = document.getElementById('saveToast');
+  function markDraftVisible() {
+    var state = document.getElementById('draftState');
+    var banner = document.getElementById('draftBanner');
+    var publish = document.getElementById('publishForm');
+    if (state) state.classList.remove('hidden');
+    if (banner) { banner.classList.remove('hidden'); banner.classList.add('flex'); }
+    if (publish) publish.classList.remove('hidden');
+  }
   function saved(msg) {
+    markDraftVisible();
     toast.textContent = msg || 'Saved';
     toast.classList.remove('opacity-0');
     clearTimeout(toast._t);
@@ -188,6 +198,12 @@
         '<label class="flex items-center gap-2 mt-6"><input type="checkbox" id="fRequired" ' + (q.required ? 'checked' : '') + ' class="h-4 w-4 rounded border-slate-300 accent-signal" />' +
           '<span class="text-sm text-slate-700">Required</span></label>' +
       '</div>' +
+      (q.type === 'multi' ?
+        '<div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">' +
+          '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Maximum selections</span>' +
+          '<input id="fMaxSelections" type="number" min="1" max="100" step="1" value="' + esc(q.max_selections || '') + '" class="mt-1 w-36 border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="No limit" /></label>' +
+          '<p class="text-xs text-slate-500 mt-1.5">Leave blank for no limit. Set 4 to show and enforce “Select up to 4”.</p>' +
+        '</div>' : '') +
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
@@ -247,6 +263,7 @@
     on('fSection', 'change', function (e) { patch(q.id, { section: e.target.value }); });
     on('fCode', 'change', function (e) { patch(q.id, { code: e.target.value }); });
     on('fRequired', 'change', function (e) { patch(q.id, { required: e.target.checked ? 1 : 0 }); });
+    on('fMaxSelections', 'change', function (e) { patch(q.id, { max_selections: e.target.value === '' ? null : Number(e.target.value) }); });
     on('delQ', 'click', async function () {
       if (!confirm('Delete this question? Answers already collected against it are kept.')) return;
       try {
@@ -355,7 +372,7 @@
     dragId = null;
   });
 
-  var preview=document.getElementById('respondentPreview'), frame=document.getElementById('previewFrame'); document.getElementById('openPreview').onclick=function(){if(!frame.src)frame.src=frame.dataset.src;preview.showModal();}; document.getElementById('closePreview').onclick=function(){preview.close();}; document.querySelectorAll('[data-preview-width]').forEach(function(button){button.onclick=function(){frame.style.width=button.dataset.previewWidth==='desktop'?'100%':button.dataset.previewWidth+'px';};});
+  var preview=document.getElementById('respondentPreview'), frame=document.getElementById('previewFrame'); document.getElementById('openPreview').onclick=function(){frame.src=frame.dataset.src+'&refresh='+Date.now();preview.showModal();}; document.getElementById('closePreview').onclick=function(){preview.close();}; document.querySelectorAll('[data-preview-width]').forEach(function(button){button.onclick=function(){frame.style.width=button.dataset.previewWidth==='desktop'?'100%':button.dataset.previewWidth+'px';};});
   renderList(); renderEditor();
 })();
 </script>

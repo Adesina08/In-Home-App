@@ -15,6 +15,7 @@ const { CATEGORIES, formatCategories } = require("./lib/categories");
 const { STUDY_TABS, studyTabHref, studyTabNeighbours } = require("./lib/studyTabs");
 const { getMediaUrl } = require("./lib/mediaStorage");
 const { ensureDemoSuperadmin } = require("./lib/demoSuperadmin");
+const { bootstrapPublishedSnapshots } = require("./lib/questionnaireVersions");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -201,6 +202,11 @@ store.connect().then(async () => {
   } else {
     console.log("Connected to MongoDB.");
   }
+
+  // Establish an immutable baseline for legacy studies before the web server
+  // accepts any new questionnaire edits. From this deployment onward, v1/v2/…
+  // each remain recoverable exactly as respondents saw them.
+  await bootstrapPublishedSnapshots();
 
   // The known demo Superadmin credential is only created when the database
   // already contains the seeded demo Admin account. Real production databases
