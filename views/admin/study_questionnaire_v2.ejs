@@ -204,6 +204,18 @@
           '<input id="fMaxSelections" type="number" min="1" max="100" step="1" value="' + esc(q.max_selections || '') + '" class="mt-1 w-36 border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="No limit" /></label>' +
           '<p class="text-xs text-slate-500 mt-1.5">Leave blank for no limit. Set 4 to show and enforce “Select up to 4”.</p>' +
         '</div>' : '') +
+      (q.type === 'numeric' ?
+        '<div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">' +
+          '<div class="grid grid-cols-3 gap-3">' +
+            '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Minimum</span>' +
+            '<input id="fMin" type="number" step="any" value="' + esc(q.min_value ?? '') + '" class="mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="No minimum" /></label>' +
+            '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Maximum</span>' +
+            '<input id="fMax" type="number" step="any" value="' + esc(q.max_value ?? '') + '" class="mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="No maximum" /></label>' +
+            '<label class="block"><span class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Round to</span>' +
+            '<input id="fStep" type="number" step="any" min="0" value="' + esc(q.step_value ?? '') + '" class="mt-1 w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="Any value" /></label>' +
+          '</div>' +
+          '<p class="text-xs text-slate-500 mt-1.5">“Round to” rejects anything not a multiple of it — set 10 so a price question refuses 761 but accepts 760.</p>' +
+        '</div>' : '') +
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
@@ -227,8 +239,12 @@
     if (!host) return;
     var specify = specifyOptions(q);
     host.innerHTML = opts.map(function (o, i) {
-      return '<div class="grid grid-cols-[20px_minmax(140px,1fr)_150px_auto_auto] items-center gap-2">' +
+      return '<div class="grid grid-cols-[20px_20px_minmax(140px,1fr)_150px_auto_auto] items-center gap-2">' +
         '<span class="font-mono text-[10px] text-slate-400 w-4 text-right tabular-nums">' + (i + 1) + '</span>' +
+        '<div class="flex flex-col leading-none">' +
+          '<button type="button" class="opt-up text-slate-400 hover:text-slate-700 disabled:opacity-25 disabled:hover:text-slate-400 text-[10px] px-0.5" data-i="' + i + '" ' + (i === 0 ? 'disabled' : '') + ' title="Move up">&#9650;</button>' +
+          '<button type="button" class="opt-down text-slate-400 hover:text-slate-700 disabled:opacity-25 disabled:hover:text-slate-400 text-[10px] px-0.5" data-i="' + i + '" ' + (i === opts.length - 1 ? 'disabled' : '') + ' title="Move down">&#9660;</button>' +
+        '</div>' +
         '<input class="opt-in flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm" value="' + esc(o) + '" data-i="' + i + '" />' +
         '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'"><option value="">Continue</option><option value="study" '+(terminationFor(q.id,o)?'selected':'')+'>Terminate</option></select>'+
         '<label class="text-[11px] text-slate-600 whitespace-nowrap"><input type="checkbox" class="opt-specify" data-option="'+esc(o)+'" '+(specify.indexOf(o)>-1?'checked':'')+' /> Other text</label>'+
@@ -249,6 +265,19 @@
         patch(q.id, { options: next });
       });
     });
+    function moveOption(i, delta) {
+      var next = optionsOf(q).slice();
+      var j = i + delta;
+      if (j < 0 || j >= next.length) return;
+      var tmp = next[i]; next[i] = next[j]; next[j] = tmp;
+      patch(q.id, { options: next });
+    }
+    host.querySelectorAll('.opt-up').forEach(function (b) {
+      b.addEventListener('click', function () { moveOption(Number(b.dataset.i), -1); });
+    });
+    host.querySelectorAll('.opt-down').forEach(function (b) {
+      b.addEventListener('click', function () { moveOption(Number(b.dataset.i), 1); });
+    });
     function saveBehaviour(option) { var term=host.querySelector('.opt-terminate[data-option="'+CSS.escape(option)+'"]'); var specifyBox=host.querySelector('.opt-specify[data-option="'+CSS.escape(option)+'"]'); api('POST','/admin/studies/'+STUDY_ID+'/questions/'+q.id+'/option-behaviour',{option:option,terminate_scope:term?term.value:'',allows_specify:!!(specifyBox&&specifyBox.checked)}).then(function(data){ q.other_specify_options_json=data.question.other_specify_options_json; rules=rules.filter(function(r){return !(r.action==='terminate'&&Number(r.condition_question_id)===Number(q.id)&&r.operator==='equals'&&r.value===option);}); if(data.rule) rules.push(data.rule); renderEditor(); saved('Option behaviour saved'); }).catch(fail); }
     host.querySelectorAll('.opt-terminate').forEach(function(el){el.addEventListener('change',function(){saveBehaviour(el.dataset.option);});});
     host.querySelectorAll('.opt-specify').forEach(function(el){el.addEventListener('change',function(){saveBehaviour(el.dataset.option);});});
@@ -264,6 +293,9 @@
     on('fCode', 'change', function (e) { patch(q.id, { code: e.target.value }); });
     on('fRequired', 'change', function (e) { patch(q.id, { required: e.target.checked ? 1 : 0 }); });
     on('fMaxSelections', 'change', function (e) { patch(q.id, { max_selections: e.target.value === '' ? null : Number(e.target.value) }); });
+    on('fMin', 'change', function (e) { patch(q.id, { min_value: e.target.value === '' ? null : Number(e.target.value) }); });
+    on('fMax', 'change', function (e) { patch(q.id, { max_value: e.target.value === '' ? null : Number(e.target.value) }); });
+    on('fStep', 'change', function (e) { patch(q.id, { step_value: e.target.value === '' ? null : Number(e.target.value) }); });
     on('delQ', 'click', async function () {
       if (!confirm('Delete this question? Answers already collected against it are kept.')) return;
       try {

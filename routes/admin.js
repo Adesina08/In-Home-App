@@ -548,6 +548,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     parsed = {
       minValue: b.min_value !== undefined ? optionalNumber(b.min_value, "Minimum value") : (q.min_value ?? null),
       maxValue: b.max_value !== undefined ? optionalNumber(b.max_value, "Maximum value") : (q.max_value ?? null),
+      stepValue: b.step_value !== undefined ? optionalNumber(b.step_value, "Step", { min: 0.000001 }) : (q.step_value ?? null),
       maxSelections: b.max_selections !== undefined ? optionalNumber(b.max_selections, "Maximum selections", { integer: true, min: 1, max: 100 }) : (q.max_selections ?? null),
       everyNth: b.every_nth_occasion !== undefined ? optionalNumber(b.every_nth_occasion, "Every nth occasion", { integer: true, min: 1 }) : (q.every_nth_occasion ?? null),
       // Legacy Mongo rows can predate these optional fields entirely. Missing
@@ -574,6 +575,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
         : q.options_json,
     min_value: parsed.minValue,
     max_value: parsed.maxValue,
+    step_value: parsed.stepValue,
     max_selections: parsed.maxSelections,
     section: b.section !== undefined ? (String(b.section).trim() || null) : q.section,
     // Stored as a JSON array; an empty array is stored as null so it reads the
@@ -596,14 +598,28 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
   if (b.options !== undefined) {
     const oldOptions = require("../lib/questionnaire").parseOptions(q.options_json || q.options);
     const newOptions = require("../lib/questionnaire").parseOptions(next.options_json);
+    // Reordering options (the builder's up/down controls) sends the same set
+    // of option strings back in a new position order. The rename-tracking
+    // below matches purely by index, which would misread that reorder as
+    // every shuffled option being renamed into whatever now sits at its old
+    // slot -- corrupting "other, specify" flags and termination rules that
+    // belong to the option's TEXT, not its position. Detected by comparing
+    // the two lists sorted: same multiset, different order, no renames.
+    const isReorderOnly = oldOptions.length === newOptions.length
+      && [...oldOptions].sort().join(" ") === [...newOptions].sort().join(" ")
+      && oldOptions.join(" ") !== newOptions.join(" ");
     let oldSpecify = []; try { oldSpecify = JSON.parse(q.other_specify_options_json || "[]"); } catch (_) {}
-    const mappedSpecify = oldSpecify.map((value) => {
-      const index = oldOptions.indexOf(value); return index >= 0 && newOptions[index] ? newOptions[index] : null;
-    }).filter(Boolean);
+    const mappedSpecify = isReorderOnly
+      ? oldSpecify.filter((value) => newOptions.includes(value))
+      : oldSpecify.map((value) => {
+          const index = oldOptions.indexOf(value); return index >= 0 && newOptions[index] ? newOptions[index] : null;
+        }).filter(Boolean);
     next.other_specify_options_json = mappedSpecify.length ? JSON.stringify(mappedSpecify) : null;
-    for (let index = 0; index < oldOptions.length; index++) {
-      if (oldOptions[index] !== newOptions[index] && newOptions[index]) {
-        await store.update("skip_rules", { study_id: q.study_id, condition_question_id: q.id, operator: "equals", value: oldOptions[index], action: "terminate" }, { value: newOptions[index] });
+    if (!isReorderOnly) {
+      for (let index = 0; index < oldOptions.length; index++) {
+        if (oldOptions[index] !== newOptions[index] && newOptions[index]) {
+          await store.update("skip_rules", { study_id: q.study_id, condition_question_id: q.id, operator: "equals", value: oldOptions[index], action: "terminate" }, { value: newOptions[index] });
+        }
       }
     }
   }
@@ -615,6 +631,7 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     options_json: next.options_json,
     min_value: next.min_value,
     max_value: next.max_value,
+    step_value: next.step_value,
     max_selections: next.max_selections,
     section: next.section,
     applicable_cadences: next.applicable_cadences,

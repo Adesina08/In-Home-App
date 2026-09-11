@@ -6,6 +6,7 @@ import {
   BackHandler,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -59,7 +60,6 @@ type Screen =
   | "profile"
   | "diaryMode"
   | "diary"
-  | "diaryQuestionVideo"
   | "diaryVideo"
   | "diaryVideoDone";
 type AnswerMap = Record<string, string | string[]>;
@@ -230,6 +230,40 @@ function formatTime(value?: string | null) {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
 }
 
+function formatSeconds(totalSeconds: number) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+// Mirrors the numeric range/step check in lib/answerValidation.js -- run here
+// too so a respondent typing "761" against a "round to 10" price question
+// sees the problem immediately, rather than only after the queued entry
+// fails to sync (this app is offline-first: a submit does not always reach
+// the server synchronously).
+function numericAnswerProblems(questions: any[], answers: AnswerMap): { questionId: number; message: string }[] {
+  const problems: { questionId: number; message: string }[] = [];
+  questions.forEach((q) => {
+    if (q.type !== "numeric") return;
+    const raw = answers[String(q.id)];
+    if (raw === undefined || raw === null || String(raw).trim() === "") return;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) { problems.push({ questionId: q.id, message: "Please enter a number." }); return; }
+    const min = q.minValue, max = q.maxValue;
+    if (min != null && n < min) { problems.push({ questionId: q.id, message: max != null ? `Please enter a number between ${min} and ${max}.` : `Please enter ${min} or more.` }); return; }
+    if (max != null && n > max) { problems.push({ questionId: q.id, message: min != null ? `Please enter a number between ${min} and ${max}.` : `Please enter ${max} or less.` }); return; }
+    if (q.stepValue) {
+      const step = Number(q.stepValue);
+      const base = min != null ? Number(min) : 0;
+      const ratio = (n - base) / step;
+      if (Math.abs(ratio - Math.round(ratio)) > 1e-9) {
+        problems.push({ questionId: q.id, message: base ? `Please enter a number in steps of ${step} starting from ${base}.` : `Please enter a number in steps of ${step}.` });
+      }
+    }
+  });
+  return problems;
+}
+
 function dayLabel(value?: string | null) {
   if (!value) return "";
   const d = new Date(String(value).replace(" ", "T") + (String(value).includes("Z") ? "" : "Z"));
@@ -383,9 +417,12 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [media, setMedia] = useState<MediaMap>({});
   const [mediaAnalysis, setMediaAnalysis] = useState<MediaAnalysisMap>({});
   const [recordingQuestionId, setRecordingQuestionId] = useState<number | null>(null);
+  const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingLock = useRef(false);
   const activeRecordingQuestion = useRef<number | null>(null);
+  const recordingStartedAt = useRef(0);
+  const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [problems, setProblems] = useState<any[]>([]);
   const [videoScript, setVideoScript] = useState<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number } | null>(null);
   const [standardVideoQuestion, setStandardVideoQuestion] = useState<any>(null);
@@ -653,7 +690,11 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     };
     const listener = BackHandler.addEventListener("hardwareBackPress", () => {
       if (busy || screen === "loading") return true;
-      if (screen === "diaryVideo" || screen === "diaryQuestionVideo") return false;
+      // The video-answer recorder is a Modal over the "diary" screen rather
+      // than its own screen (see the Modal below) -- defer to its own
+      // BackHandler (StandardVideoCapture.tsx) while it is open, the same way
+      // this used to defer for the old "diaryQuestionVideo" screen.
+      if (screen === "diaryVideo" || standardVideoQuestion) return false;
       if (screen === "forgotPassword") { setError(""); setScreen("login"); return true; }
       if (screen === "verifyLoginCode") { setError(""); setScreen("forgotPassword"); return true; }
       if (screen === "setNewPassword") { setError(""); setScreen("verifyLoginCode"); return true; }
@@ -669,7 +710,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       return true;
     });
     return () => listener.remove();
-  }, [screen, busy, recordingQuestionId, enrolments.length]);
+  }, [screen, busy, recordingQuestionId, enrolments.length, standardVideoQuestion]);
 
   async function startDiary() {
     if (!selected) return;
@@ -755,8 +796,11 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   async function pickEvidence(q: any) {
     if (q.type === "video") {
+      // Opened as a modal over the questionnaire (see the Modal in the
+      // "diary" screen render below), not a screen change -- so the
+      // questionnaire stays mounted underneath and answering carries on
+      // exactly where it left off once the recorder closes.
       setStandardVideoQuestion(q);
-      setScreen("diaryQuestionVideo");
       return;
     }
     try {
@@ -780,8 +824,15 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       audioRecorder.record();
       activeRecordingQuestion.current = questionId;
       setRecordingQuestionId(questionId);
+      recordingStartedAt.current = Date.now();
+      setRecordingElapsedSeconds(0);
+      if (recordingTimer.current) clearInterval(recordingTimer.current);
+      recordingTimer.current = setInterval(() => {
+        setRecordingElapsedSeconds(Math.floor((Date.now() - recordingStartedAt.current) / 1000));
+      }, 500);
     } catch (e: any) {
       try { if (audioRecorder.getStatus().canRecord) await audioRecorder.stop(); } catch {}
+      if (recordingTimer.current) { clearInterval(recordingTimer.current); recordingTimer.current = null; }
       Alert.alert("Microphone unavailable", e.message || "Could not start recording.");
     } finally {
       recordingLock.current = false;
@@ -791,6 +842,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   async function stopRecording(questionId: number) {
     if (recordingLock.current || activeRecordingQuestion.current !== questionId) return;
     recordingLock.current = true;
+    if (recordingTimer.current) { clearInterval(recordingTimer.current); recordingTimer.current = null; }
     try {
       await audioRecorder.stop();
       if (audioRecorder.uri) {
@@ -807,6 +859,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     } finally {
       activeRecordingQuestion.current = null;
       setRecordingQuestionId(null);
+      setRecordingElapsedSeconds(0);
       await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(()=>{});
       recordingLock.current = false;
     }
@@ -817,6 +870,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setBusy(true); setProblems([]);
     try {
       if(!Number.isFinite(Date.parse(occurrenceTime)))throw new Error('Enter the occasion time as YYYY-MM-DDTHH:mm:ss with a timezone, for example Z for UTC.');
+      const numericProblems = numericAnswerProblems(questionnaire.questions || [], answers);
+      if (numericProblems.length) { setProblems(numericProblems); setBusy(false); return; }
       const evidence=Object.entries(media).map(([id,asset])=>{const q=questionnaire.questions.find((q:any)=>String(q.id)===id);return {...asset,field:`${q?.type||'photo'}_q_${id}`,mimeType:asset.mimeType||(q?.type==='audio'?'audio/m4a':q?.type==='video'?'video/mp4':'image/jpeg')};});
       await enqueue({id:entryKey,respondentId:selected.respondent.id,kind:'standard',fields:{action:'submit',entry_mode:'standard',occurrence_time:occurrenceTime,capture_time:captureTime,submit_time:new Date().toISOString(),answers_json:JSON.stringify(answers),other_text_json:JSON.stringify(otherText),participation_kind:participationKind,practice:questionnaire.study.practiceRequired?'1':'0',occasion_number:String(occasionNumber)},media:evidence,state:'pending',attempts:0,createdAt:new Date().toISOString()});
       if(draftKey)await AsyncStorage.removeItem(draftKey);
@@ -971,24 +1026,11 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   if (screen === "diaryVideo" && selected && videoScript)
     return <AppFrame t={t} mode={mode}><VideoDiaryScreen mode={mode} respondentId={selected.respondent.id} script={videoScript} onBack={() => setScreen("diaryMode")} onSubmit={submitRecordedVideo} /></AppFrame>;
 
-  if (screen === "diaryQuestionVideo" && selected && standardVideoQuestion)
-    return <StandardVideoCaptureScreen
-      mode={mode}
-      respondentId={selected.respondent.id}
-      questionId={standardVideoQuestion.id}
-      questionText={standardVideoQuestion.text}
-      onBack={() => { setStandardVideoQuestion(null); setScreen("diary"); }}
-      onCaptured={(asset) => {
-        const question = standardVideoQuestion;
-        setMedia((old) => ({ ...old, [String(question.id)]: asset }));
-        setMediaAnalysis((old) => { const next = { ...old }; delete next[String(question.id)]; return next; });
-        setStandardVideoQuestion(null);
-        setScreen("diary");
-        analyseEvidence(question, asset);
-      }}
-    />;
+  // The video-answer recorder for a "standard" diary question renders as a
+  // Modal inside the "diary" screen below (over the questionnaire, not a
+  // screen navigation) so answering the rest of the form isn't interrupted.
 
-  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View style={styles.counterRow}><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Math.max(0, Number(value || 0)-1)))}><Text style={{ color: t.muted, fontSize: 22 }}>−</Text></Pressable><Text style={{ color: t.text, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" }}>{String(value || "0")}</Text><Pressable style={[styles.counterBtn, { borderColor: t.border }]} onPress={() => setAnswer(q.id, String(Number(value || 0)+1))}><Text style={{ color: t.muted, fontSize: 22 }}>+</Text></Pressable></View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? "Recording… tap to stop" : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
+  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View><TextInput accessibilityLabel={`Answer for ${q.text}`} value={value === undefined || value === null ? "" : String(value)} onChangeText={(v) => setAnswer(q.id, v.replace(/[^0-9.\-]/g, ""))} keyboardType="decimal-pad" placeholder="Enter a number" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border }]} />{(q.minValue != null || q.maxValue != null || q.stepValue) ? <Text style={[styles.smallMuted, { color: t.muted, marginTop: 4 }]}>{[q.minValue != null && q.maxValue != null ? `Between ${q.minValue} and ${q.maxValue}` : q.minValue != null ? `${q.minValue} or more` : q.maxValue != null ? `${q.maxValue} or less` : null, q.stepValue ? `in steps of ${q.stepValue}` : null].filter(Boolean).join(", ")}</Text> : null}</View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? `Recording… ${formatSeconds(recordingElapsedSeconds)} · tap to stop` : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View><Modal visible={!!standardVideoQuestion} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setStandardVideoQuestion(null)}>{standardVideoQuestion && selected ? <StandardVideoCaptureScreen mode={mode} respondentId={selected.respondent.id} questionId={standardVideoQuestion.id} questionText={standardVideoQuestion.text} onBack={() => setStandardVideoQuestion(null)} onCaptured={(asset) => { const question = standardVideoQuestion; setMedia((old) => ({ ...old, [String(question.id)]: asset })); setMediaAnalysis((old) => { const next = { ...old }; delete next[String(question.id)]; return next; }); setStandardVideoQuestion(null); analyseEvidence(question, asset); }} /> : null}</Modal></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
 }

@@ -134,7 +134,8 @@
             <% }) %>
           </div>
         <% } else if (q.type === 'numeric' || q.type === 'scale') { %>
-          <input type="number" name="q_<%= q.id %>" value="<%= pv !== null ? pv : '' %>" <%= q.min_value!==null ? 'min='+q.min_value : '' %> <%= q.max_value!==null ? 'max='+q.max_value : '' %> <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" inputmode="decimal" />
+          <input type="number" name="q_<%= q.id %>" value="<%= pv !== null ? pv : '' %>" <%= q.min_value!==null ? 'min='+q.min_value : '' %> <%= q.max_value!==null ? 'max='+q.max_value : '' %> <%= q.step_value ? 'step='+q.step_value : '' %> <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" inputmode="decimal" />
+          <% if (q.step_value) { %><p class="text-xs text-slate-400 mt-1">Enter a number in steps of <%= q.step_value %><%= q.min_value ? ' starting from ' + q.min_value : '' %>.</p><% } %>
         <% } else if (q.type === 'rank') { %><p>Rank all options by entering them in order, separated by |: <%= q.options.join(' | ') %></p><input name="q_<%= q.id %>" value="<%= pv||'' %>" class="cond-input w-full border rounded-xl p-3" data-qid="<%= q.id %>" <%= q.required?'required':'' %> />
         <% } else if (q.type === 'text') { %>
           <textarea name="q_<%= q.id %>" <%= q.required ? 'required' : '' %> class="cond-input w-full border border-slate-300 rounded-xl px-3.5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition" data-qid="<%= q.id %>" rows="3"><%= pv !== null ? pv : '' %></textarea>

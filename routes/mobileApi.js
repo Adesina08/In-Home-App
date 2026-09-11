@@ -231,7 +231,7 @@ router.get("/respondents/:id/questionnaire", requireMobileAuth, async (req, res)
     study: { id: study.id, name: study.name, version: study.version || 1, backEntryHours: study.back_entry_hours ?? 24, diaryMode:study.diary_mode, practiceRequired:respondent.activation_status === "training" },
     respondent: publicRespondent(respondent),
     occasionNumber:(await store.count("diary_records",{respondent_id:respondent.id,status:"submitted",is_practice:0}))+1,
-    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], otherSpecifyOptions:q.otherSpecifyOptions||[], minValue: q.min_value, maxValue: q.max_value, maxSelections: q.max_selections || null })),
+    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], otherSpecifyOptions:q.otherSpecifyOptions||[], minValue: q.min_value, maxValue: q.max_value, stepValue: q.step_value || null, maxSelections: q.max_selections || null })),
     rules: rules.map((r) => ({ id: r.id, targetQuestionId: r.target_question_id, conditionQuestionId: r.condition_question_id, operator: r.operator, value: r.value, action: r.action, terminateScope: r.terminate_scope || null })),
   });
 });
