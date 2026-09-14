@@ -80,7 +80,7 @@ const PROFILE_STEPS = [
     prompt: "3/9 How old are you? Reply with your age in years.",
     parse: (v) => {
       const n = Number(v.trim());
-      return Number.isInteger(n) && n >= 1 && n <= 120 ? { ok: true, value: n } : { ok: false, error: "Please reply with a valid age in years." };
+      return Number.isInteger(n) && n >= 18 && n <= 70 ? { ok: true, value: n } : { ok: false, error: "Please reply with an age between 18 and 70." };
     },
   },
   {

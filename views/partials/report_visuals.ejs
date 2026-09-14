@@ -21,7 +21,14 @@
     <% [['all','All media'],['photo','Photos'],['video','Videos'],['audio','Voice notes']].forEach(([kind,label]) => { %><button type="button" data-media-filter="<%= kind %>" aria-pressed="<%= kind === 'all' %>"><%= label %></button><% }) %>
   </div>
   <div class="report-media">
-    <% report.media.forEach((m, index) => { const url = mediaUrl(m.file_path); %>
+    <% report.media.forEach((m, index) => {
+      const url = mediaUrl(m.file_path);
+      // Photos only ever get a detected brand (no audio track); voice notes
+      // only ever get a transcript (brand detection is skipped for audio);
+      // video gets both -- a transcript from its extracted audio track and a
+      // detected brand from its sampled frames.
+      const hasTranscript = m.media_type !== 'photo', hasBrand = m.media_type !== 'audio';
+    %>
       <figure data-kind="<%= m.media_type %>"><div class="report-media-stage">
         <% if (url) { %>
           <% if (m.media_type === 'photo') { %><img src="<%= url %>" alt="Study respondent photo <%= index + 1 %>" loading="lazy" /><% } %>
@@ -29,7 +36,10 @@
           <% if (m.media_type === 'audio') { %><audio controls preload="none" aria-label="Study respondent voice note <%= index + 1 %>" src="<%= url %>"></audio><% } %>
         <% } %>
         <p class="report-media-error" data-media-error <%= url ? 'hidden' : '' %>>This file is currently unavailable.</p>
-      </div><figcaption><strong><%= {photo:'Photo',video:'Video',audio:'Voice note'}[m.media_type] %></strong><time><%= m.day %></time></figcaption></figure>
+      </div><figcaption><div class="report-media-caption-top"><strong><%= {photo:'Photo',video:'Video',audio:'Voice note'}[m.media_type] %></strong><time><%= m.day %></time></div>
+        <% if (hasTranscript) { %><p class="report-media-meta"><%= m.transcript_text || (m.transcript_status === 'error' ? 'Transcription failed.' : 'No transcript available.') %></p><% } %>
+        <% if (hasBrand) { %><p class="report-media-meta"><%= m.detected_brand ? `Brand: ${m.detected_brand}` + (m.detection_confidence != null ? ` (${Math.round(Number(m.detection_confidence) * 100)}%)` : '') : 'No brand detected.' %></p><% } %>
+      </figcaption></figure>
     <% }) %>
   </div>
   <div class="report-empty" data-media-empty <%= report.media.length ? 'hidden' : '' %>>No eligible media for this selection.</div>
