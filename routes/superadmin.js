@@ -306,4 +306,9 @@ router.post("/superadmin/studies/:id/delete", onlySuperadmin, async (req, res) =
   res.redirect("/admin/superadmin?deleted=study");
 });
 
+// Exposed so scripts/purge-respondents.js can reuse the same tested cascade
+// (media blobs, accounts/profiles, every dependent collection) instead of
+// re-deriving it.
+router.deleteRespondentCascade = deleteRespondentCascade;
+
 module.exports = router;

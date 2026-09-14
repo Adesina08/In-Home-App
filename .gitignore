@@ -5,6 +5,7 @@ uploads/*
 !uploads/.gitkeep
 screenshots/
 server.log
+/backups/
 data.localdb.json*
 
 # Built APKs and their manifests are supplied by the Android workflow.
