@@ -1206,10 +1206,15 @@ router.get("/ai-summary", async (req, res) => {
   const report = await loadStudyReport(study.id, period);
   let sourceSignature = null;
   try { sourceSignature = await aiSummary.currentSignature(study.id, period); } catch (_) {}
-  const stale = !selected || !sourceSignature || selected.source_signature !== sourceSignature || selected.provider !== "azure_openai";
+  // Comparing against a hardcoded "azure_openai" here meant every summary
+  // looked permanently stale once AI_SUMMARY_PROVIDER=gemini was set (its
+  // provider is literally "gemini"), which drove the auto-regenerate script
+  // below to fire, redirect, and immediately fire again on every load.
+  const stale = !selected || !sourceSignature || selected.source_signature !== sourceSignature || selected.provider !== aiSummary.providerName();
   res.render("admin/ai_summary", {
     study, studies, summaries, selected: selected || null, report,
     aiConfigured: aiSummary.isAiModelConfigured(),
+    aiProviderLabel: aiSummary.providerName() === "gemini" ? "Gemini" : "Azure AI",
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
     ...period, error, stale,
   });
