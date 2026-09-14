@@ -652,6 +652,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [closeoutAnswers,setCloseoutAnswers]=useState<Record<string,string>>({});
   async function openParticipation(target: "participation" | "rewards" = "participation"){if(!selected)return;try{setParticipation(await api.participation(selected.respondent.id));setScreen(target);}catch(e:any){Alert.alert("Connection needed",e.message);}}
   const [pendingEntries,setPendingEntries]=useState<DiaryPacket[]>([]);
+  const [syncing,setSyncing]=useState(false);
   const [captureTime,setCaptureTime]=useState(new Date().toISOString());
   const [occurrenceTime,setOccurrenceTime]=useState(new Date().toISOString());
   const [participationKind,setParticipationKind]=useState('occasion');
@@ -669,7 +670,12 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       setQuestionnaire(q);setAnswers(draft.answers);setOtherText(draft.otherText);setMedia(evidence);setMediaAnalysis({});setCaptureTime(draft.captureTime);setOccurrenceTime(draft.occurrenceTime);setEntryKey(draft.entryKey);setParticipationKind(draft.participationKind);setOccasionNumber(q.occasionNumber||1);setScreen('diary');setPendingEntries(await listQueue(packet.respondentId));
     }catch(e:any){Alert.alert('Could not open saved entry',e.message);}
   }
-  async function refreshSync(manual=false){if(!selected)return;await syncQueue(selected.respondent.id,manual);setPendingEntries(await listQueue(selected.respondent.id));}
+  async function refreshSync(manual=false){
+    if(!selected)return;
+    setSyncing(true);
+    try{await syncQueue(selected.respondent.id,manual);setPendingEntries(await listQueue(selected.respondent.id));}
+    finally{setSyncing(false);}
+  }
   useEffect(()=>{
     if(!selected)return;
     refreshSync().catch(()=>{});
@@ -892,7 +898,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   if(screen==='rewards'&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>My rewards</Text><Text style={{color:t.muted}}>Rewards for {home?.study?.name||'this study'}.</Text>{participation.incentives.length?participation.incentives.map((reward:any,index:number)=><Card key={index} t={t}><Text style={{color:t.text,fontWeight:'700',fontSize:16}}>{reward.milestone==='onboarding'?'Getting started':reward.milestone==='closeout'?'Study completion':'Diary participation'}</Text><Text style={{color:t.blue,fontWeight:'800',fontSize:24,marginVertical:8}}>{reward.currency} {Number(reward.amount).toLocaleString()}</Text><Text style={{color:t.muted}}>{reward.status==='paid'?'Paid':reward.status==='eligible'?'Eligible · awaiting payment':reward.status==='held'?'On hold · under review':reward.status}</Text></Card>):<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>No rewards recorded yet</Text><Text style={{color:t.muted,marginTop:8}}>Your eligible study rewards will appear here when confirmed by the research team.</Text></Card>}</ScrollView></AppFrame>;
   if(screen==='participation'&&selected&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Your participation</Text><Card t={t}><Text style={{color:t.text}}>Allow authorised client researchers to view your study photos, video and audio?</Text><ChoiceList t={t} options={[["yes","Yes, share study media"],["no","No, keep media with the research team"]]} value={participation.mediaConsent?'yes':'no'} onChange={async value=>{try{await api.mediaConsent(selected.respondent.id,value==='yes');await openParticipation();}catch(e:any){Alert.alert('Could not save',e.message);}}}/></Card>{participation.closeoutDue&&!participation.closeoutCompleted?<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Final study validation</Text>{participation.questions.map((q:any)=><View key={q.code}><Text style={{color:t.text}}>{q.text}{q.required?' *':''}</Text>{q.type==='single'?<ChoiceList t={t} options={q.options.map((o:string)=>[o,o])} value={closeoutAnswers[q.code]||''} onChange={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))}/>:<TextInput value={closeoutAnswers[q.code]||''} onChangeText={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))} style={[styles.input,{color:t.text,borderColor:t.border}]} />}</View>)}<PrimaryButton t={t} title="Submit final validation" onPress={async()=>{try{await api.closeout(selected.respondent.id,closeoutAnswers);await openParticipation();}catch(e:any){Alert.alert('Check your answers',e.message);}}}/></Card>:null}{participation.closeoutCompleted?<Text style={{color:t.green}}>Final validation completed.</Text>:null}<Pressable onPress={()=>Alert.alert('Withdraw from this study?','You will stop participating. The research team will process your data according to the study retention policy.',[{text:'Keep participating',style:'cancel'},{text:'Withdraw',style:'destructive',onPress:async()=>{try{await api.withdraw(selected.respondent.id);await logout();}catch(e:any){Alert.alert('Could not withdraw',e.message);}}}])}><Text style={{color:t.red}}>Withdraw from study</Text></Pressable></ScrollView></AppFrame>;
-  if(screen==='sync')return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Saved on this device</Text><Text style={{color:t.muted}}>Entries remain here until the server confirms receipt. Pending entries retry while the app is open.</Text><PrimaryButton title="Retry sync" t={t} onPress={()=>refreshSync(true)} />{!pendingEntries.length?<Text style={{color:t.text}}>All queued entries have synced.</Text>:pendingEntries.map(p=><Card key={p.id} t={t}><Text style={{color:t.text}}>{p.fields.occurrence_time} · {p.kind}</Text><Text style={{color:t.muted}}>{p.state==='needs_attention'?'Needs attention':'Waiting to sync'} · {p.media.length} saved files</Text>{p.error?<Text style={{color:t.red}}>{p.error}</Text>:null}{p.state==='needs_attention'&&p.kind==='standard'?<Pressable onPress={()=>reviewQueued(p)}><Text style={{color:t.blue}}>Review and edit saved entry</Text></Pressable>:null}<Pressable onPress={()=>Alert.alert('Delete this saved entry?','This removes its answers and media from this device.',[{text:'Keep entry',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await removeQueued(p.respondentId,p.id);await refreshSync();}}])}><Text style={{color:t.red}}>Delete saved entry</Text></Pressable></Card>)}</ScrollView></AppFrame>;
+  if(screen==='sync')return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Saved on this device</Text><Text style={{color:t.muted}}>Entries remain here until the server confirms receipt. Pending entries retry while the app is open.</Text>
+    {syncing?<View style={styles.syncingRow}><ActivityIndicator size="small" color={t.blue} /><Text style={{color:t.muted}}>Syncing…</Text></View>:<PrimaryButton title="Retry sync" t={t} onPress={()=>refreshSync(true)} />}
+    {!syncing&&!pendingEntries.length?<View style={styles.syncingRow}><Text style={{color:t.blue,fontWeight:"800",fontSize:16}}>✓</Text><Text style={{color:t.text}}>All queued entries have synced.</Text></View>:pendingEntries.map(p=><Card key={p.id} t={t}><Text style={{color:t.text}}>{p.fields.occurrence_time} · {p.kind}</Text><Text style={{color:t.muted}}>{p.state==='needs_attention'?'Needs attention':'Waiting to sync'} · {p.media.length} saved files</Text>{p.error?<Text style={{color:t.red}}>{p.error}</Text>:null}{p.state==='needs_attention'&&p.kind==='standard'?<Pressable onPress={()=>reviewQueued(p)}><Text style={{color:t.blue}}>Review and edit saved entry</Text></Pressable>:null}<Pressable onPress={()=>Alert.alert('Delete this saved entry?','This removes its answers and media from this device.',[{text:'Keep entry',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await removeQueued(p.respondentId,p.id);await refreshSync();}}])}><Text style={{color:t.red}}>Delete saved entry</Text></Pressable></Card>)}</ScrollView></AppFrame>;
 
   if (screen === "loading") return <LogoLoader />;
 
@@ -1064,7 +1072,12 @@ const styles = StyleSheet.create({
   primaryButton: { width: "100%", minHeight: 46, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 48, position: "relative" },
   primaryButtonDisabled: { opacity: .5 },
   primaryButtonPressed: { opacity: .84 },
-  primaryButtonText: { fontSize: 15, fontWeight: "900", textAlign: "center" },
+  // Android adds invisible ascent/descent padding above and below text by
+  // default (includeFontPadding), which is asymmetric enough on a heavy
+  // (900) weight to make the label look pinned to the top of the button even
+  // though the flexbox centering above it is correct -- textAlignVertical is
+  // the Android-only counterpart that actually centers within that padding.
+  primaryButtonText: { fontSize: 15, fontWeight: "900", textAlign: "center", includeFontPadding: false, textAlignVertical: "center" },
   buttonArrow: { position: "absolute", right: 18, top: 10, fontSize: 20, lineHeight: 24 },
   outlineButton: { minHeight: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 2 },
   outlineButtonText: { fontSize: 14, fontWeight: "800" },
@@ -1172,6 +1185,7 @@ const styles = StyleSheet.create({
   previewStatusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   transcriptCard: { borderWidth: 1, borderRadius: 12, padding: 11, gap: 8 },
   analysisBusy: { flexDirection: "row", alignItems: "center", gap: 8 },
+  syncingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 4 },
   scoreRow: { flexDirection: "row", alignItems: "flex-start", gap: 9, marginTop: 2 },
   scorePill: { minWidth: 62, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, alignItems: "center" },
   voiceRow: { flexDirection: "row", alignItems: "center", gap: 10 },
