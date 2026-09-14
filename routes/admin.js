@@ -1412,10 +1412,29 @@ router.post("/studies/:id/respondents/invite", async (req, res) => {
     account_id: account.id,
   });
 
-  logAudit(req.session.user.email, "invite_respondent", "respondents", id, {
-    study_id: study.id, account_id: account.id,
+  const send = await messaging.getProvider().send({
+    respondentId: id,
+    to: account.contact,
+    template: "survey_invite",
+    variables: {
+      name: account.name || name || "there",
+      study: study.name,
+      link: `${appBaseUrl(req)}/invite/${token}`,
+    },
   });
-  back(`${account.name || account.contact} invited as ${code}. They'll see this study next time they sign in.`, true);
+
+  logAudit(req.session.user.email, "invite_respondent", "respondents", id, {
+    study_id: study.id, account_id: account.id, sent: !!(send.ok && !send.simulated),
+  });
+
+  if (!send.ok) {
+    return back(`${account.name || account.contact} was added as ${code}, but the invitation could not be sent: ${send.error || "unknown error"}`, false);
+  }
+  if (send.simulated) {
+    return back(`${account.name || account.contact} was added as ${code}, but messaging isn't connected yet, so nothing was delivered to ${account.contact} — the invitation was logged only.`, false);
+  }
+  await store.update("respondents", { id }, { invite_sent_at: store.nowSql() });
+  back(`${account.name || account.contact} invited as ${code}. An invitation was sent to ${account.contact}.`, true);
 });
 
 // ---------- Respondent drill-down ----------
