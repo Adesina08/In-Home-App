@@ -55,7 +55,7 @@ export function InterviewerBulkUploadScreen({
               Get the template
             </Text>
             <Text className="mb-2 text-[10.5px] leading-[14px] text-[#64748B] dark:text-[#94A3B8]">
-              Two columns: name and phone.
+              Three columns: name, phone and email. Fill in a phone or an email for each person.
             </Text>
             <Pressable
               onPress={onDownloadTemplate}

@@ -12,7 +12,7 @@
     <div class="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-0.5">Recruitment</div>
     <h1 class="text-2xl font-bold text-slate-900">Invite a group of people</h1>
     <p class="text-slate-500 text-sm mt-1">
-      Upload a list and text everyone an invitation to <strong><%= study.name %></strong>. Nothing is sent until you've seen what the app made of each row.
+      Upload a list and message everyone an invitation to <strong><%= study.name %></strong>, by text or email. Nothing is sent until you've seen what the app made of each row.
     </p>
   </div>
 
@@ -25,7 +25,7 @@
   <% if (!messagingLive) { %>
     <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">
       <%- icon('warning', 'w-4 h-4 mt-0.5 shrink-0') %>
-      <span>Text messaging isn't connected yet, so invitations can't actually be delivered. You can still upload and check a list — the send step will tell you plainly that nothing went out.</span>
+      <span>Messaging isn't connected yet, so invitations can't actually be delivered. You can still upload and check a list — the send step will tell you plainly that nothing went out.</span>
     </div>
   <% } %>
 
@@ -36,7 +36,8 @@
       <div class="min-w-0">
         <div class="font-semibold text-slate-800 mb-1">Get the template</div>
         <p class="text-sm text-slate-500 mb-3 leading-relaxed">
-          Two columns: <strong>name</strong> and <strong>phone</strong>. Fill in one row per person and save it.
+          Three columns: <strong>name</strong>, <strong>phone</strong> and <strong>email</strong>. Fill in a phone or an email
+          for each person — whichever you have — and save it.
         </p>
         <a href="<%= basePath %>/bulk-invite/template.csv"
            class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 transition">
@@ -60,7 +61,8 @@
                class="w-full sm:w-48 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition mb-1.5" />
         <p class="text-[11px] text-slate-400 mb-4 leading-relaxed">
           Numbers must reach the network as <code>+234801…</code>. A list written the usual way — <code>08012345678</code> —
-          is converted for you, and the next screen shows you exactly what changed.
+          is converted for you, and the next screen shows you exactly what changed. Rows with an email instead of a phone
+          number are invited by email — no country code needed for those.
         </p>
 
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Your filled-in list</label>

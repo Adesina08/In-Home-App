@@ -93,7 +93,7 @@ export function InterviewerBulkReviewScreen({
                   {row.name || `Row ${row.rowNumber}`}
                 </Text>
                 <Text className="font-mono text-[9px] text-[#94A3B8]" numberOfLines={1}>
-                  {row.contact || row.note || "No number found"}
+                  {row.contact || row.note || "No contact found"}
                 </Text>
               </View>
               <View className="rounded-full px-[7px] py-[2px]" style={{ backgroundColor: pill.bg }}>

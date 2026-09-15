@@ -103,8 +103,8 @@ router.post("/send", async (req, res) => {
   const names = [].concat(req.body.name || []);
   const contacts = [].concat(req.body.contact || []);
   const rows = contacts
-    .map((contact, i) => ({ rowNumber: i + 2, name: (names[i] || "").trim(), phone: String(contact || "").trim() }))
-    .filter((r) => r.phone);
+    .map((contact, i) => ({ rowNumber: i + 2, name: (names[i] || "").trim(), contact: String(contact || "").trim() }))
+    .filter((r) => r.contact);
 
   const reviewed = bulk.reviewRoster({
     rows,
@@ -155,10 +155,10 @@ router.post("/send", async (req, res) => {
       // message just wasn't delivered. Counted separately so nobody reads
       // "invited" as "contacted".
       outcome.failed++;
-      outcome.errors.push(`${row.name || row.contact}: messaging isn't connected, so no text was sent.`);
+      outcome.errors.push(`${row.name || row.contact}: messaging isn't connected, so nothing was sent.`);
     } else {
       outcome.failed++;
-      outcome.errors.push(`${row.name || row.contact}: ${sendResult.error || "could not be texted."}`);
+      outcome.errors.push(`${row.name || row.contact}: ${sendResult.error || "could not be delivered."}`);
     }
   }
 

@@ -255,8 +255,8 @@ router.post("/studies/:id/bulk/send", requireInterviewer, async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   const countryCode = String(req.body.country_code || "").trim();
   const normalised = rows
-    .map((r, i) => ({ rowNumber: r.rowNumber || i + 2, name: String(r.name || "").trim(), phone: String(r.phone || r.contact || "").trim() }))
-    .filter((r) => r.phone);
+    .map((r, i) => ({ rowNumber: r.rowNumber || i + 2, name: String(r.name || "").trim(), contact: String(r.contact || r.phone || "").trim() }))
+    .filter((r) => r.contact);
 
   const reviewed = bulk.reviewRoster({ rows: normalised, countryCode, existingContacts: await existingContactsFor(study.id) });
   const toInvite = bulk.invitableRows(reviewed);
@@ -293,10 +293,10 @@ router.post("/studies/:id/bulk/send", requireInterviewer, async (req, res) => {
       outcome.invited++;
     } else if (sendResult.simulated) {
       outcome.failed++;
-      outcome.errors.push(`${row.name || row.contact}: messaging isn't connected, so no text was sent.`);
+      outcome.errors.push(`${row.name || row.contact}: messaging isn't connected, so nothing was sent.`);
     } else {
       outcome.failed++;
-      outcome.errors.push(`${row.name || row.contact}: ${sendResult.error || "could not be texted."}`);
+      outcome.errors.push(`${row.name || row.contact}: ${sendResult.error || "could not be delivered."}`);
     }
   }
 
