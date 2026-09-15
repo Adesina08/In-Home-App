@@ -36,7 +36,7 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
   const [elapsed, setElapsed] = useState(0);
   const [index, setIndex] = useState(0);
   const [auto, setAuto] = useState(true);
-  const [pace, setPace] = useState(Math.max(3, script.secondsEach));
+  const [pace, setPace] = useState(4);
   const [showPromptSettings, setShowPromptSettings] = useState(false);
   const [error, setError] = useState('');
   const [foreground, setForeground] = useState(AppState.currentState === 'active');

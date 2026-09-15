@@ -119,10 +119,17 @@ export function HomeScreen({
               Inicio Diary
             </Text>
           </View>
-          <View className="h-[26px] w-[26px] items-center justify-center rounded-full border border-[#E2E8F0] bg-white dark:border-[#1B3556] dark:bg-[#0F2038]">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="View activity"
+            onPress={() => onNavigate?.("activity")}
+            className="h-[26px] w-[26px] items-center justify-center rounded-full border border-[#E2E8F0] bg-white dark:border-[#1B3556] dark:bg-[#0F2038]"
+          >
             <Icon name="bell" size={13} color={muted} strokeWidth={1.75} />
-            <View className="absolute right-0 top-0 h-[7px] w-[7px] rounded-full border-[1.5px] border-[#FAF9F7] bg-[#2563EB] dark:border-[#0A1628]" />
-          </View>
+            {draftsCount > 0 ? (
+              <View className="absolute right-0 top-0 h-[7px] w-[7px] rounded-full border-[1.5px] border-[#FAF9F7] bg-[#2563EB] dark:border-[#0A1628]" />
+            ) : null}
+          </Pressable>
         </View>
 
         {/* Greeting */}

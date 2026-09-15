@@ -72,6 +72,9 @@ type MediaAnalysis = {
   scoreStatus?: "processing" | "done" | "unavailable" | "error";
   score?: number | null;
   scoreRationale?: string | null;
+  detectionStatus?: "processing" | "done" | "needs_review" | "unavailable" | "error" | "pending";
+  detectedBrand?: string | null;
+  detectionConfidence?: number | null;
 };
 type MediaAnalysisMap = Record<string, MediaAnalysis>;
 type ProfileForm = {
@@ -321,6 +324,21 @@ function secondsLabel(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+// Ticks its own local state on a private interval, isolated from the parent
+// diary screen -- that screen can hold many questions with photo/video
+// previews, and re-rendering all of it twice a second for the whole
+// recording duration (the elapsed time used to live in the parent's state)
+// was a real, reproducible source of jank while recording a voice note.
+function RecordingClock() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 500);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{formatSeconds(seconds)}</>;
+}
+
 function AudioEvidencePreview({ asset, t }: { asset: MediaAsset; t: Theme }) {
   const player = useAudioPlayer({ uri: asset.uri });
   const status = useAudioPlayerStatus(player);
@@ -352,6 +370,14 @@ function CapturedEvidence({ type, asset, analysis, t }: { type: "photo" | "video
       {analysis.transcriptStatus === "error" ? <Text style={[styles.smallMuted, { color: t.red }]}>The recording could not be transcribed. Capture it again or submit it for retry.</Text> : null}
       {analysis.transcriptStatus === "done" && analysis.scoreStatus === "done" ? <View style={styles.scoreRow}><View style={[styles.scorePill, { backgroundColor: t.blueSoft }]}><Text style={{ color: t.blue, fontWeight: "900" }}>{analysis.score}/100</Text></View><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800", fontSize: 12 }}>AI response-quality score</Text><Text style={[styles.smallMuted, { color: t.muted }]}>{analysis.scoreRationale}</Text></View></View> : null}
       {analysis.transcriptStatus === "done" && analysis.scoreStatus !== "done" ? <Text style={[styles.smallMuted, { color: t.muted }]}>AI score unavailable. This does not affect the saved transcript.</Text> : null}
+    </View> : null}
+    {type !== "audio" && analysis ? <View style={[styles.transcriptCard, { backgroundColor: t.bg2, borderColor: t.border }]}>
+      <Text style={{ color: t.text, fontWeight: "900", fontSize: 12 }}>Brand detection</Text>
+      {analysis.detectionStatus === "processing" ? <View style={styles.analysisBusy}><ActivityIndicator size="small" color={t.blue} /><Text style={[styles.smallMuted, { color: t.muted }]}>Looking for a brand…</Text></View> : null}
+      {(analysis.detectionStatus === "done" || analysis.detectionStatus === "needs_review") && analysis.detectedBrand ? <View style={styles.scoreRow}><View style={[styles.scorePill, { backgroundColor: t.blueSoft }]}><Text style={{ color: t.blue, fontWeight: "900" }}>{analysis.detectedBrand}</Text></View><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800", fontSize: 12 }}>{analysis.detectionStatus === "done" ? "Brand detected" : "Possible brand match"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>{analysis.detectionConfidence != null ? `${Math.round(analysis.detectionConfidence * 100)}% confidence` : "Pending confirmation"}</Text></View></View> : null}
+      {analysis.detectionStatus === "pending" ? <Text style={[styles.smallMuted, { color: t.amber }]}>Offline preview only. Brand detection will run when this entry syncs.</Text> : null}
+      {analysis.detectionStatus === "unavailable" ? <Text style={[styles.smallMuted, { color: t.muted }]}>No brand was identified. The {type} is still saved.</Text> : null}
+      {analysis.detectionStatus === "error" ? <Text style={[styles.smallMuted, { color: t.red }]}>Brand detection failed. Capture it again or submit it for retry.</Text> : null}
     </View> : null}
   </View>;
 }
@@ -476,17 +502,14 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [media, setMedia] = useState<MediaMap>({});
   const [mediaAnalysis, setMediaAnalysis] = useState<MediaAnalysisMap>({});
   const [recordingQuestionId, setRecordingQuestionId] = useState<number | null>(null);
-  const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingLock = useRef(false);
   const activeRecordingQuestion = useRef<number | null>(null);
-  const recordingStartedAt = useRef(0);
-  const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [problems, setProblems] = useState<any[]>([]);
   const [videoScript, setVideoScript] = useState<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number } | null>(null);
   const [standardVideoQuestion, setStandardVideoQuestion] = useState<any>(null);
   const exitPromptOpen = useRef(false);
-  const [photoSource,setPhotoSource] = useState<{uri:string;headers:Record<string,string>}|undefined>();
+  const [photoSource,setPhotoSource] = useState<{uri:string}|undefined>();
   const [photoBusy,setPhotoBusy] = useState(false);
   const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
@@ -507,16 +530,36 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     else setScreen("studies");
   }
 
+  // The profile photo endpoint requires a bearer token, but React Native's
+  // core <Image> component doesn't reliably send custom headers on Android
+  // (worse with the New Architecture) -- the request silently drops the
+  // header and the image never loads. Fetching it in JS with the header set
+  // explicitly, then handing the Image component a plain data: URI, sidesteps
+  // that entirely since no further authenticated request is ever made.
   async function showProfilePhoto(profile:any) {
+    if(!profile?.hasPhoto){setPhotoSource(undefined);return;}
     const token=await getToken();
-    setPhotoSource(profile?.hasPhoto&&token?{uri:`${API_BASE}/mobile/api/profile/photo?v=${encodeURIComponent(profile.photoUpdatedAt||'')}`,headers:{Authorization:`Bearer ${token}`}}:undefined);
-  }
-  async function uploadProfilePhoto() {
-    if(photoBusy)return;
+    if(!token){setPhotoSource(undefined);return;}
     try {
-      const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if(!permission.granted){Alert.alert('Photo access needed','Allow photo access in device settings to choose your profile image.');return;}
-      const picked=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.65});
+      const response=await fetch(`${API_BASE}/mobile/api/profile/photo?v=${encodeURIComponent(profile.photoUpdatedAt||'')}`,{headers:{Authorization:`Bearer ${token}`}});
+      if(!response.ok){setPhotoSource(undefined);return;}
+      const blob=await response.blob();
+      const dataUri:string=await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onerror=()=>reject(new Error('Could not read the downloaded photo.'));
+        reader.onload=()=>resolve(String(reader.result));
+        reader.readAsDataURL(blob);
+      });
+      setPhotoSource({uri:dataUri});
+    } catch { setPhotoSource(undefined); }
+  }
+  async function captureProfilePhoto(source:'camera'|'library') {
+    try {
+      const permission=source==='camera'?await ImagePicker.requestCameraPermissionsAsync():await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if(!permission.granted){Alert.alert(source==='camera'?'Camera access needed':'Photo access needed',`Allow ${source==='camera'?'camera':'photo'} access in device settings to ${source==='camera'?'take':'choose'} your profile image.`);return;}
+      const picked=source==='camera'
+        ?await ImagePicker.launchCameraAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.65})
+        :await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.65});
       if(picked.canceled||!picked.assets[0])return;
       const asset=picked.assets[0];
       if(asset.fileSize&&asset.fileSize>3*1024*1024){Alert.alert('Choose a smaller image','Profile images must be smaller than 3 MB.');return;}
@@ -525,6 +568,14 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       const result=await api.uploadProfilePhoto(form);await showProfilePhoto(result.profile);
     } catch(e:any){Alert.alert('Could not upload photo',e.message);}
     finally{setPhotoBusy(false);}
+  }
+  function uploadProfilePhoto() {
+    if(photoBusy)return;
+    Alert.alert('Change photo','Take a new photo or choose one from your library.',[
+      {text:'Take photo',onPress:()=>captureProfilePhoto('camera')},
+      {text:'Choose from library',onPress:()=>captureProfilePhoto('library')},
+      {text:'Cancel',style:'cancel'},
+    ]);
   }
 
   async function loadProfileGate() {
@@ -865,9 +916,13 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   }
 
   async function analyseEvidence(q: any, asset: MediaAsset) {
-    if (!selected || !["audio", "video"].includes(q.type)) return;
+    if (!selected || !["audio", "video", "photo"].includes(q.type)) return;
     const id = String(q.id);
-    setMediaAnalysis((old) => ({ ...old, [id]: { transcriptStatus: "processing", scoreStatus: "processing" } }));
+    const detectable = q.type !== "audio";
+    setMediaAnalysis((old) => ({
+      ...old,
+      [id]: { transcriptStatus: "processing", scoreStatus: "processing", detectionStatus: detectable ? "processing" : "unavailable" },
+    }));
     try {
       const form = new FormData();
       form.append("question_id", id);
@@ -881,6 +936,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
         [id]: {
           transcriptStatus: offline ? "pending" : "error",
           scoreStatus: "unavailable",
+          detectionStatus: detectable ? (offline ? "pending" : "error") : "unavailable",
           scoreRationale: offline ? "Waiting for a connection." : (e.message || "Analysis failed."),
         },
       }));
@@ -898,7 +954,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     }
     try {
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: .82 } as any);
-      if (!result.canceled && result.assets?.[0]) { const saved=await preserveMedia({...result.assets[0],field:String(q.id)},`draft-${selected?.respondent.id}`);setMedia((old) => ({ ...old, [String(q.id)]:saved }));setMediaAnalysis((old)=>{const next={...old};delete next[String(q.id)];return next;}); }
+      if (!result.canceled && result.assets?.[0]) { const saved=await preserveMedia({...result.assets[0],field:String(q.id)},`draft-${selected?.respondent.id}`);setMedia((old) => ({ ...old, [String(q.id)]:saved }));setMediaAnalysis((old)=>{const next={...old};delete next[String(q.id)];return next;});analyseEvidence(q,saved); }
     } catch (e: any) { Alert.alert("Camera unavailable", e.message || "Could not open the camera."); }
   }
 
@@ -917,15 +973,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       audioRecorder.record();
       activeRecordingQuestion.current = questionId;
       setRecordingQuestionId(questionId);
-      recordingStartedAt.current = Date.now();
-      setRecordingElapsedSeconds(0);
-      if (recordingTimer.current) clearInterval(recordingTimer.current);
-      recordingTimer.current = setInterval(() => {
-        setRecordingElapsedSeconds(Math.floor((Date.now() - recordingStartedAt.current) / 1000));
-      }, 500);
     } catch (e: any) {
       try { if (audioRecorder.getStatus().canRecord) await audioRecorder.stop(); } catch {}
-      if (recordingTimer.current) { clearInterval(recordingTimer.current); recordingTimer.current = null; }
       Alert.alert("Microphone unavailable", e.message || "Could not start recording.");
     } finally {
       recordingLock.current = false;
@@ -935,7 +984,6 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   async function stopRecording(questionId: number) {
     if (recordingLock.current || activeRecordingQuestion.current !== questionId) return;
     recordingLock.current = true;
-    if (recordingTimer.current) { clearInterval(recordingTimer.current); recordingTimer.current = null; }
     try {
       await audioRecorder.stop();
       if (audioRecorder.uri) {
@@ -952,7 +1000,6 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     } finally {
       activeRecordingQuestion.current = null;
       setRecordingQuestionId(null);
-      setRecordingElapsedSeconds(0);
       await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(()=>{});
       recordingLock.current = false;
     }
@@ -1136,7 +1183,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   // Modal inside the "diary" screen below (over the questionnaire, not a
   // screen navigation) so answering the rest of the form isn't interrupted.
 
-  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View><TextInput accessibilityLabel={`Answer for ${q.text}`} value={value === undefined || value === null ? "" : String(value)} onChangeText={(v) => setAnswer(q.id, v.replace(/[^0-9.\-]/g, ""))} keyboardType="decimal-pad" placeholder="Enter a number" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border }]} />{(q.minValue != null || q.maxValue != null || q.stepValue) ? <Text style={[styles.smallMuted, { color: t.muted, marginTop: 4 }]}>{[q.minValue != null && q.maxValue != null ? `Between ${q.minValue} and ${q.maxValue}` : q.minValue != null ? `${q.minValue} or more` : q.maxValue != null ? `${q.maxValue} or less` : null, q.stepValue ? `in steps of ${q.stepValue}` : null].filter(Boolean).join(", ")}</Text> : null}</View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? `Recording… ${formatSeconds(recordingElapsedSeconds)} · tap to stop` : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View><Modal visible={!!standardVideoQuestion} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setStandardVideoQuestion(null)}>{standardVideoQuestion && selected ? <StandardVideoCaptureScreen mode={mode} respondentId={selected.respondent.id} questionId={standardVideoQuestion.id} questionText={standardVideoQuestion.text} onBack={() => setStandardVideoQuestion(null)} onCaptured={(asset) => { const question = standardVideoQuestion; setMedia((old) => ({ ...old, [String(question.id)]: asset })); setMediaAnalysis((old) => { const next = { ...old }; delete next[String(question.id)]; return next; }); setStandardVideoQuestion(null); analyseEvidence(question, asset); }} /> : null}</Modal></KeyboardAvoidingView></AppFrame>;
+  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View><TextInput accessibilityLabel={`Answer for ${q.text}`} value={value === undefined || value === null ? "" : String(value)} onChangeText={(v) => setAnswer(q.id, v.replace(/[^0-9.\-]/g, ""))} keyboardType="decimal-pad" placeholder="Enter a number" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border }]} />{(q.minValue != null || q.maxValue != null || q.stepValue) ? <Text style={[styles.smallMuted, { color: t.muted, marginTop: 4 }]}>{[q.minValue != null && q.maxValue != null ? `Between ${q.minValue} and ${q.maxValue}` : q.minValue != null ? `${q.minValue} or more` : q.maxValue != null ? `${q.maxValue} or less` : null, q.stepValue ? `in steps of ${q.stepValue}` : null].filter(Boolean).join(", ")}</Text> : null}</View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? <>Recording… <RecordingClock /> · tap to stop</> : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View><Modal visible={!!standardVideoQuestion} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setStandardVideoQuestion(null)}>{standardVideoQuestion && selected ? <StandardVideoCaptureScreen mode={mode} respondentId={selected.respondent.id} questionId={standardVideoQuestion.id} questionText={standardVideoQuestion.text} onBack={() => setStandardVideoQuestion(null)} onCaptured={(asset) => { const question = standardVideoQuestion; setMedia((old) => ({ ...old, [String(question.id)]: asset })); setMediaAnalysis((old) => { const next = { ...old }; delete next[String(question.id)]; return next; }); setStandardVideoQuestion(null); analyseEvidence(question, asset); }} /> : null}</Modal></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
 }

@@ -11,7 +11,7 @@ const { validateSubmission } = require("../lib/answerValidation");
 const { findTerminateMatch } = require("../lib/skipLogic");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { persistUpload } = require("../lib/mediaStorage");
-const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
+const { getProvider: getBrandDetectionProvider, identifyBrandInFile } = require("../lib/brandDetection");
 const { analyseLocalMedia, analyseStoredMedia } = require("../lib/mediaTranscriptAnalysis");
 const { logAudit } = require("../lib/audit");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
@@ -250,21 +250,35 @@ router.get("/respondents/:id/diary/video-script", requireMobileAuth, async (req,
 
 // Standard-mode media is previewed on the device. Audio and video can also be
 // sent here before the diary is submitted so the respondent sees the real
-// transcript and AI response-quality score while the question is still open.
-// Nothing is persisted by this preview endpoint; the final submission repeats
-// the analysis against the durable media row so the research record is complete.
+// transcript and AI response-quality score while the question is still open;
+// photo and video also get a live brand-detection read the same way. Nothing
+// is persisted by this preview endpoint; the final submission repeats the
+// analysis against the durable media row so the research record is complete.
 router.post("/respondents/:id/diary/media-analysis", requireMobileAuth, upload.single("media"), submission.cleanupUploads, async (req, res) => {
   const respondent = await ownedRespondent(req, req.params.id);
   if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
   if (!await diaryGate(respondent, res)) return;
-  if (!req.file) return res.status(400).json({ error: "Attach an audio or video recording to analyse." });
+  if (!req.file) return res.status(400).json({ error: "Attach a photo, audio or video recording to analyse." });
 
   const { questions } = await loadQuestionnaire(respondent.study_id, { respondentId: respondent.id });
   const question = questions.find((item) => item.id === Number(req.body.question_id));
-  if (!question || !["audio", "video"].includes(question.type)) return res.status(400).json({ error: "This recording does not match an audio or video diary question." });
+  if (!question || !["audio", "video", "photo"].includes(question.type)) return res.status(400).json({ error: "This file does not match a photo, audio or video diary question." });
 
-  const result = await analyseLocalMedia({ filePath: req.file.path, mediaType: question.type, question });
-  res.json({ questionId: question.id, ...result });
+  const transcriptResult = question.type === "photo"
+    ? { transcriptStatus: "unavailable", transcriptText: null, scoreStatus: "unavailable", score: null, scoreRationale: null }
+    : await analyseLocalMedia({ filePath: req.file.path, mediaType: question.type, question });
+
+  let detectionStatus = "unavailable", detectedBrand = null, detectionConfidence = null;
+  if (question.type !== "audio") {
+    const study = await store.findOne("studies", { id: respondent.study_id });
+    const brands = await require("../lib/productCandidates").forStudy(study);
+    const outcome = await identifyBrandInFile(req.file.path, question.type, req.file.mimetype || null, brands);
+    detectionStatus = outcome.status;
+    detectedBrand = outcome.detectedBrand;
+    detectionConfidence = outcome.confidence;
+  }
+
+  res.json({ questionId: question.id, ...transcriptResult, detectionStatus, detectedBrand, detectionConfidence });
 });
 
 // Video mode: the respondent's part ends here. The video is saved as evidence
@@ -384,6 +398,11 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
   try { brandProvider = getBrandDetectionProvider(); } catch (e) { console.error("Mobile brand detection unavailable:", e.message); }
   const brands = await require("../lib/productCandidates").forStudy(study);
   const mediaAnalysisJobs = [];
+  // Brand detection on a voice note reads its transcript, which only exists
+  // once analyseStoredMedia (pushed to mediaAnalysisJobs below) finishes --
+  // so audio rows are collected here and matched back up to their transcript
+  // after that settles, rather than run alongside it with nothing to read.
+  const audioMediaForBrand = [];
 
   for (const f of req.files || []) {
     const storedPath = await persistUpload(f);
@@ -395,9 +414,16 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
     const { id: mediaId } = await store.insert("media", { record_id: recordId, question_id: question?.id || null, media_type: mediaType, mimetype: mime, file_path: storedPath });
     const mediaRow = { id: mediaId, record_id: recordId, question_id: question?.id || null, media_type: mediaType, file_path: storedPath };
     if ((mediaType === "audio" || mediaType === "video") && question) mediaAnalysisJobs.push(analyseStoredMedia(mediaRow, question));
-    if (mediaType !== "audio" && brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
+    if (mediaType === "audio") audioMediaForBrand.push(mediaRow);
+    else if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
   }
   const mediaResults = await Promise.all(mediaAnalysisJobs);
+  if (brandProvider) {
+    for (const mediaRow of audioMediaForBrand) {
+      const result = mediaResults.find((r) => r.mediaId === mediaRow.id);
+      if (result?.transcriptText) brandProvider.detect({ ...mediaRow, transcript_text: result.transcriptText }, brands).catch(() => {});
+    }
+  }
 
   if (isSubmit && !isPractice) {
     await store.update("respondents", { id: respondent.id, activation_status: { $ne: "active" } }, { activation_status: "active" });
