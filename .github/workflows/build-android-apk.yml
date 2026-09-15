@@ -35,6 +35,10 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          # The legacy "tools" package (this action's default) was removed
+          # from Google's SDK repository, so sdkmanager can no longer find it.
+          packages: platform-tools
       - name: Install the native app dependencies
         working-directory: expo-mobile
         run: npm ci --no-audit --no-fund

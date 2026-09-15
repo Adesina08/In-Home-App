@@ -389,6 +389,65 @@ function ChoiceList({ options, value, onChange, t }: { options: string[][]; valu
   return <View style={{ gap: 8 }}>{options.map(([key, label]) => { const active = value === key; return <Pressable key={key} onPress={() => onChange(key)} style={[styles.choiceRow, { borderColor: active ? t.blue : t.border, backgroundColor: active ? t.blueSoft : t.card2 }]}><View style={[styles.radio, { borderColor: active ? t.blue : t.muted }, active && { borderWidth: 5 }]} /><Text style={[styles.choiceText, { color: t.text }]}>{label}</Text></Pressable>; })}</View>;
 }
 
+// What a just-submitted entry turned into once the app actually tried to sync
+// it: `ok` when the server confirmed receipt straight away, `needsAttention`
+// when the server rejected it (a validation problem the respondent has to
+// fix before it can go anywhere), otherwise it's still sitting in the queue
+// because the network attempt failed -- which the background sync will keep
+// retrying on its own.
+type SubmitOutcome = { ok: boolean; needsAttention?: boolean; message: string; packet?: DiaryPacket };
+
+// The two states a submission can be in while the respondent waits: a brief
+// spinner while the app tries to sync right away, then a single modal saying
+// what actually happened -- rather than always dropping them on the "Saved on
+// this device" queue screen whether or not that queue ever had anything to
+// show them.
+function SubmitStatusModals({ t, submitSyncing, submitOutcome, onDismiss, onReview }: {
+  t: Theme;
+  submitSyncing: boolean;
+  submitOutcome: SubmitOutcome | null;
+  onDismiss: () => void;
+  onReview: (packet: DiaryPacket) => void;
+}) {
+  return (
+    <>
+      <Modal visible={submitSyncing} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: t.card, borderColor: t.border }]}>
+            <ActivityIndicator size="large" color={t.blue} />
+            <Text style={[styles.modalTitle, { color: t.text }]}>Submitting your entry…</Text>
+            <Text style={[styles.modalMessage, { color: t.muted }]}>Hang on while we save and sync it.</Text>
+          </View>
+        </View>
+      </Modal>
+      <Modal visible={!!submitOutcome} transparent animationType="fade" onRequestClose={onDismiss}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: t.card, borderColor: t.border }]}>
+            <Icon
+              glyph={submitOutcome?.ok ? "✓" : submitOutcome?.needsAttention ? "!" : "↻"}
+              t={t}
+              tone={submitOutcome?.ok ? "green" : submitOutcome?.needsAttention ? "amber" : "blue"}
+              size={22}
+            />
+            <Text style={[styles.modalTitle, { color: t.text }]}>
+              {submitOutcome?.ok ? "Entry synced" : submitOutcome?.needsAttention ? "Needs attention" : "Saved on this device"}
+            </Text>
+            <Text style={[styles.modalMessage, { color: t.muted }]}>{submitOutcome?.message}</Text>
+            {submitOutcome?.needsAttention && submitOutcome.packet?.kind === "standard" ? (
+              <Pressable onPress={() => onReview(submitOutcome.packet!)} style={{ marginTop: 6 }}>
+                <Text style={{ color: t.blue, fontWeight: "800", fontSize: 13 }}>Review and edit saved entry</Text>
+              </Pressable>
+            ) : null}
+            <View style={{ marginTop: 16, width: "100%" }}>
+              <PrimaryButton title="Got it" t={t} arrow={false} onPress={onDismiss} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 function FieldError({ message, t }: { message?: string; t: Theme }) { return message ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{message}</Text> : null; }
 
 export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: () => void }) {
@@ -653,6 +712,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   async function openParticipation(target: "participation" | "rewards" = "participation"){if(!selected)return;try{setParticipation(await api.participation(selected.respondent.id));setScreen(target);}catch(e:any){Alert.alert("Connection needed",e.message);}}
   const [pendingEntries,setPendingEntries]=useState<DiaryPacket[]>([]);
   const [syncing,setSyncing]=useState(false);
+  const [submitSyncing,setSubmitSyncing]=useState(false);
+  const [submitOutcome,setSubmitOutcome]=useState<SubmitOutcome|null>(null);
   const [captureTime,setCaptureTime]=useState(new Date().toISOString());
   const [occurrenceTime,setOccurrenceTime]=useState(new Date().toISOString());
   const [participationKind,setParticipationKind]=useState('occasion');
@@ -671,10 +732,37 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     }catch(e:any){Alert.alert('Could not open saved entry',e.message);}
   }
   async function refreshSync(manual=false){
-    if(!selected)return;
+    if(!selected)return [];
     setSyncing(true);
-    try{await syncQueue(selected.respondent.id,manual);setPendingEntries(await listQueue(selected.respondent.id));}
+    try{await syncQueue(selected.respondent.id,manual);const list=await listQueue(selected.respondent.id);setPendingEntries(list);return list;}
     finally{setSyncing(false);}
+  }
+  // Runs right after an entry is queued: try to sync it immediately (using
+  // the same queue everything else retries from, so a slow network still
+  // leaves the entry safe) and then say, once, what actually happened --
+  // rather than always sending the respondent to the queue screen whether or
+  // not there was ever anything to review there. `submitSyncing` is a
+  // separate flag from `syncing` on purpose: `syncing` also flips on the
+  // silent 30-second background poll, which must never pop this spinner up
+  // over whatever screen the respondent happens to be looking at.
+  async function finishSubmission(entryId:string,respondentId:number){
+    setSubmitSyncing(true);
+    try{
+      const queue=(await refreshSync(true))||[];
+      const stillQueued=queue.find(p=>p.id===entryId);
+      if(!stillQueued){
+        setSubmitOutcome({ok:true,message:"Your diary entry has been saved and synced to the server."});
+      }else if(stillQueued.state==='needs_attention'){
+        setSubmitOutcome({ok:false,needsAttention:true,message:stillQueued.error||"There's a problem with this entry. Review it before it can sync.",packet:stillQueued});
+      }else{
+        setSubmitOutcome({ok:false,message:"We couldn't reach the server just now. This entry is saved on your device and will sync automatically in the background once your connection is stable."});
+      }
+    }catch{
+      setSubmitOutcome({ok:false,message:"We couldn't reach the server just now. This entry is saved on your device and will sync automatically in the background once your connection is stable."});
+    }finally{
+      setSubmitSyncing(false);
+    }
+    try{setHome(await api.home(respondentId));}catch{}
   }
   useEffect(()=>{
     if(!selected)return;
@@ -754,9 +842,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     if (!selected) throw new Error('Select your study before submitting.');
     const respondentId = selected.respondent.id;
     await enqueue({id:draft.id,respondentId,kind:'video',fields:{capture_time:draft.captureTime,occurrence_time:draft.captureTime,submit_time:new Date().toISOString()},media:[{uri:draft.uri,fileName:draft.fileName,mimeType:draft.mimeType,field:'video'}],state:'pending',attempts:0,createdAt:draft.captureTime});
-    setVideoScript(null);setScreen('sync');
-    refreshSync().catch(()=>{});
-    api.home(respondentId).then(setHome).catch(()=>{});
+    setVideoScript(null);setScreen('home');
+    await finishSubmission(draft.id,respondentId);
   }
 
   async function saveDraft() {
@@ -879,10 +966,12 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       const numericProblems = numericAnswerProblems(questionnaire.questions || [], answers);
       if (numericProblems.length) { setProblems(numericProblems); setBusy(false); return; }
       const evidence=Object.entries(media).map(([id,asset])=>{const q=questionnaire.questions.find((q:any)=>String(q.id)===id);return {...asset,field:`${q?.type||'photo'}_q_${id}`,mimeType:asset.mimeType||(q?.type==='audio'?'audio/m4a':q?.type==='video'?'video/mp4':'image/jpeg')};});
-      await enqueue({id:entryKey,respondentId:selected.respondent.id,kind:'standard',fields:{action:'submit',entry_mode:'standard',occurrence_time:occurrenceTime,capture_time:captureTime,submit_time:new Date().toISOString(),answers_json:JSON.stringify(answers),other_text_json:JSON.stringify(otherText),participation_kind:participationKind,practice:questionnaire.study.practiceRequired?'1':'0',occasion_number:String(occasionNumber)},media:evidence,state:'pending',attempts:0,createdAt:new Date().toISOString()});
+      const submittedId=entryKey;
+      const respondentId=selected.respondent.id;
+      await enqueue({id:submittedId,respondentId,kind:'standard',fields:{action:'submit',entry_mode:'standard',occurrence_time:occurrenceTime,capture_time:captureTime,submit_time:new Date().toISOString(),answers_json:JSON.stringify(answers),other_text_json:JSON.stringify(otherText),participation_kind:participationKind,practice:questionnaire.study.practiceRequired?'1':'0',occasion_number:String(occasionNumber)},media:evidence,state:'pending',attempts:0,createdAt:new Date().toISOString()});
       if(draftKey)await AsyncStorage.removeItem(draftKey);
-      setAnswers({});setOtherText({});setMedia({});setMediaAnalysis({});setScreen('sync');await refreshSync();
-      try{setHome(await api.home(selected.respondent.id));}catch{}
+      setAnswers({});setOtherText({});setMedia({});setMediaAnalysis({});setEntryKey(packetId());setScreen('home');
+      await finishSubmission(submittedId,respondentId);
     } catch (e: any) {
       if (e.profileRequired) await loadProfileGate();
       else if (e.problems?.length) setProblems(e.problems);
@@ -932,23 +1021,32 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
     if (screen === "home")
       return (
-        <HomeScreen
-          firstName={firstName(respondentName)}
-          studyName={home.study.name}
-          consentNeeded={!!consentNeeded}
-          consentBody={home.consent?.body}
-          busy={busy}
-          onAcceptConsent={acceptConsent}
-          submittedCount={submitted}
-          draftsCount={drafts}
-          totalCount={records.length}
-          recentRecords={displayRecords.slice(0, 2)}
-          occasionRecords={displayRecords.slice(0, 4)}
-          onStartDiary={openDiaryModePicker}
-          onOpenStudies={() => setScreen("studies")}
-          onViewAllEntries={() => setScreen("entries")}
-          onNavigate={(key) => setScreen(key as Screen)}
-        />
+        <>
+          <HomeScreen
+            firstName={firstName(respondentName)}
+            studyName={home.study.name}
+            consentNeeded={!!consentNeeded}
+            consentBody={home.consent?.body}
+            busy={busy}
+            onAcceptConsent={acceptConsent}
+            submittedCount={submitted}
+            draftsCount={drafts}
+            totalCount={records.length}
+            recentRecords={displayRecords.slice(0, 2)}
+            occasionRecords={displayRecords.slice(0, 4)}
+            onStartDiary={openDiaryModePicker}
+            onOpenStudies={() => setScreen("studies")}
+            onViewAllEntries={() => setScreen("entries")}
+            onNavigate={(key) => setScreen(key as Screen)}
+          />
+          <SubmitStatusModals
+            t={t}
+            submitSyncing={submitSyncing}
+            submitOutcome={submitOutcome}
+            onDismiss={() => setSubmitOutcome(null)}
+            onReview={(packet) => { setSubmitOutcome(null); reviewQueued(packet); }}
+          />
+        </>
       );
 
     if (screen === "entries")
@@ -1048,6 +1146,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   page: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 12 },
   card: { borderWidth: 1, borderRadius: 18, padding: 14 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.55)", alignItems: "center", justifyContent: "center", padding: 24 },
+  modalCard: { width: "100%", maxWidth: 340, borderWidth: 1, borderRadius: 20, padding: 22, alignItems: "center" },
+  modalTitle: { fontSize: 17, fontWeight: "900", marginTop: 10, textAlign: "center" },
+  modalMessage: { fontSize: 13, lineHeight: 19, textAlign: "center", marginTop: 4 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   brandName: { fontSize: 15, fontWeight: "900", letterSpacing: .2 },
   bookMark: { width: 36, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
