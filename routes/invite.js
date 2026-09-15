@@ -1,7 +1,7 @@
 // Cold-invite respondent onboarding for Inicio Diary.
 //
 // Target sequence:
-// invite link / QR -> configurable pre-survey -> choose participation channel
+// invite link / QR -> choose participation channel -> configurable pre-survey
 // -> create reusable username/password (or reuse an existing Inicio Diary
 // account) -> app download or WhatsApp handoff.
 const express = require("express");
@@ -399,12 +399,9 @@ router.get("/:token", async (req, res) => {
     });
   }
 
-  if (!respondent.presurvey_completed_at) {
-    return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
-  }
-
   // Even an existing Inicio Diary user chooses how they want to participate
-  // in this study before we reuse their account.
+  // in this study before we reuse their account. This comes before the
+  // pre-survey so respondents commit to a channel first.
   if (!respondent.chosen_mode) {
     return res.render("invite/welcome", {
       respondent,
@@ -415,6 +412,10 @@ router.get("/:token", async (req, res) => {
       declined: false,
       user: null,
     });
+  }
+
+  if (!respondent.presurvey_completed_at) {
+    return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   }
 
   if (respondent.account_id) {
@@ -435,7 +436,6 @@ router.post("/:token/choose", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent } = loaded;
-  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
 
   const requested = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
   const mode = requested === "apk" ? "app" : requested;
@@ -446,6 +446,8 @@ router.post("/:token/choose", async (req, res) => {
     preferred_channel: preferredChannel,
   });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_mode_chosen", "respondents", respondent.id, { mode });
+
+  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   return res.redirect(`/invite/${respondent.unique_token}/account`);
 });
 

@@ -778,7 +778,14 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   const stagedRows = await attachStagedMedia(recordId, respondent.id, stagedIds);
   for (const mediaRow of stagedRows) {
     if (mediaRow.media_type === "audio") {
-      if (audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
+      // Brand detection on a voice note reads the transcript, not a frame,
+      // so it can only run once transcription has actually produced one --
+      // chained onto the same promise rather than fired in parallel.
+      if (audioProvider) {
+        audioProvider.transcribe(mediaRow)
+          .then((result) => { if (result?.text && brandProvider) brandProvider.detect({ ...mediaRow, transcript_text: result.text }, brands).catch(() => {}); })
+          .catch(() => {});
+      }
     } else if (brandProvider) {
       brandProvider.detect(mediaRow, brands).catch(() => {});
     }
@@ -803,8 +810,13 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
       const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: "audio", file_path: storedPath });
       const mediaRow = { id: mediaId, record_id: recordId, media_type: "audio", file_path: storedPath };
       // Queue transcription — runs inline against the mock/Azure provider,
-      // see lib/audioTranscription.js.
-      if (audioProvider) audioProvider.transcribe(mediaRow).catch(() => {});
+      // see lib/audioTranscription.js. Brand detection for a voice note
+      // reads the transcript once it exists, so it's chained after.
+      if (audioProvider) {
+        audioProvider.transcribe(mediaRow)
+          .then((result) => { if (result?.text && brandProvider) brandProvider.detect({ ...mediaRow, transcript_text: result.text }, brands).catch(() => {}); })
+          .catch(() => {});
+      }
       continue;
     }
     const mediaType = (f.mimetype || "").startsWith("video/") ? "video" : "photo";

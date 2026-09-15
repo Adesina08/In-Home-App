@@ -16,17 +16,16 @@ const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO
 <section class="console-panel" data-table-tools="media" data-page-size="9">
   <div class="console-toolbar"><div class="console-segments"><% [['all','All files'],['photo','Photos'],['video','Videos'],['audio','Audio']].forEach(([value,label])=>{ %><button class="console-segment" type="button" data-table-filter="<%= value %>" aria-pressed="<%= value==='all' %>"><%= label %></button><% }) %></div><label class="console-search"><%- icon('search','w-4 h-4') %><input type="search" data-table-search aria-label="Search evidence" placeholder="Find respondent, period, or result…" /></label></div>
   <div class="console-media-grid"><% items.forEach(m=>{const url=mediaUrl(m.file_path);const isAudio=m.media_type==='audio';
-    // Photos only ever get a brand (no audio track); pure audio only ever gets
-    // a transcript (brand detection is skipped for audio server-side); video
-    // has both a visual frame sample AND an extracted audio track, so it gets
-    // both results -- previously this only ever showed brand for video and
-    // silently hid the transcript that was genuinely being generated.
-    const hasBrand=m.media_type!=='audio', hasTranscript=m.media_type!=='photo';
+    // Every media type can now carry a brand result: photo and video from a
+    // visual read, audio from its transcript (there's no frame to look at in
+    // a voice note, so that one comes from what was said, not what was
+    // shown). Transcript itself still only applies to audio and video.
+    const hasBrand=true, hasTranscript=m.media_type!=='photo';
     const transcriptStatus=m.transcript_status||'unavailable', detectionStatus=m.detection_status||'unavailable'; %>
     <article class="console-media-card" data-table-row data-status="<%= m.media_type %>"><div class="console-media-preview"><% if(!url){ %><div class="console-empty"><%- icon(isAudio?'mic':'photo','w-7 h-7') %><strong>File unavailable</strong><p>The media link is not available.</p></div><% } else if(m.media_type==='photo'){ %><a href="<%= url %>" target="_blank" rel="noopener"><img src="<%= url %>" loading="lazy" alt="Photo evidence from <%= m.respondent_code %>" /></a><% } else if(m.media_type==='video'){ %><video controls preload="metadata" src="<%= url %>"></video><% } else if(isAudio){ %><div class="console-audio-preview"><%- icon('mic','w-7 h-7') %><audio controls preload="none" src="<%= url %>"></audio></div><% } else { %><a href="<%= url %>" target="_blank" rel="noopener">Open file</a><% } %></div>
     <div class="console-media-info"><div class="console-actions" style="justify-content:space-between"><strong><%= m.respondent_code || 'Respondent' %></strong><span class="console-status"><%= m.media_type %></span></div><p><%= m.period_label || 'Period not recorded' %> · <%= m.upload_time || 'Time unavailable' %></p>
     <% if (hasTranscript) { %><div class="console-media-result"><span class="console-status <%= transcriptStatus==='done'?'is-live':transcriptStatus==='error'?'is-danger':'' %>">transcript: <%= transcriptStatus %></span><p><%= m.transcript_text || 'No transcript available.' %></p></div><% } %>
-    <% if (hasBrand) { %><div class="console-media-result"><span class="console-status <%= detectionStatus==='done'?'is-live':detectionStatus==='error'?'is-danger':'' %>">brand: <%= detectionStatus %></span><p><%= m.detected_brand || 'No detected brand available.' %><% if (m.detection_confidence != null) { %> · <%= Math.round(Number(m.detection_confidence) * 100) %>% logo confidence<% } %></p></div><% } %>
+    <% if (hasBrand) { %><div class="console-media-result"><span class="console-status <%= detectionStatus==='done'?'is-live':detectionStatus==='error'?'is-danger':'' %>">brand: <%= detectionStatus %></span><p><%= m.detected_brand || 'No detected brand available.' %><% if (m.detection_confidence != null) { %> · <%= Math.round(Number(m.detection_confidence) * 100) %>% confidence<% } %></p></div><% } %>
     <% if (hasBrand && detectionStatus === 'needs_review' && m.detected_brand) { %><div class="console-actions"><form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="confirm"><button class="console-button">Confirm <%= m.detected_brand %></button></form><form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="reject"><button class="console-button">Reject</button></form></div><% } %>
     <div class="console-actions" style="justify-content:space-between;flex-wrap:wrap"><a class="console-button" href="/admin/studies/<%= study.id %>/records/<%= m.record_id %>">View entry ↗</a><% if (hasTranscript) { %><form method="POST" action="/admin/media/<%= m.id %>/transcribe"><button class="console-button"><%- icon('refresh','w-3 h-3') %>Transcribe</button></form><% } %><% if (hasBrand) { %><form method="POST" action="/admin/media/<%= m.id %>/detect"><button class="console-button"><%- icon('refresh','w-3 h-3') %>Detect brand</button></form><% } %></div></div>
     </article><% }) %></div>
@@ -70,9 +69,10 @@ const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO
     <tbody>
     <% items.forEach(m => { %>
       <% const isAudio = m.media_type === 'audio'; %>
-      <% // Video has both a transcript (audio track) and a detected brand
-         // (frame sample) -- photo only brand, audio only transcript.
-         const hasBrand = m.media_type !== 'audio', hasTranscript = m.media_type !== 'photo';
+      <% // Every media type can carry a brand result now -- audio's comes
+         // from its transcript rather than a frame. Transcript itself still
+         // only applies to audio and video.
+         const hasBrand = true, hasTranscript = m.media_type !== 'photo';
          const transcriptStatus = m.transcript_status || 'unavailable', detectionStatus = m.detection_status || 'unavailable'; %>
       <tr class="border-t border-slate-100 hover:bg-slate-50/70">
         <td class="px-5 py-2.5 font-mono text-xs text-slate-600"><%= m.respondent_code %></td>
@@ -82,7 +82,7 @@ const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO
         <td class="py-2.5"><% if (url) { %><a href="<%= url %>" target="_blank" class="text-brand-600 underline text-xs font-medium">view file</a><% } else { %><span class="text-xs text-slate-400 italic">link unavailable</span><% } %></td>
         <td class="py-2.5 text-xs text-slate-600 max-w-xs">
           <% if (hasTranscript) { %><p class="truncate"><%= m.transcript_text || '—' %></p><% } %>
-          <% if (hasBrand) { %><p class="truncate"><%= m.detected_brand || '—' %><% if (m.detection_confidence != null) { %> <span class="text-slate-400">(<%= Math.round(Number(m.detection_confidence) * 100) %>% logo)</span><% } %></p><% } %>
+          <% if (hasBrand) { %><p class="truncate"><%= m.detected_brand || '—' %><% if (m.detection_confidence != null) { %> <span class="text-slate-400">(<%= Math.round(Number(m.detection_confidence) * 100) %>%)</span><% } %></p><% } %>
         </td>
         <td class="py-2.5">
           <% if (hasTranscript) { %><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= transcriptStatus==='done' ? 'badge-green' : transcriptStatus==='error' ? 'badge-red' : 'badge-amber' %>">transcript: <%= transcriptStatus %></span><% } %>

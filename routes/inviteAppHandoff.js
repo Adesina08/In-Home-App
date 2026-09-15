@@ -1,7 +1,7 @@
 // Keeps the browser invitation/setup journey separate from the installed
 // Inicio Diary login experience.
 //
-// New respondent: /invite/:token -> presurvey -> channel -> account -> ready
+// New respondent: /invite/:token -> channel -> presurvey -> account -> ready
 // Returning respondent: /invite/:token -> choose app or WhatsApp again
 // Installed Android app: /mobile/login -> diary
 const express = require("express");

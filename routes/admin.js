@@ -399,6 +399,7 @@ router.post("/studies/:id/settings", async (req, res) => {
     invite_brief: (b.invite_brief || "").trim() || null,
     required_entries_per_period: Math.min(100, Math.max(1, parseInt(b.required_entries_per_period, 10) || 1)),
     minimum_base_size: Math.min(1000, Math.max(2, parseInt(b.minimum_base_size, 10) || 30)),
+    brand_question_code: String(b.brand_question_code || "brand").trim(),
     quantity_question_code: String(b.quantity_question_code || "quantity").trim(),
     volume_unit: String(b.volume_unit || "").trim() || null,
     volume_unit_factor: volumeUnitFactor,
