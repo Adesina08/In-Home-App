@@ -8,6 +8,7 @@ const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { classifyRisk, unresolvedBlockingFlags, computeQualityScore, BAND_LABELS, exceptionFollowUpQueue } = require("../lib/qc");
 const { runReminderEngine } = require("../lib/reminders");
+const researchOps = require("../lib/researchOperations");
 const { parseUpload, parseConditionText } = require("../lib/questionnaireParser");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
@@ -16,7 +17,7 @@ const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
 const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const aiSummary = require("../lib/aiSummary");
-const { CATEGORIES, parseCategories, toStoredCategories } = require("../lib/categories");
+const { CATEGORIES, parseCategories, toStoredCategories, selectedOrAllCategories } = require("../lib/categories");
 const accounts = require("../lib/respondentAccounts");
 const { nextRespondentCode } = require("../lib/respondentCode");
 const messaging = require("../lib/whatsapp");
@@ -83,16 +84,55 @@ function toId(v) {
   return Number.isNaN(n) ? v : n;
 }
 
+// An admin created with a single "Study scope" pick (see /users) is confined
+// to that one study everywhere in this router -- superadmin, and an admin
+// created with "All studies", are unrestricted. null means unrestricted.
+function allowedStudyId(req) {
+  const u = req.session.user;
+  if (u.role === "superadmin") return undefined;
+  return u.study_id ?? undefined;
+}
+
+// Merge into a store.find(...) filter so a scoped admin's study pickers,
+// lists and "first study" fallbacks only ever see their own study. `field`
+// is whichever column on the target collection carries the study id --
+// "id" on studies itself, "study_id" everywhere else.
+function scopedFilter(req, field = "id") {
+  const scope = allowedStudyId(req);
+  return scope === undefined ? {} : { [field]: scope };
+}
+function studyScopeFilter(req) {
+  return scopedFilter(req, "id");
+}
+
+function canAccessStudy(req, studyId) {
+  const scope = allowedStudyId(req);
+  return scope === undefined || toId(studyId) === scope;
+}
+
+function studyNotFound(res) {
+  return res.status(404).render("error", { message: "Study not found.", user: res.req.session.user });
+}
+
 async function getStudyOrFirst(req) {
-  const studies = await store.find("studies", {}, { sort: { id: 1 } });
+  const studies = await store.find("studies", studyScopeFilter(req), { sort: { id: 1 } });
   const studyId = parseInt(req.query.study || req.params.id, 10);
   const study = studies.find((s) => s.id === studyId) || studies[0] || null;
   return { study, studies };
 }
 
+// Every /studies/:id route (settings, questionnaire, respondents, records,
+// media, exports, bulk-invite...) is guarded here in one place rather than in
+// each of the ~40 handlers below -- a scoped admin gets a 404 for any study
+// id other than the one they were created for, exactly as if it didn't exist.
+router.use("/studies/:id", (req, res, next) => {
+  if (!canAccessStudy(req, req.params.id)) return studyNotFound(res);
+  next();
+});
+
 // Staff analysis is read-only and inherits the admin/superadmin role guard above.
 router.get('/analysis', async (req, res) => {
-  const studies = await store.find('studies', {}, { sort: { id: 1 } });
+  const studies = await store.find('studies', studyScopeFilter(req), { sort: { id: 1 } });
   if (req.query.study !== undefined && !studies.some((s) => s.id === Number(req.query.study))) return res.status(404).render('error', { message: 'Study not found.' });
   try { require('../lib/studyReport').validatePeriod({ from: req.query.from, to: req.query.to }); }
   catch (error) { return res.status(400).render('error', { message: error.message }); }
@@ -104,7 +144,7 @@ router.get('/analysis', async (req, res) => {
   return res.redirect(`/admin${query ? `?${query}` : ""}#analysis`);
 });
 router.get('/analysis/export', async (req, res) => {
-  const studies = await store.find('studies', {}, { sort: { id: 1 } });
+  const studies = await store.find('studies', studyScopeFilter(req), { sort: { id: 1 } });
   const study = req.query.study === undefined ? studies[0] : studies.find(s => s.id === Number(req.query.study));
   if (!study) {
     if (studies.length || req.query.study !== undefined) return res.status(404).render('error', { message: 'Study not found.' });
@@ -293,11 +333,14 @@ async function recentActivity(study) {
 
 // ---------- Studies ----------
 router.get("/studies", async (req, res) => {
-  const studies = await store.find("studies", {}, { sort: { id: -1 } });
+  const studies = await store.find("studies", studyScopeFilter(req), { sort: { id: -1 } });
   res.render("admin/studies", { studies, countries: geography.countries() });
 });
 
-router.post("/studies", async (req, res) => {
+// The Create Study button only renders for superadmin (views/admin/studies.ejs)
+// -- enforced here too so a scoped admin can't reach it by posting directly
+// and ending up with a study id outside their own scope.
+router.post("/studies", requireRole("superadmin"), async (req, res) => {
   const { name, diary_mode, recruitment_mode } = req.body;
   const chosenCountry = geography.country(req.body.market_country_code || req.body.market);
   if (!chosenCountry) return res.status(400).render("error", { message: "Choose a valid market country.", user: req.session.user });
@@ -324,7 +367,7 @@ router.get("/studies/:id", async (req, res) => {
   if (!study) return res.status(404).render("error", { message: "Study not found", user: req.session.user });
   res.render("admin/study_settings", {
     study, tab: "settings",
-    CATEGORIES, selectedCategories: parseCategories(study.category),
+    CATEGORIES, selectedCategories: selectedOrAllCategories(study.category),
     countries: geography.countries(),
     selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
     selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
@@ -352,7 +395,7 @@ router.post("/studies/:id/settings", async (req, res) => {
         tab: "settings",
         closeBlocked: blocking,
         CATEGORIES,
-        selectedCategories: parseCategories(study.category),
+        selectedCategories: selectedOrAllCategories(study.category),
         countries: geography.countries(), selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
         selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
       });
@@ -1089,14 +1132,29 @@ router.use("/studies/:id/bulk-invite", require("./bulkInvite"));
 // ---------- Users ----------
 router.get("/users", async (req, res) => {
   const userRows = await store.find("users", {}, { sort: { id: 1 } });
-  const studies = await store.find("studies", {}, { sort: { name: 1 } });
+  const studies = await store.find("studies", studyScopeFilter(req), { sort: { name: 1 } });
   // LEFT JOIN users -> studies, done in JS off the study list this page already
   // loads. study_name keeps its alias -- the template reads it.
   const studiesById = new Map(studies.map((s) => [s.id, s]));
-  const users = userRows.map((u) => ({
-    ...u,
-    study_name: studiesById.has(u.study_id) ? studiesById.get(u.study_id).name : null,
-  }));
+  // A user's real scope is the (possibly multi-study) interviewer_assignments
+  // / client_grants rows, not the single legacy study_id column -- this joins
+  // those in so the list reflects every study a user actually has, not just
+  // the first one picked at creation. A user with no rows yet (created before
+  // this existed) still falls back to the legacy column.
+  const [assignments, grants] = await Promise.all([
+    store.find("interviewer_assignments", { enabled: true }),
+    store.find("client_grants", { enabled: true }),
+  ]);
+  const users = userRows.map((u) => {
+    const rows = u.role === "interviewer" ? assignments.filter((a) => a.user_id === u.id)
+      : u.role === "client" ? grants.filter((g) => g.user_id === u.id)
+      : [];
+    const names = [...new Set(rows.map((r) => studiesById.get(r.study_id)?.name).filter(Boolean))];
+    return {
+      ...u,
+      study_name: names.length ? names.join(", ") : (studiesById.has(u.study_id) ? studiesById.get(u.study_id).name : null),
+    };
+  });
   res.render("admin/users", {
     users, studies,
     // Shown once, immediately after a reset, then gone on the next load.
@@ -1132,25 +1190,57 @@ async function issueStaffCredentials(user, actor) {
 }
 
 router.post("/users", requireRole("superadmin"), async (req, res) => {
-  const { name, email, role, study_id } = req.body;
+  const { name, email, role } = req.body;
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!name || !/^\S+@\S+\.\S+$/.test(normalizedEmail) || !["admin", "interviewer", "client"].includes(role)) {
     return res.status(400).render("error", { message: "Enter a name, valid email and supported role.", user: req.session.user });
   }
   if (await store.findOne("users", { email: normalizedEmail })) return res.status(409).render("error", { message: "A user already exists with that email address.", user: req.session.user });
+  // A multi-select select posts one study_id per chosen option -- express's
+  // extended urlencoded parser gives an array for repeats of the same field
+  // name, but a single choice arrives as a bare string, so both shapes are
+  // normalised here.
+  const rawStudyIds = req.body.study_id === undefined ? [] : [].concat(req.body.study_id);
+  const studyIds = [...new Set(rawStudyIds.map(toId).filter((v) => Number.isInteger(v)))];
+  if (studyIds.length && !(await store.find("studies", { id: { $in: studyIds } })).length) {
+    return res.status(400).render("error", { message: "Choose a valid study.", user: req.session.user });
+  }
+  // Admin only ever carries the single legacy study_id column (see
+  // allowedStudyId above) -- picking more than one here would silently drop
+  // every study after the first instead of doing what was asked.
+  if (role === "admin" && studyIds.length > 1) {
+    return res.status(400).render("error", { message: "Choose at most one study for an Admin account, or none for full platform access.", user: req.session.user });
+  }
   try {
     const { id } = await store.insert("users", {
       name,
       email: normalizedEmail,
       password_hash: bcrypt.hashSync(temporaryPassword(), 10),
       role,
-      study_id: toId(study_id),
+      // Legacy single-study column, kept only for accounts/paths that still
+      // read it directly (e.g. lib/researchAccess.js's fallback for a client
+      // with no client_grants row yet). Real scoping for more than one study
+      // lives in interviewer_assignments / client_grants below.
+      study_id: studyIds[0] ?? null,
       must_change_password: 1,
       invite_delivery_status: "pending",
     });
+    if (role === "interviewer") {
+      for (const studyId of studyIds) {
+        const assignmentId = `${studyId}:${id}`;
+        await researchOps.insertOnce("interviewer_assignments", assignmentId, { study_id: studyId, user_id: id });
+        await store.update("interviewer_assignments", { id: assignmentId }, { enabled: true, updated_at: store.nowSql() });
+      }
+    } else if (role === "client") {
+      for (const studyId of studyIds) {
+        const grantId = `${studyId}:${id}`;
+        await researchOps.insertOnce("client_grants", grantId, { study_id: studyId, user_id: id });
+        await store.update("client_grants", { id: grantId }, { enabled: true, media: true, text: true, exports: true });
+      }
+    }
     const user = await store.findOne("users", { id });
     const delivery = await issueStaffCredentials(user, req.session.user.email);
-    logAudit(req.session.user.email, "create_user", "users", null, { email, role });
+    logAudit(req.session.user.email, "create_user", "users", null, { email, role, study_ids: studyIds });
     return res.redirect(`/admin/users?delivery=${delivery.ok ? "sent" : "failed"}&email=${encodeURIComponent(normalizedEmail)}`);
   } catch (e) {
     return res.render("error", { message: "Could not create user (email may already exist).", user: req.session.user });
@@ -1212,17 +1302,28 @@ router.get("/ai-summary", async (req, res) => {
   // provider is literally "gemini"), which drove the auto-regenerate script
   // below to fire, redirect, and immediately fire again on every load.
   const stale = !selected || !sourceSignature || selected.source_signature !== sourceSignature || selected.provider !== aiSummary.providerName();
+  let themes = [], sentiment = null;
+  if (selected) {
+    try { themes = JSON.parse(selected.themes_json || "[]"); } catch (_) {}
+    try { sentiment = JSON.parse(selected.sentiment_json || "null"); } catch (_) {}
+  }
+  const { bannerAnalysis, BANNER_SEGMENTS } = require("../lib/staffAnalysis");
+  let banners;
+  try { banners = await bannerAnalysis(study.id, { ...period, question: req.query.question }); }
+  catch (e) { if (!error) error = e.message; banners = await bannerAnalysis(study.id, period); }
   res.render("admin/ai_summary", {
     study, studies, summaries, selected: selected || null, report,
     aiConfigured: aiSummary.isAiModelConfigured(),
     aiProviderLabel: aiSummary.providerName() === "gemini" ? "Gemini" : "Azure AI",
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
+    themes, sentiment, banners, bannerLabels: BANNER_SEGMENTS,
     ...period, error, stale,
   });
 });
 
 router.post("/ai-summary/generate", async (req, res) => {
   const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
   const from = (req.body.from || "").trim() || null;
   const to = (req.body.to || "").trim() || null;
   const qs = (extra) =>
@@ -1265,9 +1366,8 @@ router.get("/qc", async (req, res) => {
     const r = qcRespById.get(f.respondent_id);
     return { ...f, respondent_code: r.respondent_code, respondent_name: r.name, rid: r.id };
   });
-  const review = req.session.user.role === "superadmin"
-    ? await require("../lib/consoleQc").loadConsoleQc(study, flags, req.query.flag)
-    : {};
+  // Every admin (not just superadmin) now gets the console QC review panel.
+  const review = await require("../lib/consoleQc").loadConsoleQc(study, flags, req.query.flag);
   res.render("admin/qc_worklist", { study, studies, flags, statusFilter, ...review });
 });
 
@@ -1300,6 +1400,10 @@ router.post("/studies/:id/respondents/:respondentId/follow-up", async (req, res)
 });
 
 router.post("/qc/:id/action", async (req, res) => {
+  const flag = await store.findOne("qc_flags", { id: toId(req.params.id) });
+  if (!flag) return res.status(404).render("error", { message: "QC flag not found.", user: req.session.user });
+  const flagRespondent = await store.findOne("respondents", { id: flag.respondent_id }, { projection: { study_id: 1 } });
+  if (!flagRespondent || !canAccessStudy(req, flagRespondent.study_id)) return studyNotFound(res);
   const { status, action_note } = req.body;
   const patch = { status, reviewer: req.session.user.name, action_note };
   // The SQL CASE only stamped resolved_at on the move to 'resolved', and left
@@ -1916,14 +2020,19 @@ router.post("/reminders/run", async (req, res) => {
 });
 
 router.get("/whatsapp-outbox", async (req, res) => {
+  // A scoped admin only ever sees messages for respondents on their own
+  // study; a message with no matching (in-scope) respondent is dropped
+  // rather than shown blank, since there is no study to check it against.
+  const scope = allowedStudyId(req);
   const outbox = await store.find("whatsapp_outbox", {}, { sort: { created_at: -1 }, limit: 100 });
   // LEFT JOIN stitched in JS: a message whose respondent has since been
   // deleted still appears, with a blank code, exactly as before.
-  const codeById = new Map(
-    (await store.find("respondents", { id: { $in: [...new Set(outbox.map((m) => m.respondent_id))] } }))
-      .map((r) => [r.id, r.respondent_code])
-  );
-  const messages = outbox.map((m) => ({ ...m, respondent_code: codeById.get(m.respondent_id) || null }));
+  const respondents = await store.find("respondents", { id: { $in: [...new Set(outbox.map((m) => m.respondent_id))] } });
+  const codeById = new Map(respondents.map((r) => [r.id, r.respondent_code]));
+  const studyById = new Map(respondents.map((r) => [r.id, r.study_id]));
+  const messages = outbox
+    .filter((m) => scope === undefined || studyById.get(m.respondent_id) === scope)
+    .map((m) => ({ ...m, respondent_code: codeById.get(m.respondent_id) || null }));
   res.render("admin/whatsapp_outbox", {
     messages,
     isReal: messaging.isRealMessagingConfigured(),
@@ -1960,10 +2069,12 @@ router.post("/media/:id/detect", async (req, res) => {
   const media = await store.findOne("media", { id: Number(req.params.id) });
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
   const record = await store.findOne("diary_records", { id: media.record_id });
-  const brands = await require("../lib/productCandidates").forStudy(await store.findOne("studies", { id: record.study_id }));
+  if (!record || !canAccessStudy(req, record.study_id)) return studyNotFound(res);
+  const detectStudy = await store.findOne("studies", { id: record.study_id });
+  const brands = await require("../lib/productCandidates").forStudy(detectStudy);
   try {
     const provider = getBrandDetectionProvider();
-    await provider.detect(media, brands);
+    await provider.detect(media, brands, parseCategories(detectStudy.category));
     logAudit(req.session.user.email, "brand_detection_run", "media", media.id, {});
   } catch (e) {
     await store.update("media", { id: media.id }, {
@@ -1979,6 +2090,7 @@ router.post("/media/:id/brand-review", async (req, res) => {
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
   const record = await store.findOne("diary_records", { id: media.record_id });
   if (!record) return res.status(404).render("error", { message: "Diary entry not found.", user: req.session.user });
+  if (!canAccessStudy(req, record.study_id)) return studyNotFound(res);
   const study = await store.findOne("studies", { id: record.study_id });
   const brands = await require("../lib/productCandidates").forStudy(study);
   const action = req.body.action;
@@ -2003,6 +2115,7 @@ router.post("/media/:id/transcribe", async (req, res) => {
   const media = await store.findOne("media", { id: Number(req.params.id) });
   if (!media) return res.status(404).render("error", { message: "Media item not found.", user: req.session.user });
   const record = await store.findOne("diary_records", { id: media.record_id });
+  if (!record || !canAccessStudy(req, record.study_id)) return studyNotFound(res);
   try {
     const question = media.question_id ? await store.findOne("questions", { id: media.question_id, study_id: record.study_id }) : null;
     if (question) await analyseStoredMedia(media, question);

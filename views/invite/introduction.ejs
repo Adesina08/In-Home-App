@@ -1,0 +1,19 @@
+<%- include('../partials/onboarding_header', { phase: 1, title: 'Your invitation — ' + study.name, user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <div class="text-xs font-bold uppercase tracking-wide text-brand-600">You are invited</div>
+    <h1 class="text-2xl font-bold text-slate-900 mt-2"><%= study.name %></h1>
+    <p class="text-sm text-slate-600 mt-3 leading-relaxed"><%= study.invite_brief || 'Share your everyday experiences with the research team through INICIO Diary.' %></p>
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-5 text-sm text-slate-700">
+      <strong>What taking part involves</strong>
+      <p class="mt-1">You would complete your diary <%= cadence %>. First, please read the study consent and answer a short presurvey through this invitation link.</p>
+    </div>
+    <a href="/invite/<%= respondent.unique_token %>/consent" class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 px-4 hover:bg-brand-800 transition flex items-center justify-center mt-6">Read study consent</a>
+    <form method="POST" action="/invite/<%= respondent.unique_token %>/decline" class="mt-4 text-center">
+      <button class="text-xs font-medium text-slate-500 hover:text-slate-800">No thanks — I'd rather not take part</button>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/onboarding_footer') %>

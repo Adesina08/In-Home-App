@@ -77,6 +77,22 @@ type MediaAnalysis = {
   detectionConfidence?: number | null;
 };
 type MediaAnalysisMap = Record<string, MediaAnalysis>;
+
+// Older offline questionnaire caches may still contain invitation questions.
+// Keep the diary screen limited to diary sections even before it reconnects.
+function diaryQuestionnaire(payload: any) {
+  const keywords = new Set(["presurvey", "prescreen", "prescreener", "prescreening", "screener", "screening", "eligibility", "eligible", "qualification", "qualifier", "qualifying"]);
+  const questions = (payload.questions || []).filter((q: any) => {
+    const words = String(q.section || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    return !words.some((word: string, i: number) => keywords.has(word) || (i < words.length - 1 && keywords.has(word + words[i + 1])));
+  });
+  const ids = new Set(questions.map((q: any) => Number(q.id)));
+  const rules = (payload.rules || []).filter((rule: any) =>
+    (rule.conditionQuestionId == null || ids.has(Number(rule.conditionQuestionId))) &&
+    (rule.targetQuestionId == null || ids.has(Number(rule.targetQuestionId))));
+  return { ...payload, questions, rules };
+}
+
 type ProfileForm = {
   name: string;
   location: string;
@@ -863,8 +879,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     try {
       const cacheKey=`inicio.questionnaire.${selected.respondent.id}`;
       let q;
-      try{q=await api.questionnaire(selected.respondent.id);await AsyncStorage.setItem(cacheKey,JSON.stringify(q));}
-      catch(e:any){if(e.status)throw e;const cached=await AsyncStorage.getItem(cacheKey);if(!cached)throw e;q=JSON.parse(cached);}
+      try{q=diaryQuestionnaire(await api.questionnaire(selected.respondent.id));await AsyncStorage.setItem(cacheKey,JSON.stringify(q));}
+      catch(e:any){if(e.status)throw e;const cached=await AsyncStorage.getItem(cacheKey);if(!cached)throw e;q=diaryQuestionnaire(JSON.parse(cached));}
       setQuestionnaire(q);
       setOccasionNumber((q.occasionNumber||1)+(await listQueue(selected.respondent.id)).filter(p=>p.fields.practice!=='1').length);
       const saved = draftKey ? await AsyncStorage.getItem(draftKey) : null;

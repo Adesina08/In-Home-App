@@ -12,6 +12,7 @@ const { findTerminateMatch } = require("../lib/skipLogic");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { persistUpload } = require("../lib/mediaStorage");
 const { getProvider: getBrandDetectionProvider, identifyBrandInFile } = require("../lib/brandDetection");
+const { parseCategories } = require("../lib/categories");
 const { analyseLocalMedia, analyseStoredMedia } = require("../lib/mediaTranscriptAnalysis");
 const { logAudit } = require("../lib/audit");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
@@ -268,17 +269,19 @@ router.post("/respondents/:id/diary/media-analysis", requireMobileAuth, upload.s
     ? { transcriptStatus: "unavailable", transcriptText: null, scoreStatus: "unavailable", score: null, scoreRationale: null }
     : await analyseLocalMedia({ filePath: req.file.path, mediaType: question.type, question });
 
-  let detectionStatus = "unavailable", detectedBrand = null, detectionConfidence = null;
+  let detectionStatus = "unavailable", detectedBrand = null, detectedCategory = null, detectionConfidence = null;
   if (question.type !== "audio") {
     const study = await store.findOne("studies", { id: respondent.study_id });
     const brands = await require("../lib/productCandidates").forStudy(study);
-    const outcome = await identifyBrandInFile(req.file.path, question.type, req.file.mimetype || null, brands);
+    const categories = parseCategories(study.category);
+    const outcome = await identifyBrandInFile(req.file.path, question.type, req.file.mimetype || null, brands, categories);
     detectionStatus = outcome.status;
     detectedBrand = outcome.detectedBrand;
+    detectedCategory = outcome.detectedCategory;
     detectionConfidence = outcome.confidence;
   }
 
-  res.json({ questionId: question.id, ...transcriptResult, detectionStatus, detectedBrand, detectionConfidence });
+  res.json({ questionId: question.id, ...transcriptResult, detectionStatus, detectedBrand, detectedCategory, detectionConfidence });
 });
 
 // Video mode: the respondent's part ends here. The video is saved as evidence
@@ -293,6 +296,7 @@ router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.si
   const study = await store.findOne("studies", { id: respondent.study_id });
   const { questions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const brands = await require("../lib/productCandidates").forStudy(study);
+  const categories = parseCategories(study.category);
   const isPractice = respondent.activation_status === "training" || req.body.practice === "1" ? 1 : 0;
 
   const now = store.nowSql();
@@ -316,6 +320,7 @@ router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.si
     videoFile: req.file,
     questions,
     brands,
+    categories,
     studyVersion: study.version,
   }).catch((e) => console.warn(`Background video analysis failed for record ${recordId}: ${e.message}`));
 
@@ -397,6 +402,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
   let brandProvider = null;
   try { brandProvider = getBrandDetectionProvider(); } catch (e) { console.error("Mobile brand detection unavailable:", e.message); }
   const brands = await require("../lib/productCandidates").forStudy(study);
+  const categories = parseCategories(study.category);
   const mediaAnalysisJobs = [];
   // Brand detection on a voice note reads its transcript, which only exists
   // once analyseStoredMedia (pushed to mediaAnalysisJobs below) finishes --
@@ -415,13 +421,13 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
     const mediaRow = { id: mediaId, record_id: recordId, question_id: question?.id || null, media_type: mediaType, file_path: storedPath };
     if ((mediaType === "audio" || mediaType === "video") && question) mediaAnalysisJobs.push(analyseStoredMedia(mediaRow, question));
     if (mediaType === "audio") audioMediaForBrand.push(mediaRow);
-    else if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
+    else if (brandProvider) brandProvider.detect(mediaRow, brands, categories).catch(() => {});
   }
   const mediaResults = await Promise.all(mediaAnalysisJobs);
   if (brandProvider) {
     for (const mediaRow of audioMediaForBrand) {
       const result = mediaResults.find((r) => r.mediaId === mediaRow.id);
-      if (result?.transcriptText) brandProvider.detect({ ...mediaRow, transcript_text: result.transcriptText }, brands).catch(() => {});
+      if (result?.transcriptText) brandProvider.detect({ ...mediaRow, transcript_text: result.transcriptText }, brands, categories).catch(() => {});
     }
   }
 

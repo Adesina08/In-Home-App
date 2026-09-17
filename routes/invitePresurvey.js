@@ -4,7 +4,7 @@
 // not be able to break first-time onboarding.
 const express = require("express");
 const store = require("../lib/store");
-const { parseOptions } = require("../lib/questionnaire");
+const { parseOptions, isQuestionActive } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
 const { splitPresurvey, sectionNames } = require("../lib/presurveySections");
 
@@ -27,13 +27,19 @@ async function loadInvite(req, res) {
   return { respondent, study };
 }
 
+async function consentComplete(respondent, study) {
+  if (respondent.consent_status !== "given") return false;
+  const consent = await store.findOne("consent_versions", { study_id: study.id, status: "approved" }, { sort: { version: -1 } });
+  return !!consent && Number(respondent.consent_version) === Number(consent.version);
+}
+
 async function presurveyQuestions(studyId) {
   const rows = await store.find(
     "questions",
-    { study_id: studyId, active: 1 },
+    { study_id: studyId },
     { sort: { order_index: 1, id: 1 } }
   );
-  const { presurvey } = splitPresurvey(rows);
+  const { presurvey } = splitPresurvey(rows.filter(isQuestionActive));
 
   // Sections present but none matching is almost always a naming mismatch, and
   // is otherwise invisible: the page renders fine, just empty.
@@ -63,6 +69,8 @@ router.get("/:token/presurvey", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  if (!await consentComplete(respondent, study)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
+  if (respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/choose`);
   const questions = await presurveyQuestions(study.id);
   return res.render("invite/presurvey", {
     respondent,
@@ -82,6 +90,8 @@ router.post("/:token/presurvey", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  if (!await consentComplete(respondent, study)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
+  if (respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/choose`);
   const questions = await presurveyQuestions(study.id);
   const name = String(req.body.name || "").trim();
   const contact = String(req.body.contact || "").trim();
@@ -127,6 +137,10 @@ router.post("/:token/presurvey", async (req, res) => {
     contact,
     presurvey_answers: answers,
     presurvey_completed_at: store.nowSql(),
+    // Invitations created under the old flow may already have a channel set.
+    // Ask them to choose after the pre-survey in the new sequence.
+    chosen_mode: null,
+    preferred_channel: null,
   });
   logAudit(
     `respondent:${respondent.respondent_code}`,
@@ -136,7 +150,7 @@ router.post("/:token/presurvey", async (req, res) => {
     { configured_question_count: questions.length }
   );
 
-  return res.redirect(`/invite/${respondent.unique_token}`);
+  return res.redirect(`/invite/${respondent.unique_token}/choose`);
 });
 
 module.exports = router;

@@ -10,6 +10,17 @@
 .report-panel-head { display:flex; align-items:start; justify-content:space-between; gap:16px; margin-bottom:20px; }
 .report-panel-head p,.report-muted { color:var(--report-muted); font-size:12px; }
 .report-badge { display:inline-flex; align-items:center; gap:6px; border:1px solid #dbe4f5; background:#f0f5fd; color:#35549c; padding:5px 10px; border-radius:7px; font-size:11px; font-weight:600; white-space:normal; }
+.sentiment-badge { display:inline-flex; align-items:center; border-radius:7px; padding:3px 9px; font-size:11px; font-weight:600; white-space:nowrap; }
+.sentiment-badge.positive { background:#eaf7ee; color:#1c7a3d; }
+.sentiment-badge.negative { background:#fdecee; color:#a32638; }
+.sentiment-badge.neutral { background:#f0f2f6; color:#475a74; }
+.sentiment-badge.mixed { background:#fdf3e3; color:#8b5e14; }
+.theme-list { display:grid; gap:16px; }
+.theme-list li { border-top:1px solid #e5ebf3; padding-top:16px; list-style:none; }
+.theme-list li:first-child { border-top:none; padding-top:0; }
+.theme-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; }
+.theme-head strong { font-size:13px; }
+.theme-quote { color:var(--report-muted); font-size:12px; font-style:italic; margin:0; }
 .report-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; padding:18px 22px; background:white; border:1px solid #e1e7ef; border-radius:14px; margin-bottom:24px; }
 .report-toolbar label { display:flex; flex-direction:column; gap:6px; color:#475a74; font-size:11px; font-weight:600; }
 .report-toolbar input,.report-toolbar select { background:#f9fbfd; border:1px solid #d2dbe7; border-radius:8px; padding:9px 12px; color:#182945; min-height:42px; font:inherit; font-size:13px; max-width:100%; }

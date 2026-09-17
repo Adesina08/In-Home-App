@@ -1,6 +1,6 @@
 <%- include('../partials/header', { title: study.name + ' — Upload Questionnaire', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study, tab }) %>
-<% if(user.role === 'superadmin') { %><%- include('../partials/page_header', { eyebrow: 'Questionnaire setup', title: 'Import questionnaire', subtitle: 'Upload your source file, then review and correct the parsed questions.' }) %><% } %>
+<%- include('../partials/page_header', { eyebrow: 'Questionnaire setup', title: 'Import questionnaire', subtitle: 'Upload your source file, then review and correct the parsed questions.' }) %>
 
 <div class="max-w-2xl">
   <% if (error) { %>

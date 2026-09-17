@@ -1,4 +1,4 @@
-<% const inicioConsole = typeof user !== 'undefined' && user && user.role === 'superadmin'; %>
+<% const inicioConsole = typeof user !== 'undefined' && user && ['admin', 'superadmin'].includes(user.role); %>
 <!DOCTYPE html>
 <html lang="en" data-default-theme="<%= typeof defaultTheme !== 'undefined' ? defaultTheme : (typeof fieldMode !== 'undefined' && fieldMode ? 'dark' : 'light') %>">
 <head>
@@ -102,18 +102,9 @@
 <% } else if (typeof user !== 'undefined' && user) {
   // Grouped rather than one flat list: a handful of labelled sections read as
   // a considered console, not a stack of links in build order.
+  // superadmin and admin are handled above by the console shell -- only
+  // interviewer and client still use this nav.
   const navGroups = {
-    superadmin: [
-      { label: 'Platform', items: [['/admin/superadmin','Control Center','shield']] },
-      { label: 'Fieldwork', items: [['/admin','Fieldwork & Analysis','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield-check']] },
-      { label: 'Insights', items: [['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','Message Log','chat']] },
-      { label: 'Access', items: [['/admin/users','Users','users'], ['/admin/data-management','Data Management','settings']] },
-    ],
-    admin: [
-      { label: 'Fieldwork', items: [['/admin','Fieldwork & Analysis','home'], ['/admin/studies','Studies','clipboard'], ['/admin/panel','Respondent Panel','users'], ['/admin/qc','QC Worklist','shield-check']] },
-      { label: 'Insights', items: [['/admin/ai-summary','AI Summary','trend'], ['/admin/whatsapp-outbox','Message Log','chat']] },
-      { label: 'Access', items: [['/admin/users','Users','users']] },
-    ],
     interviewer: [ { label: '', items: [['/interviewer','My Respondents','users'], ['/interviewer/register','Register','plus']] } ],
     client: [ { label: '', items: [['/client','Client Dashboard','chart-bar']] } ],
   };

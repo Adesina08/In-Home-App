@@ -1,15 +1,13 @@
 // Cold-invite respondent onboarding for Inicio Diary.
 //
 // Target sequence:
-// invite link / QR -> choose participation channel -> configurable pre-survey
-// -> create reusable username/password (or reuse an existing Inicio Diary
+// invite link / QR -> introduction -> consent -> configurable pre-survey
+// -> choose participation channel -> create reusable username/password (or reuse an existing Inicio Diary
 // account) -> app download or WhatsApp handoff.
 const express = require("express");
 const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
-const { loadQuestionnaire } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
-const { splitPresurvey } = require("../lib/presurveySections");
 const otp = require("../lib/otp");
 const messaging = require("../lib/whatsapp");
 const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
@@ -40,16 +38,6 @@ const CADENCE = {
   monthly: "once a month",
 };
 
-async function presurveyQuestions(studyId) {
-  const { questions } = await loadQuestionnaire(studyId);
-  return splitPresurvey(questions).presurvey;
-}
-
-function isEmptyAnswer(value) {
-  if (Array.isArray(value)) return value.length === 0;
-  return value === undefined || value === null || String(value).trim() === "";
-}
-
 /** Display-only, never stored: "jo***@example.com" or "+234******5678". */
 function maskContact(contact) {
   const raw = String(contact || "");
@@ -79,6 +67,44 @@ async function loadInvite(req, res) {
   return { respondent, study };
 }
 
+async function approvedConsent(studyId) {
+  return store.findOne("consent_versions", { study_id: studyId, status: "approved" }, { sort: { version: -1 } });
+}
+
+async function hasCurrentConsent(respondent, studyId) {
+  if (respondent.consent_status !== "given") return false;
+  const consent = await approvedConsent(studyId);
+  return !!consent && Number(respondent.consent_version) === Number(consent.version);
+}
+
+router.get("/:token/consent", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  const consent = await approvedConsent(study.id);
+  if (!consent) return res.status(503).render("error", { message: "This study is not ready for sign-ups because its consent wording has not been approved.", user: null });
+  if (await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  return res.render("invite/consent", { respondent, study, consent, error: null, user: null });
+});
+
+router.post("/:token/consent", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  const consent = await approvedConsent(study.id);
+  if (!consent) return res.status(503).render("error", { message: "This study is not ready for sign-ups because its consent wording has not been approved.", user: null });
+  if (req.body.agree !== "1" || Number(req.body.consent_version) !== Number(consent.version)) {
+    return res.status(400).render("invite/consent", {
+      respondent, study, consent, error: "Please review and agree to the current study consent before continuing.", user: null,
+    });
+  }
+  await store.update("respondents", { id: respondent.id }, {
+    consent_status: "given", consent_version: consent.version, consent_at: store.nowSql(), consent_recorded_by: "respondent",
+  });
+  logAudit(`respondent:${respondent.respondent_code}`, "invite_consent_given", "respondents", respondent.id, { consent_version: consent.version });
+  return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+});
+
 async function continueAfterAccount(res, respondent) {
   if (respondent.chosen_mode === "whatsapp") {
     const wa = whatsappChatUrl(respondent.unique_token);
@@ -93,80 +119,11 @@ async function continueAfterAccount(res, respondent) {
   return res.redirect(`${downloadUrl}${separator}invite=${encodeURIComponent(respondent.unique_token)}`);
 }
 
-router.get("/:token/presurvey", async (req, res) => {
-  const loaded = await loadInvite(req, res);
-  if (!loaded) return;
-  const { respondent, study } = loaded;
-  const questions = await presurveyQuestions(study.id);
-  res.render("invite/presurvey", {
-    respondent,
-    study,
-    questions,
-    values: {
-      name: respondent.name || "",
-      contact: respondent.contact || "",
-      answers: respondent.presurvey_answers || {},
-    },
-    error: null,
-    user: null,
-  });
-});
-
-router.post("/:token/presurvey", async (req, res) => {
-  const loaded = await loadInvite(req, res);
-  if (!loaded) return;
-  const { respondent, study } = loaded;
-  const questions = await presurveyQuestions(study.id);
-  const name = String(req.body.name || "").trim();
-  const contact = String(req.body.contact || "").trim();
-  const answers = {};
-
-  for (const q of questions) {
-    let value = req.body[`pq_${q.id}`];
-    if (q.type === "multi" && value !== undefined && !Array.isArray(value)) value = [value];
-    if (q.type === "numeric" && !isEmptyAnswer(value)) {
-      const number = Number(value);
-      if (!Number.isFinite(number)) {
-        return res.status(400).render("invite/presurvey", {
-          respondent, study, questions,
-          values: { name, contact, answers: { ...answers, [q.id]: value } },
-          error: `Please enter a valid number for “${q.text}”.`, user: null,
-        });
-      }
-      value = number;
-    }
-    answers[q.id] = value;
-  }
-
-  const renderFail = (error) => res.status(400).render("invite/presurvey", {
-    respondent,
-    study,
-    questions,
-    values: { name, contact, answers },
-    error,
-    user: null,
-  });
-
-  if (!name || !contact) return renderFail("Please complete your name and phone number or email before continuing.");
-  const missing = questions.find((q) => q.required && isEmptyAnswer(answers[q.id]));
-  if (missing) return renderFail(`Please answer “${missing.text}” before continuing.`);
-
-  await store.update("respondents", { id: respondent.id }, {
-    name,
-    contact,
-    presurvey_answers: answers,
-    presurvey_completed_at: store.nowSql(),
-  });
-  logAudit(`respondent:${respondent.respondent_code}`, "invite_presurvey_completed", "respondents", respondent.id, {
-    configured_question_count: questions.length,
-  });
-  return res.redirect(`/invite/${respondent.unique_token}`);
-});
-
 router.get("/:token/account", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
 
@@ -181,10 +138,20 @@ router.get("/:token/account", async (req, res) => {
   });
 });
 
+router.get("/:token/choose", async (req, res) => {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
+  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  return res.redirect(`/invite/${respondent.unique_token}`);
+});
+
 router.post("/:token/account", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
 
@@ -215,6 +182,7 @@ router.post("/:token/account", async (req, res) => {
     await store.update("respondents", { id: respondent.id }, {
       account_id: account.id,
       account_created_at: respondent.account_created_at || store.nowSql(),
+      ...(["invited", "screened"].includes(respondent.activation_status) ? { activation_status: "activated", activated_at: store.nowSql() } : {}),
     });
     logAudit(`respondent:${respondent.respondent_code}`, account.password_hash ? "inicio_diary_account_reused" : "inicio_diary_account_created", "respondent_accounts", account.id, {
       study_id: study.id,
@@ -399,9 +367,18 @@ router.get("/:token", async (req, res) => {
     });
   }
 
-  // Even an existing Inicio Diary user chooses how they want to participate
-  // in this study before we reuse their account. This comes before the
-  // pre-survey so respondents commit to a channel first.
+  if (!await hasCurrentConsent(respondent, study.id)) {
+    return res.render("invite/introduction", {
+      respondent, study,
+      cadence: CADENCE[study.diary_mode] || "from time to time",
+      user: null,
+    });
+  }
+
+  if (!respondent.presurvey_completed_at) {
+    return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  }
+
   if (!respondent.chosen_mode) {
     return res.render("invite/welcome", {
       respondent,
@@ -414,10 +391,6 @@ router.get("/:token", async (req, res) => {
     });
   }
 
-  if (!respondent.presurvey_completed_at) {
-    return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
-  }
-
   if (respondent.account_id) {
     const account = await accounts.getById(respondent.account_id);
     if (account && account.password_hash) {
@@ -425,7 +398,7 @@ router.get("/:token", async (req, res) => {
         const wa = whatsappChatUrl(respondent.unique_token);
         if (wa) return res.redirect(wa);
       }
-      return res.redirect("/mobile/login?ready=1");
+      return res.redirect(`/invite/${respondent.unique_token}/ready`);
     }
   }
 
@@ -435,7 +408,9 @@ router.get("/:token", async (req, res) => {
 router.post("/:token/choose", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
-  const { respondent } = loaded;
+  const { respondent, study } = loaded;
+  if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
+  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
 
   const requested = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
   const mode = requested === "apk" ? "app" : requested;
@@ -447,7 +422,6 @@ router.post("/:token/choose", async (req, res) => {
   });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_mode_chosen", "respondents", respondent.id, { mode });
 
-  if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   return res.redirect(`/invite/${respondent.unique_token}/account`);
 });
 

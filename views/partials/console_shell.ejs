@@ -1,10 +1,12 @@
 <%
   const consolePath = typeof currentPath !== 'undefined' ? currentPath : '';
   const consoleStudy = typeof study !== 'undefined' && study ? study : null;
+  const isSuperadmin = user && user.role === 'superadmin';
+  const consoleHome = isSuperadmin ? '/admin/superadmin' : '/admin';
   const consoleGroups = [
-    { label: 'Workspace', items: [['/admin/superadmin', 'Overview', 'home'], ['/admin/studies', 'Studies', 'clipboard'], ['/admin', 'Fieldwork & Analysis', 'chart'], ['/admin/panel', 'Respondent Panel', 'users']] },
+    { label: 'Workspace', items: (isSuperadmin ? [['/admin/superadmin', 'Overview', 'home']] : []).concat([['/admin', 'Fieldwork & Analysis', 'chart'], ['/admin/studies', 'Studies', 'clipboard'], ['/admin/panel', 'Respondent Panel', 'users']]) },
     { label: 'Review & insights', items: [['/admin/qc', 'Quality Control', 'shield-check'], ['/admin/ai-summary', 'AI Summary', 'trend'], ['/admin/whatsapp-outbox', 'Message Log', 'chat']] },
-    { label: 'Administration', items: [['/admin/users', 'Users & Access', 'user']].concat(user && user.role === 'superadmin' ? [['/admin/data-management','Data Management','settings']] : []) }
+    { label: 'Administration', items: [['/admin/users', 'Users & Access', 'user']].concat(isSuperadmin ? [['/admin/data-management','Data Management','settings']] : []) }
   ];
   const activeConsoleLink = (href) => consolePath === href || (href !== '/admin' && consolePath.startsWith(href + '/'));
   const activeConsoleItem = consoleGroups.flatMap(g => g.items).find(([href]) => activeConsoleLink(href));
@@ -15,11 +17,11 @@
 <div class="console-layout">
   <button class="console-scrim" type="button" data-close-nav aria-label="Close navigation" tabindex="-1"></button>
   <aside class="console-sidebar" id="console-sidebar" aria-label="Main navigation">
-    <a class="console-brand" href="/admin/superadmin" aria-label="INICIO Console home">
+    <a class="console-brand" href="<%= consoleHome %>" aria-label="INICIO Console home">
       <img src="/public/icons/logo-header.png" alt="INICIO" width="52" height="32" />
       <span><strong>INICIO<span class="console-brand-dot">.</span></strong><small>RESEARCH CONSOLE</small></span>
     </a>
-    <div class="console-workspace"><span class="console-workspace-icon"><%- icon('building', 'w-4 h-4') %></span><div><strong>In-home consumption</strong><small>Superadmin workspace</small></div></div>
+    <div class="console-workspace"><span class="console-workspace-icon"><%- icon('building', 'w-4 h-4') %></span><div><strong>In-home consumption</strong><small><%= isSuperadmin ? 'Superadmin workspace' : 'Admin workspace' %></small></div></div>
     <nav>
       <% consoleGroups.forEach(group => { %>
         <div class="console-nav-group"><div class="console-nav-label"><%= group.label %></div>
@@ -31,12 +33,12 @@
     </nav>
     <div class="console-sidebar-bottom">
       <a class="console-nav-link" href="/help"><%- icon('help', 'w-[18px] h-[18px]') %>Help & guidance</a>
-      <div class="console-account"><span class="console-avatar"><%= consoleInitials %></span><div><strong><%= user.name %></strong><small>Superadmin</small></div><a href="/logout" aria-label="Log out" title="Log out"><%- icon('logout', 'w-[18px] h-[18px]') %></a></div>
+      <div class="console-account"><span class="console-avatar"><%= consoleInitials %></span><div><strong><%= user.name %></strong><small><%= isSuperadmin ? 'Superadmin' : 'Admin' %></small></div><a href="/logout" aria-label="Log out" title="Log out"><%- icon('logout', 'w-[18px] h-[18px]') %></a></div>
     </div>
   </aside>
   <div class="console-workarea">
     <header class="console-topbar">
-      <div class="console-breadcrumb"><button type="button" class="console-icon-button console-menu" data-toggle-nav aria-controls="console-sidebar" aria-expanded="false" aria-label="Open navigation"><%- icon('menu', 'w-5 h-5') %></button><a href="/admin/superadmin">Workspace</a><span>/</span><strong><%= activeConsoleItem ? activeConsoleItem[1] : 'Help & guidance' %></strong></div>
+      <div class="console-breadcrumb"><button type="button" class="console-icon-button console-menu" data-toggle-nav aria-controls="console-sidebar" aria-expanded="false" aria-label="Open navigation"><%- icon('menu', 'w-5 h-5') %></button><a href="<%= consoleHome %>">Workspace</a><span>/</span><strong><%= activeConsoleItem ? activeConsoleItem[1] : 'Help & guidance' %></strong></div>
       <div class="console-topbar-actions">
         <% if (typeof studyPicker !== 'undefined' && studyPicker) { %>
           <label class="console-study-picker"><%- icon('clipboard', 'w-4 h-4') %><span class="sr-only">Current study</span><select data-study-picker data-action="<%= studyPicker.action %>"><% studyPicker.studies.forEach(s => { %><option value="<%= s.id %>" <%= s.id === studyPicker.current ? 'selected' : '' %>><%= s.name %></option><% }) %></select></label>

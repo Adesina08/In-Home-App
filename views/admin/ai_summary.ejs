@@ -1,5 +1,6 @@
 <%- include('../partials/header', { title: 'AI Summary — INICIO', user, currentPath: '/admin/ai-summary', studyPicker: { studies, current: study.id, action: '/admin/ai-summary?study=' } }) %>
 <link rel="stylesheet" href="/public/reports.css" />
+<link rel="stylesheet" href="/public/analysis.css" />
 <script src="/public/js/reports.js" defer></script>
 <div class="report-page">
   <div class="report-heading"><div><div class="report-kicker">Study intelligence / <%= study.name %></div><h1>Every study has a story.</h1><p class="report-lead">Bring the findings, respondent language and everyday moments together in one AI Summary.</p></div><span class="report-badge"><%= aiConfigured ? aiProviderLabel + ' connected' : 'AI setup required' %></span></div>
@@ -26,6 +27,50 @@
       </details>
     <% } else { %><div class="report-empty">No saved summary for this period yet. Generate one from the study’s figures and up to <%= openTextSampleSize %> eligible written answers.</div><% } %>
     <% if (!aiConfigured) { %><p class="report-muted" style="margin-top:16px">Connect Azure OpenAI or Gemini (AI_SUMMARY_PROVIDER) to generate summaries. The latest successful summary remains visible if the provider is unavailable.</p><% } %>
+  </section>
+  <div class="report-two">
+    <section class="report-panel">
+      <div class="report-panel-head"><div><div class="report-kicker">What respondents are saying</div><h2>Thematic analysis</h2><p>AI-read themes from the same written and transcribed sample as the summary.</p></div></div>
+      <% if (selected && themes.length) { %>
+        <ul class="theme-list">
+          <% themes.forEach(t => { %>
+            <li>
+              <div class="theme-head"><strong><%= t.name %></strong><span class="sentiment-badge <%= t.sentiment %>"><%= t.sentiment %></span></div>
+              <p class="report-muted"><%= t.mentions %> mention<%= t.mentions === 1 ? '' : 's' %> in the sample</p>
+              <% if (t.example) { %><p class="theme-quote">“<%= t.example %>”</p><% } %>
+            </li>
+          <% }) %>
+        </ul>
+      <% } else if (selected) { %><div class="report-empty">No themes were read from this period's written sample.</div>
+      <% } else { %><div class="report-empty">Generate a summary to read thematic analysis from its open-text sample.</div><% } %>
+      <p class="report-muted" style="margin-top:18px">Read from up to <%= openTextSampleSize %> sampled answers, not the full base. AI-generated — review before sharing.</p>
+    </section>
+    <section class="report-panel">
+      <div class="report-panel-head"><div><div class="report-kicker">Tone of the sample</div><h2>Sentiment analysis</h2></div></div>
+      <% if (selected && sentiment) { %>
+        <%- include('../partials/report_bars', { items: [['positive','Positive'],['neutral','Neutral'],['negative','Negative']].map(([key,label]) => ({ label, n: sentiment[key] || 0 })), empty: 'No sentiment read for this period.' }) %>
+        <p class="report-muted" style="margin-top:18px">Share of the sampled answers, not a statistical measure of the whole base. AI-generated — review before sharing.</p>
+      <% } else if (selected) { %><div class="report-empty">No sentiment was read from this period's written sample.</div>
+      <% } else { %><div class="report-empty">Generate a summary to read sentiment from its open-text sample.</div><% } %>
+    </section>
+  </div>
+  <section class="report-panel">
+    <div class="report-panel-head"><div><div class="report-kicker">Compare consumer groups</div><h2>Crosstab · <%= banners.questionLabel %></h2><p>Location, Gender and Age banners for one questionnaire question.</p></div></div>
+    <form class="report-toolbar" method="GET" action="/admin/ai-summary" style="margin-bottom:6px">
+      <input type="hidden" name="study" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" />
+      <label>Question<select name="question"><option value="">Automatic question</option><% banners.questions.forEach(q => { %><option value="<%= q.code %>" <%= q.code === banners.question ? 'selected' : '' %>><%= q.text %></option><% }) %></select></label>
+      <button class="report-button secondary" type="submit">Apply</button>
+    </form>
+    <% Object.entries(bannerLabels).forEach(([key, label]) => { const b = banners.banners[key]; %>
+      <h3 style="font-size:13px;font-weight:650;margin:24px 0 10px"><%= label %></h3>
+      <% if (b.distribution.length) { %>
+        <div class="analysis-scroll"><table class="report-table analysis-matrix">
+          <thead><tr><th><%= label %></th><th>People</th><th>Occasions</th><% b.distribution.forEach(d => { %><th><%= d.label %></th><% }) %></tr></thead>
+          <tbody><% b.crosstab.forEach(group => { %><tr><th><%= group.label %><% if (group.lowBase) { %><small class="analysis-low-base">Low base</small><% } %></th><td><%= group.respondents %></td><td><%= group.answered %></td><% group.cells.forEach(cell => { %><td><%= cell.pct === null ? '—' : cell.pct + '%' %></td><% }) %></tr><% }) %></tbody>
+        </table></div>
+      <% } else { %><div class="report-empty">No eligible answers for this selection.</div><% } %>
+    <% }) %>
+    <p class="report-muted" style="margin-top:16px">Percentages use answered occasions in each row; multi-select answers can total over 100%.</p>
   </section>
   <div class="report-notice">The visuals below show the current data for this period. A saved narrative retains the figures available when it was generated. New entries or QC decisions can change the visuals.</div>
   <%- include('../partials/report_visuals', { report }) %>

@@ -13,6 +13,15 @@ function selectedIds(value) {
   return [].concat(value || []).map(Number).filter(Number.isInteger);
 }
 
+// A scoped admin (created with a single "Study scope" pick) may only
+// re-enrol panel members into their own study -- the shared profile list
+// itself stays cross-study, since re-recruiting from it is the point of a
+// panel, but the destination study is not.
+function allowedStudyId(req) {
+  const u = req.session.user;
+  return u.role === "superadmin" ? undefined : (u.study_id ?? undefined);
+}
+
 router.get("/", async (req, res) => {
   const [allProfiles, accounts, respondents, studies] = await Promise.all([
     store.find("respondent_profiles", {}, { sort: { id: -1 } }),
@@ -66,8 +75,10 @@ router.get("/", async (req, res) => {
       return true;
     });
 
+  const scope = allowedStudyId(req);
   const inviteStudies = studies.filter((s) =>
     ["live", "draft"].includes(s.status) && ["remote", "hybrid"].includes(s.recruitment_mode)
+    && (scope === undefined || s.id === scope)
   );
 
   res.render("admin/respondent_panel", {
@@ -82,7 +93,8 @@ router.post("/invite", async (req, res) => {
   const ids = selectedIds(req.body.profile_id);
   const studyId = Number(req.body.study_id);
   const study = await store.findOne("studies", { id: studyId });
-  if (!study || !["remote", "hybrid"].includes(study.recruitment_mode)) {
+  const scope = allowedStudyId(req);
+  if (!study || !["remote", "hybrid"].includes(study.recruitment_mode) || (scope !== undefined && study.id !== scope)) {
     return res.redirect(`/admin/panel?result=${encodeURIComponent("Choose a study that supports remote invitations.")}`);
   }
   if (!ids.length) return res.redirect(`/admin/panel?result=${encodeURIComponent("Select at least one respondent profile.")}`);

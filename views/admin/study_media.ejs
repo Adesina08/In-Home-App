@@ -8,7 +8,6 @@
 const visionOn = !!process.env.BRAND_DETECTION_PROVIDER && process.env.BRAND_DETECTION_PROVIDER !== 'mock';
 const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO_TRANSCRIPTION_PROVIDER !== 'mock';
 %>
-<% if (user.role === 'superadmin') { %>
 <%- include('../partials/header', { title: study.name + ' — Media Review', user }) %>
 <%- include('../partials/study_tabs', { study, tab }) %>
 <%- include('../partials/page_header', { eyebrow: 'Diary evidence', title: 'Media Review', subtitle: 'Explore the photos, videos, and voice notes behind each occasion.' }) %>
@@ -25,7 +24,7 @@ const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO
     <article class="console-media-card" data-table-row data-status="<%= m.media_type %>"><div class="console-media-preview"><% if(!url){ %><div class="console-empty"><%- icon(isAudio?'mic':'photo','w-7 h-7') %><strong>File unavailable</strong><p>The media link is not available.</p></div><% } else if(m.media_type==='photo'){ %><a href="<%= url %>" target="_blank" rel="noopener"><img src="<%= url %>" loading="lazy" alt="Photo evidence from <%= m.respondent_code %>" /></a><% } else if(m.media_type==='video'){ %><video controls preload="metadata" src="<%= url %>"></video><% } else if(isAudio){ %><div class="console-audio-preview"><%- icon('mic','w-7 h-7') %><audio controls preload="none" src="<%= url %>"></audio></div><% } else { %><a href="<%= url %>" target="_blank" rel="noopener">Open file</a><% } %></div>
     <div class="console-media-info"><div class="console-actions" style="justify-content:space-between"><strong><%= m.respondent_code || 'Respondent' %></strong><span class="console-status"><%= m.media_type %></span></div><p><%= m.period_label || 'Period not recorded' %> · <%= m.upload_time || 'Time unavailable' %></p>
     <% if (hasTranscript) { %><div class="console-media-result"><span class="console-status <%= transcriptStatus==='done'?'is-live':transcriptStatus==='error'?'is-danger':'' %>">transcript: <%= transcriptStatus %></span><p><%= m.transcript_text || 'No transcript available.' %></p></div><% } %>
-    <% if (hasBrand) { %><div class="console-media-result"><span class="console-status <%= detectionStatus==='done'?'is-live':detectionStatus==='error'?'is-danger':'' %>">brand: <%= detectionStatus %></span><p><%= m.detected_brand || 'No detected brand available.' %><% if (m.detection_confidence != null) { %> · <%= Math.round(Number(m.detection_confidence) * 100) %>% confidence<% } %></p></div><% } %>
+    <% if (hasBrand) { %><div class="console-media-result"><span class="console-status <%= detectionStatus==='done'?'is-live':detectionStatus==='error'?'is-danger':'' %>">brand: <%= detectionStatus %></span><p><%= m.detected_brand || 'No detected brand available.' %><% if (m.detection_category) { %> · <%= m.detection_category %><% } %><% if (m.detection_confidence != null) { %> · <%= Math.round(Number(m.detection_confidence) * 100) %>% confidence<% } %></p></div><% } %>
     <% if (hasBrand && detectionStatus === 'needs_review' && m.detected_brand) { %><div class="console-actions"><form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="confirm"><button class="console-button">Confirm <%= m.detected_brand %></button></form><form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="reject"><button class="console-button">Reject</button></form></div><% } %>
     <div class="console-actions" style="justify-content:space-between;flex-wrap:wrap"><a class="console-button" href="/admin/studies/<%= study.id %>/records/<%= m.record_id %>">View entry ↗</a><% if (hasTranscript) { %><form method="POST" action="/admin/media/<%= m.id %>/transcribe"><button class="console-button"><%- icon('refresh','w-3 h-3') %>Transcribe</button></form><% } %><% if (hasBrand) { %><form method="POST" action="/admin/media/<%= m.id %>/detect"><button class="console-button"><%- icon('refresh','w-3 h-3') %>Detect brand</button></form><% } %></div></div>
     </article><% }) %></div>
@@ -34,88 +33,3 @@ const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO
 </section>
 <%- include('../partials/study_nav', { study, tab }) %>
 <%- include('../partials/footer') %>
-
-<% } else { %>
-<%- include('../partials/header', { title: study.name + ' — Media Review', user }) %>
-<%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
-
-<div class="mb-3 flex items-start gap-3 <%= visionOn ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200' %> text-sm rounded-2xl p-4 border">
-  <%- icon(visionOn ? 'check-circle' : 'warning', 'w-5 h-5 mt-0.5 shrink-0') %>
-  <% if (visionOn) { %>
-  <div>Brand detection is calling <strong><%= process.env.BRAND_DETECTION_PROVIDER === 'gemini_vision' ? 'Gemini' : 'Azure AI Vision' %></strong> for real. Low-confidence or ambiguous matches are marked <strong>needs review</strong> — see PRODUCTION_READINESS.md section B9.</div>
-  <% } else { %>
-  <div>Brand detection (photo/video) is running in <strong>mock</strong> mode — every item shows as "unavailable" until a real
-  provider is configured. This wiring targets <strong>Azure AI Vision</strong>: set <code class="bg-amber-100/70 px-1 rounded">BRAND_DETECTION_PROVIDER=azure_vision</code>
-  plus <code class="bg-amber-100/70 px-1 rounded">AZURE_VISION_ENDPOINT</code> / <code class="bg-amber-100/70 px-1 rounded">AZURE_VISION_KEY</code> in <code class="bg-amber-100/70 px-1 rounded">.env</code> — see PRODUCTION_READINESS.md section B9 and the Azure Deployment Runbook.</div>
-  <% } %>
-</div>
-<div class="mb-5 flex items-start gap-3 <%= speechOn ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-sky-50 text-sky-800 border-sky-200' %> text-sm rounded-2xl p-4 border">
-  <%- icon(speechOn ? 'check-circle' : 'mic', 'w-5 h-5 mt-0.5 shrink-0') %>
-  <% if (speechOn) { %>
-  <div>Voice-note transcription is calling <strong><%= process.env.AUDIO_TRANSCRIPTION_PROVIDER === 'gemini_speech' ? 'Gemini' : 'Azure AI Speech' %></strong> for real — see PRODUCTION_READINESS.md section B10.</div>
-  <% } else { %>
-  <div>Voice-note transcription is also running in <strong>mock</strong> mode. This wiring targets <strong>Azure AI Speech</strong>: set
-  <code class="bg-sky-100/70 px-1 rounded">AUDIO_TRANSCRIPTION_PROVIDER=azure_speech</code> plus <code class="bg-sky-100/70 px-1 rounded">AZURE_SPEECH_KEY</code> /
-  <code class="bg-sky-100/70 px-1 rounded">AZURE_SPEECH_ENDPOINT</code> in <code class="bg-sky-100/70 px-1 rounded">.env</code> — see PRODUCTION_READINESS.md section B10 and the Azure Deployment Runbook.</div>
-  <% } %>
-</div>
-
-<div class="bg-white rounded-2xl border border-slate-200/70 shadow-card overflow-x-auto">
-  <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
-      <th class="px-5 py-2.5">Respondent</th><th class="py-2.5">Period</th><th class="py-2.5">Type</th>
-      <th class="py-2.5">File</th><th class="py-2.5">Brand / Transcript</th><th class="py-2.5">Status</th><th class="py-2.5">Uploaded</th><th class="py-2.5"></th>
-    </tr></thead>
-    <tbody>
-    <% items.forEach(m => { %>
-      <% const isAudio = m.media_type === 'audio'; %>
-      <% // Every media type can carry a brand result now -- audio's comes
-         // from its transcript rather than a frame. Transcript itself still
-         // only applies to audio and video.
-         const hasBrand = true, hasTranscript = m.media_type !== 'photo';
-         const transcriptStatus = m.transcript_status || 'unavailable', detectionStatus = m.detection_status || 'unavailable'; %>
-      <tr class="border-t border-slate-100 hover:bg-slate-50/70">
-        <td class="px-5 py-2.5 font-mono text-xs text-slate-600"><%= m.respondent_code %></td>
-        <td class="py-2.5 text-xs text-slate-500"><%= m.period_label %></td>
-        <td class="py-2.5"><span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium flex items-center gap-1 w-fit"><%- icon(m.media_type === 'video' ? 'video' : m.media_type === 'audio' ? 'mic' : 'photo', 'w-3 h-3') %><%= m.media_type %></span></td>
-        <% const url = mediaUrl(m.file_path); %>
-        <td class="py-2.5"><% if (url) { %><a href="<%= url %>" target="_blank" class="text-brand-600 underline text-xs font-medium">view file</a><% } else { %><span class="text-xs text-slate-400 italic">link unavailable</span><% } %></td>
-        <td class="py-2.5 text-xs text-slate-600 max-w-xs">
-          <% if (hasTranscript) { %><p class="truncate"><%= m.transcript_text || '—' %></p><% } %>
-          <% if (hasBrand) { %><p class="truncate"><%= m.detected_brand || '—' %><% if (m.detection_confidence != null) { %> <span class="text-slate-400">(<%= Math.round(Number(m.detection_confidence) * 100) %>%)</span><% } %></p><% } %>
-        </td>
-        <td class="py-2.5">
-          <% if (hasTranscript) { %><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= transcriptStatus==='done' ? 'badge-green' : transcriptStatus==='error' ? 'badge-red' : 'badge-amber' %>">transcript: <%= transcriptStatus %></span><% } %>
-          <% if (hasBrand) { %><span class="text-xs px-2 py-0.5 rounded-full font-medium <%= detectionStatus==='done' ? 'badge-green' : detectionStatus==='error' ? 'badge-red' : 'badge-amber' %>">brand: <%= detectionStatus %></span><% } %>
-        </td>
-        <td class="py-2.5 text-xs text-slate-400"><%= m.upload_time %></td>
-        <td class="py-2.5 pr-5 text-right">
-          <% if (hasTranscript) { %>
-          <form method="POST" action="/admin/media/<%= m.id %>/transcribe">
-            <button class="text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition font-medium flex items-center gap-1 ml-auto"><%- icon('refresh', 'w-3.5 h-3.5') %> Run Transcription</button>
-          </form>
-          <% } %>
-          <% if (hasBrand) { %>
-          <form method="POST" action="/admin/media/<%= m.id %>/detect">
-            <button class="text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition font-medium flex items-center gap-1 ml-auto"><%- icon('refresh', 'w-3.5 h-3.5') %> Run Detection</button>
-          </form>
-          <% if (detectionStatus === 'needs_review' && m.detected_brand) { %>
-          <div class="flex gap-1 justify-end mt-1">
-            <form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="confirm"><button class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg">Confirm</button></form>
-            <form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="reject"><button class="text-xs px-2 py-1 border border-red-300 text-red-700 rounded-lg">Reject</button></form>
-          </div>
-          <% } %>
-          <% } %>
-        </td>
-      </tr>
-    <% }) %>
-    <% if (!items.length) { %><tr><td colspan="8" class="px-5 py-8 text-center text-slate-400">No photo/video/audio evidence uploaded yet.</td></tr><% } %>
-    </tbody>
-  </table>
-</div>
-
-<%- include('../partials/study_nav', { study, tab }) %>
-
-<%- include('../partials/footer') %>
-
-<% } %>

@@ -37,6 +37,38 @@ test('only superadmins create users and credentials are emailed, expiring and ne
   assert.equal((await fetch(base + '/admin/users', { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body })).status, 409);
 });
 
+test('study scope accepts multiple studies for interviewers and clients', async () => {
+  await store.insert('studies', { name: 'Second study' });
+  await store.insert('studies', { name: 'Third study' });
+
+  const interviewerBody = new URLSearchParams();
+  interviewerBody.append('name', 'Multi Interviewer');
+  interviewerBody.append('email', 'multi.interviewer@example.test');
+  interviewerBody.append('role', 'interviewer');
+  interviewerBody.append('study_id', '1');
+  interviewerBody.append('study_id', '2');
+  const interviewerResponse = await fetch(base + '/admin/users', { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: interviewerBody });
+  assert.equal(interviewerResponse.status, 302);
+  const interviewer = await store.findOne('users', { email: 'multi.interviewer@example.test' });
+  assert.equal(interviewer.study_id, 1);
+  const assignments = await store.find('interviewer_assignments', { user_id: interviewer.id });
+  assert.deepEqual(assignments.map((a) => a.study_id).sort(), [1, 2]);
+  assert.ok(assignments.every((a) => a.enabled === true));
+
+  const clientBody = new URLSearchParams();
+  clientBody.append('name', 'Multi Client');
+  clientBody.append('email', 'multi.client@example.test');
+  clientBody.append('role', 'client');
+  clientBody.append('study_id', '2');
+  clientBody.append('study_id', '3');
+  const clientResponse = await fetch(base + '/admin/users', { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: clientBody });
+  assert.equal(clientResponse.status, 302);
+  const client = await store.findOne('users', { email: 'multi.client@example.test' });
+  const grants = await store.find('client_grants', { user_id: client.id });
+  assert.deepEqual(grants.map((g) => g.study_id).sort(), [2, 3]);
+  assert.ok(grants.every((g) => g.enabled === true && g.media === true && g.text === true && g.exports === true));
+});
+
 test('inline questionnaire timing and rotation settings persist and invalid values are rejected', async () => {
   const inserted = await store.insert('questions', { study_id: 1, text: 'When?', type: 'single', required: 1, options_json: '["Morning","Evening"]', active: 1 });
   const endpoint = `${base}/admin/studies/1/questions/${inserted.id}`;

@@ -21,14 +21,16 @@
 <section id="respondent-details" class="report-panel"><div class="field-section-title"><span class="field-step">2</span><h2>Respondent details</h2></div>
 <div class="field-input-grid"><label class="field-input">Full name<input name="name" autocomplete="name" value="<%= v.name || '' %>" required /></label><label class="field-input">Phone number or email<input name="contact" autocomplete="tel" value="<%= v.contact || '' %>" required /><small>Confirm the contact details with the respondent.</small></label></div>
 <label class="field-check"><input type="checkbox" name="practice" value="1" <%= v.practice ? 'checked' : '' %> /><span><strong>Practice respondent</strong>Mark this registration as practice, separate from the research sample.</span></label>
-</section>
-<section id="prepare-handover" class="report-panel"><div class="field-section-title"><span class="field-step">3</span><h2>Prepare the handover</h2></div>
-<label class="field-input">Preferred diary channel<select name="preferred_channel"><option value="app" <%= v.preferred_channel !== 'whatsapp' ? 'selected' : '' %>>INICIO Diary app</option><option value="whatsapp" <%= v.preferred_channel === 'whatsapp' ? 'selected' : '' %>>WhatsApp</option></select><small>This records a preference. Registration does not send a message.</small></label>
-<p class="report-muted">The app checks for recruitment holds when you save. If a review is needed, you’ll see the reason before handing over.</p>
+<input type="hidden" name="preferred_channel" value="app" />
+<p class="report-muted" style="margin-top:16px">The app checks for recruitment holds when you save. If a review is needed, you’ll see the reason before handing over.</p>
 <div class="field-submit"><p>Help the respondent open their personal link on their own phone.</p><button type="submit" class="report-button" <%= consent ? '' : 'disabled' %>>Register & continue <span aria-hidden="true">→</span></button></div>
 </section>
+<section id="group-invitations" class="report-panel"><div class="field-section-title"><span class="field-step">3</span><h2>Group invitations</h2></div>
+<p class="report-muted" style="margin-bottom:16px">Prefer to recruit from a list instead? Choose a study, upload your list and review each row before sending invitations.</p>
+<div class="field-study-grid"><article class="field-study-card"><span class="report-badge"><%= study.status %></span><h3><%= study.name %></h3><p><%= [study.market, study.category].filter(Boolean).join(' · ') %></p><a class="report-button secondary" href="/interviewer/studies/<%= study.id %>/bulk-invite">Prepare invitations <span aria-hidden="true">→</span></a></article></div>
+</section>
 </form>
-<aside class="field-form-aside"><h2>Your registration guide</h2><ol><li><a href="#screen-consent"><span class="field-step">1</span> Eligibility & consent</a></li><li><a href="#respondent-details"><span class="field-step">2</span> Respondent details</a></li><li><a href="#prepare-handover"><span class="field-step">3</span> Prepare handover</a></li></ol><p style="margin-top:22px;border-top:1px solid #d5dfef;padding-top:18px">Work through each section with the respondent. Only save after they understand the study and agree to take part.</p></aside>
+<aside class="field-form-aside"><h2>Your registration guide</h2><ol><li><a href="#screen-consent"><span class="field-step">1</span> Eligibility & consent</a></li><li><a href="#respondent-details"><span class="field-step">2</span> Respondent details</a></li><li><a href="#group-invitations"><span class="field-step">3</span> Group invitations</a></li></ol><p style="margin-top:22px;border-top:1px solid #d5dfef;padding-top:18px">Work through each section with the respondent. Only save after they understand the study and agree to take part.</p></aside>
 </div>
 <% } else { %><div class="report-empty">Choose an available study to begin registration.</div><% } %>
 <% } %>

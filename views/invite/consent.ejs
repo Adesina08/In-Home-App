@@ -1,0 +1,21 @@
+<%- include('../partials/onboarding_header', { phase: 1, title: 'Study consent — ' + study.name, user: null }) %>
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white sm:rounded-2xl sm:border border-slate-200/70 sm:shadow-card p-6">
+    <h1 class="text-xl font-bold text-slate-900">Before you take part</h1>
+    <p class="text-sm text-slate-500 mt-2">Please read the consent for <strong><%= study.name %></strong> before answering the presurvey.</p>
+    <% if (error) { %><div class="mt-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm p-3"><%= error %></div><% } %>
+    <div class="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-4 mt-5 max-h-72 overflow-auto leading-relaxed whitespace-pre-line"><%= consent.body %></div>
+    <form method="POST" action="/invite/<%= respondent.unique_token %>/consent" class="mt-5">
+      <input type="hidden" name="consent_version" value="<%= consent.version %>" />
+      <label class="flex items-start gap-3 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" name="agree" value="1" required class="h-4 w-4 mt-0.5 rounded border-slate-300 text-brand-600" />
+        <span>I have read and understood the study information, and I agree to take part.</span>
+      </label>
+      <button class="w-full rounded-xl bg-brand-700 text-white font-semibold py-3.5 hover:bg-brand-800 transition mt-5">I agree — continue</button>
+    </form>
+    <p class="text-xs text-slate-400 text-center mt-4">Consent version <%= consent.version %></p>
+  </div>
+</div>
+
+<%- include('../partials/onboarding_footer') %>

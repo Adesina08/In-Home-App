@@ -1,7 +1,7 @@
 // Keeps the browser invitation/setup journey separate from the installed
 // Inicio Diary login experience.
 //
-// New respondent: /invite/:token -> channel -> presurvey -> account -> ready
+// New respondent: /invite/:token -> consent -> presurvey -> channel -> account -> ready
 // Returning respondent: /invite/:token -> choose app or WhatsApp again
 // Installed Android app: /mobile/login -> diary
 const express = require("express");
@@ -57,6 +57,12 @@ async function readyAccount(respondent) {
   return account && account.password_hash ? account : null;
 }
 
+async function hasCurrentConsent(respondent, studyId) {
+  if (respondent.consent_status !== "given") return false;
+  const consent = await store.findOne("consent_versions", { study_id: studyId, status: "approved" }, { sort: { version: -1 } });
+  return !!consent && Number(respondent.consent_version) === Number(consent.version);
+}
+
 function renderReady(res, respondent, study, account) {
   return res.render("invite/account", {
     respondent,
@@ -97,6 +103,7 @@ router.get("/:token", async (req, res, next) => {
 
   const study = await store.findOne("studies", { id: respondent.study_id });
   if (!study) return next();
+  if (!await hasCurrentConsent(respondent, study.id)) return next();
 
   return renderReturningChoice(res, respondent, study);
 });
@@ -113,6 +120,7 @@ router.post("/:token/choose", async (req, res, next) => {
 
   const account = await readyAccount(respondent);
   if (!account) return next();
+  if (!await hasCurrentConsent(respondent, respondent.study_id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
 
   const requested = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
   const mode = requested === "apk" ? "app" : requested;
@@ -121,6 +129,7 @@ router.post("/:token/choose", async (req, res, next) => {
   await store.update("respondents", { id: respondent.id }, {
     chosen_mode: mode,
     preferred_channel: preferredChannel,
+    ...(["invited", "screened"].includes(respondent.activation_status) ? { activation_status: "activated", activated_at: store.nowSql() } : {}),
   });
   logAudit(
     `respondent:${respondent.respondent_code}`,
@@ -147,6 +156,7 @@ router.get("/:token/ready", async (req, res) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) {
     return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   }
@@ -164,6 +174,7 @@ router.post("/:token/account-app", async (req, res, next) => {
   const loaded = await loadInvite(req, res);
   if (!loaded) return;
   const { respondent, study } = loaded;
+  if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (respondent.chosen_mode !== "app") return next();
   if (!respondent.presurvey_completed_at) {
     return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
@@ -201,6 +212,7 @@ router.post("/:token/account-app", async (req, res, next) => {
     await store.update("respondents", { id: respondent.id }, {
       account_id: account.id,
       account_created_at: respondent.account_created_at || store.nowSql(),
+      ...(["invited", "screened"].includes(respondent.activation_status) ? { activation_status: "activated", activated_at: store.nowSql() } : {}),
     });
 
     logAudit(

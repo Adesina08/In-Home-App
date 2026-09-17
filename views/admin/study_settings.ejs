@@ -2,7 +2,7 @@
 <%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
 
 <div class="console-settings-layout">
-<% if(user.role === 'superadmin') { %><nav class="console-settings-nav" aria-label="Settings sections"><% [['identity','Study identity'],['cadence','Diary & recruitment'],['methodology','Methodology'],['evidence','Evidence'],['quality','Quality checks'],['reminders','Reminders']].forEach(([id,label])=>{ %><a href="#settings-<%= id %>"><%= label %></a><% }) %></nav><% } %>
+<nav class="console-settings-nav" aria-label="Settings sections"><% [['identity','Study identity'],['cadence','Diary & recruitment'],['methodology','Methodology'],['evidence','Evidence'],['quality','Quality checks'],['reminders','Reminders']].forEach(([id,label])=>{ %><a href="#settings-<%= id %>"><%= label %></a><% }) %></nav>
 <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card p-6 max-w-4xl">
   <div class="flex items-start gap-2 text-sm text-slate-500 mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
     <%- icon('cog', 'w-4 h-4 mt-0.5 text-signal') %>
@@ -57,7 +57,7 @@
       </div>
       <div class="mt-4">
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Categories</label>
-        <p class="text-xs text-slate-400 mb-2.5">Tick every category this study covers — a household diary often spans more than one.</p>
+        <p class="text-xs text-slate-400 mb-2.5">Tick every category this study covers — a household diary often spans more than one. Automatic brand detection classifies each detected product into one of the categories ticked here, so untick any that don't apply to keep that classification accurate.</p>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 border border-slate-200 rounded-xl p-3.5 bg-slate-50/60">
           <% CATEGORIES.forEach(c => { %>
             <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">

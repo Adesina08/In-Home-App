@@ -1,6 +1,6 @@
 <%- include('../partials/header', { title: study.name + ' — Client KPIs', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
-<% if(user.role === 'superadmin') { %><%- include('../partials/page_header', { eyebrow: 'Reporting setup', title: 'Client KPIs', subtitle: 'Define which measures appear in the client dashboard and how they are calculated.' }) %><% } %>
+<%- include('../partials/page_header', { eyebrow: 'Reporting setup', title: 'Client KPIs', subtitle: 'Define which measures appear in the client dashboard and how they are calculated.' }) %>
 
 <% if (error) { %>
   <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-5">

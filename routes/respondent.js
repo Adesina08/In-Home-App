@@ -6,6 +6,7 @@ const store = require("../lib/store");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { logAudit } = require("../lib/audit");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
+const { parseCategories } = require("../lib/categories");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
 const closeOut = require("../lib/closeOutQuestionnaire");
@@ -499,6 +500,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   const study = await store.findOne("studies", { id: respondent.study_id });
   const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const brands = await require("../lib/productCandidates").forStudy(study);
+  const categories = parseCategories(study.category);
   const practice = req.body.practice === "1";
 
   if (!req.file) {
@@ -551,6 +553,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
     videoFile: req.file,
     questions,
     brands,
+    categories,
     studyVersion: study.version,
   }).catch((e) => console.warn(`Background video analysis failed for record ${recordId}: ${e.message}`));
 
@@ -749,6 +752,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   }
 
   const brands = await require("../lib/productCandidates").forStudy(study);
+  const categories = parseCategories(study.category);
 
   // AI enrichment (brand detection / transcription) is always best-effort and
   // must never block or crash a diary submission -- the diary record and the
@@ -769,7 +773,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     const mediaType = (req.body._pending_media_mimetype || "").startsWith("video/") ? "video" : "photo";
     const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: mediaType, file_path: req.body._pending_media_path });
     const mediaRow = { id: mediaId, record_id: recordId, media_type: mediaType, file_path: req.body._pending_media_path };
-    if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
+    if (brandProvider) brandProvider.detect(mediaRow, brands, categories).catch(() => {});
   }
 
   // Media staged during the entry. These uploaded in the background as they
@@ -783,11 +787,11 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
       // chained onto the same promise rather than fired in parallel.
       if (audioProvider) {
         audioProvider.transcribe(mediaRow)
-          .then((result) => { if (result?.text && brandProvider) brandProvider.detect({ ...mediaRow, transcript_text: result.text }, brands).catch(() => {}); })
+          .then((result) => { if (result?.text && brandProvider) brandProvider.detect({ ...mediaRow, transcript_text: result.text }, brands, categories).catch(() => {}); })
           .catch(() => {});
       }
     } else if (brandProvider) {
-      brandProvider.detect(mediaRow, brands).catch(() => {});
+      brandProvider.detect(mediaRow, brands, categories).catch(() => {});
     }
   }
 
@@ -814,7 +818,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
       // reads the transcript once it exists, so it's chained after.
       if (audioProvider) {
         audioProvider.transcribe(mediaRow)
-          .then((result) => { if (result?.text && brandProvider) brandProvider.detect({ ...mediaRow, transcript_text: result.text }, brands).catch(() => {}); })
+          .then((result) => { if (result?.text && brandProvider) brandProvider.detect({ ...mediaRow, transcript_text: result.text }, brands, categories).catch(() => {}); })
           .catch(() => {});
       }
       continue;
@@ -824,7 +828,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     const mediaRow = { id: mediaId, record_id: recordId, media_type: mediaType, file_path: storedPath };
     // Queue brand detection for evidence that could show a product (photo or video).
     // Runs inline against the mock/Azure provider — see lib/brandDetection.js.
-    if (brandProvider) brandProvider.detect(mediaRow, brands).catch(() => {});
+    if (brandProvider) brandProvider.detect(mediaRow, brands, categories).catch(() => {});
   }
 
   if (isSubmit && !isPractice) {

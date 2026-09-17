@@ -27,6 +27,7 @@ before(async () => {
     diary_mode: "daily",
     recruitment_mode: "remote",
   });
+  await store.insert("consent_versions", { study_id: study.id, version: 1, status: "approved", body: "Study consent" });
   const account = await store.insert("respondent_accounts", {
     name: "Returning Respondent",
     contact: "+2348012345678",
@@ -41,6 +42,8 @@ before(async () => {
     respondent_code: "RETURN-1",
     unique_token: "returning-token",
     presurvey_completed_at: store.nowSql(),
+    consent_status: "given",
+    consent_version: 1,
     chosen_mode: "whatsapp",
     preferred_channel: "whatsapp",
     activation_status: "activated",

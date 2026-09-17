@@ -114,9 +114,9 @@
             <div class="mt-2.5 text-xs">
               <span class="text-slate-400">Brand detection:</span>
               <% if (m.detection_status === 'done' && m.detected_brand) { %>
-                <span class="font-semibold text-emerald-700"><%= m.detected_brand %><% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>% logo confidence)<% } %></span>
+                <span class="font-semibold text-emerald-700"><%= m.detected_brand %><% if (m.detection_category) { %> · <%= m.detection_category %><% } %><% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>% logo confidence)<% } %></span>
               <% } else if (m.detection_status === 'needs_review' && m.detected_brand) { %>
-                <span class="font-semibold text-amber-700"><%= m.detected_brand %> — needs review<% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>)<% } %></span>
+                <span class="font-semibold text-amber-700"><%= m.detected_brand %><% if (m.detection_category) { %> · <%= m.detection_category %><% } %> — needs review<% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>)<% } %></span>
               <% } else if (m.detection_status === 'done') { %>
                 <span class="text-slate-500">ran, no brand matched</span>
               <% } else { %>

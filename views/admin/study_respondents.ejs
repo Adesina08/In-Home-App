@@ -1,6 +1,6 @@
 <%- include('../partials/header', { title: study.name + ' — Respondents', user, currentPath: '/admin/studies' }) %>
 <%- include('../partials/study_tabs', { study, tab, stepper: true }) %>
-<% if(user.role === 'superadmin') { %><%- include('../partials/page_header', { eyebrow: 'Study participants', title: 'Respondents', subtitle: 'Manage enrolment, activation, and participation in this study.' }) %><% } %>
+<%- include('../partials/page_header', { eyebrow: 'Study participants', title: 'Respondents', subtitle: 'Manage enrolment, activation, and participation in this study.' }) %>
 
 <% if (typeof activated !== 'undefined' && activated) { %>
   <div class="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-xl p-3 border border-emerald-200">
@@ -20,7 +20,7 @@
   </div>
 <% } %>
 
-<% if(user.role === 'superadmin') { %><details class="console-panel console-data-management"><summary>Invite respondents & access recruitment links</summary><div class="console-panel-body"><% } %>
+<details class="console-panel console-data-management"><summary>Invite respondents & access recruitment links</summary><div class="console-panel-body">
 <!-- Invite an existing (or new) person onto this study. Distinct from the
      public sign-up link below: this is research adding someone deliberately,
      including a person already on other studies. -->
@@ -105,7 +105,7 @@
   </div>
 </div>
 
-<% if(user.role === 'superadmin') { %></div></details><% } %>
+</div></details>
 <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow overflow-x-auto">
   <table data-console-table="respondents" data-console-search-label="Search study respondents…" class="w-full text-sm">
     <thead><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">

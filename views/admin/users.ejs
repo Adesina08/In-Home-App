@@ -30,7 +30,7 @@
           <td class="px-5 py-2.5 font-medium text-slate-800"><%= u.name %></td>
           <td class="py-2.5 text-slate-500"><%= u.email %></td>
           <td class="py-2.5"><span class="text-xs px-2.5 py-1 rounded-full font-medium bg-slate-100 text-slate-600 uppercase tracking-wide"><%= u.role %></span></td>
-          <td class="py-2.5 text-slate-500 text-xs"><%= u.study_name || 'All studies' %></td>
+          <td class="py-2.5 text-slate-500 text-xs"><%= u.study_name || (u.role === 'admin' ? 'All studies' : 'No studies assigned') %></td>
           <td class="py-2.5"><span class="text-[11px] font-semibold px-2 py-0.5 rounded-full <%= u.invite_delivery_status === 'failed' ? 'bg-red-50 text-red-700' : u.invite_delivery_status === 'sent' ? 'bg-blue-50 text-blue-700' : 'bg-verified-soft text-verified' %>"><%= u.invite_delivery_status || 'activated' %></span></td>
           <td class="py-2.5 pr-5 text-right">
             <% if (user.role === 'superadmin') { %><form method="POST" action="/admin/users/<%= u.id %>/resend-credentials" onsubmit="return confirm('Email a new 24-hour temporary password to <%= u.email %>? Their current password stops working immediately.')"><button class="text-xs font-medium text-signal hover:underline"><%= u.must_change_password ? 'Resend' : 'Reset & email' %></button></form><% } %>
@@ -65,10 +65,10 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Study scope (client/interviewer)</label>
-        <select name="study_id" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
-          <option value="">All studies</option>
+        <select name="study_id" multiple size="5" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
           <% studies.forEach(s => { %><option value="<%= s.id %>"><%= s.name %></option><% }) %>
         </select>
+        <p class="text-xs text-slate-400 mt-1">For Interviewer or Client, hold Ctrl/Cmd (or tap each) to grant more than one study — leaving none selected leaves them with no study access yet. For Admin, choose at most one study to confine that account to it; leave none selected for full platform access.</p>
       </div>
       <button class="w-full inline-flex items-center justify-center gap-1.5 bg-signal text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-signal-bright transition shadow-card">
         <%- icon('plus', 'w-4 h-4') %> Create User
