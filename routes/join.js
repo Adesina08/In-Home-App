@@ -34,6 +34,7 @@ const { nextRespondentCode } = require("../lib/respondentCode");
 const accounts = require("../lib/respondentAccounts");
 
 const router = express.Router();
+router.use((req, res, next) => { res.locals.onboardingJourney = "join"; next(); });
 
 async function approvedConsent(studyId) {
   return store.findOne(
@@ -224,7 +225,7 @@ router.post("/:code/profile", async (req, res) => {
 
   try {
     const sent = await otp.sendCode({
-      contact,
+      contact: storedContact,
       respondentId,
       studyName: req.study.name,
     });
