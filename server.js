@@ -112,6 +112,13 @@ app.use((req, res, next) => {
 // These four endpoints guard themselves individually inside the router.
 app.use(require("./routes/privateMedia"));
 app.use("/", require("./routes/invitationLinks"));
+// Twilio's inbound WhatsApp webhook -- unauthenticated like the routes above
+// (Twilio can't hold a staff session), but the router verifies the Twilio
+// request signature itself. Documented in PRODUCTION_READINESS.md and
+// docs/AZURE_MESSAGING_SETUP.md as the fixed URL configured on the WhatsApp
+// sender in the Twilio console; do not change this path without updating
+// that sender's webhook config too.
+app.use("/webhooks/twilio/whatsapp", require("./routes/whatsappWebhook"));
 // Superadmin routes are mounted before the general Admin router so their
 // platform-only endpoints are resolved directly and never confused with a
 // normal Admin route.

@@ -6,6 +6,7 @@ const profiles = require("../lib/respondentProfiles");
 const { normalizeContact } = require("../lib/otp");
 const { logAudit } = require("../lib/audit");
 const whatsappDiary = require("../lib/whatsappDiary");
+const messaging = require("../lib/whatsapp");
 
 const router = express.Router();
 
@@ -32,6 +33,19 @@ function inboundMedia(req) {
     url: String(req.body[`MediaUrl${index}`] || ""),
     contentType: String(req.body[`MediaContentType${index}`] || ""),
   })).filter((item) => item.url);
+}
+
+// lib/whatsappDiary.js returns either a plain string (every case the typed
+// flow already handles) or, only for an eligible single-select question, an
+// { prompt, question, options } signal -- see questionResult() there.
+function diaryOutcome(value) {
+  return typeof value === "string" ? { message: value } : { message: value.prompt, listPicker: value };
+}
+
+function listPickerVariables(question, options) {
+  const vars = { "1": String(question.text || "").slice(0, 1024) };
+  options.forEach((option, index) => { vars[String(index + 2)] = String(option).slice(0, 24); });
+  return vars;
 }
 
 function verifyTwilioSignature(req) {
@@ -269,7 +283,13 @@ router.post("/", async (req, res) => {
   if (!verifyTwilioSignature(req)) return res.status(403).send("Invalid Twilio signature");
   const contact = senderContact(req);
   if (!contact) return reply(res, "We couldn't read your WhatsApp number. Please contact the study team.");
-  const body = String(req.body.Body || "").trim();
+  // A tapped List Picker row arrives as ButtonPayload (the row's id, "opt_N"
+  // -- see lib/whatsappDiary.js's listPickerOptions), not Body. Translating
+  // it to the same digit a typed reply would send lets the existing
+  // parseAnswer()/optionFor() matching handle it with no further changes.
+  const buttonPayload = String(req.body.ButtonPayload || "").trim();
+  const tappedOption = /^opt_(\d+)$/.exec(buttonPayload);
+  const body = tappedOption ? tappedOption[1] : String(req.body.Body || "").trim();
   const existingSession = await sessionFor(contact);
   if (req.body.MessageSid && existingSession && existingSession.last_message_sid === req.body.MessageSid && existingSession.last_reply) {
     return reply(res, existingSession.last_reply);
@@ -294,12 +314,32 @@ router.post("/", async (req, res) => {
   let result;
   if (session.step === "profile") result = await handleProfile(contact, session, body);
   else if (session.step === "study_consent") result = await handleStudyConsent(contact, session, body);
-  else if (session.step === "ready") result = { message: await whatsappDiary.readyMessage(session, body, saveCurrentSession) };
-  else if (session.step === "diary") result = { message: await whatsappDiary.handleDiaryAnswer(session, body, saveCurrentSession, inboundMedia(req)) };
+  else if (session.step === "ready") result = diaryOutcome(await whatsappDiary.readyMessage(session, body, saveCurrentSession));
+  else if (session.step === "diary") result = diaryOutcome(await whatsappDiary.handleDiaryAnswer(session, body, saveCurrentSession, inboundMedia(req)));
   else if (session.step === "declined") result = { message: "You previously declined this study. Contact the study team if you want to change that choice." };
   else result = { message: "Please reopen your INICIO invitation and choose WhatsApp again." };
 
   if (req.body.MessageSid) await saveSession(contact, { last_message_sid: req.body.MessageSid, last_reply: result.message });
+
+  if (result.listPicker) {
+    const { question, options } = result.listPicker;
+    const contentSid = messaging.listPickerContentSid(options.length);
+    if (contentSid) {
+      const sent = await messaging.sendWhatsAppListPicker({
+        respondentId: session.respondent_id,
+        to: contact,
+        contentSid,
+        variables: listPickerVariables(question, options),
+        logBody: result.message,
+      }).catch(() => null);
+      // A List Picker is only ever sent inside a session the respondent
+      // already opened, so it can't fail on Meta's approval/window rule the
+      // way the cold OTP send could -- but if it fails for any other reason
+      // (misconfigured sender, transient Twilio error), fall through to the
+      // ordinary text reply below rather than leaving the respondent stuck.
+      if (sent && sent.ok) return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    }
+  }
   reply(res, result.message);
 });
 
