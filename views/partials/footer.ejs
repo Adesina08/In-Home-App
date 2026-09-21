@@ -4,9 +4,11 @@
 </div>
 <% } else { %>
 </main>
+<% if (typeof hidePublicFooter === 'undefined' || !hidePublicFooter) { %>
 <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-8 mt-4 text-xs text-slate-400 border-t border-slate-200/70">
   INICIO In-Home Consumption App — Pilot MVP prototype. Sample/practice data only.
 </footer>
+<% } %>
 <% } %>
   <% if (!(typeof user !== 'undefined' && user && user.role === 'superadmin')) { %><script src="/public/js/theme-toggle.js"></script><% } %>
 </body>

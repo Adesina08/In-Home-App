@@ -14,6 +14,7 @@ const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode"
 const { isEmail: contactIsEmail } = require("../lib/contact");
 
 const router = express.Router();
+router.use((req, res, next) => { res.locals.onboardingJourney = "invite"; next(); });
 
 function apkUrl() {
   return (process.env.ANDROID_APK_URL || "").trim() || "/public/downloads/inicio-diary.apk";
@@ -125,6 +126,7 @@ router.get("/:token/account", async (req, res) => {
   const { respondent, study } = loaded;
   if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
   if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
 
   const existing = respondent.account_id ? await accounts.getById(respondent.account_id) : null;
@@ -144,6 +146,7 @@ router.get("/:token/choose", async (req, res) => {
   const { respondent, study } = loaded;
   if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
   return res.redirect(`/invite/${respondent.unique_token}`);
 });
 
@@ -153,6 +156,7 @@ router.post("/:token/account", async (req, res) => {
   const { respondent, study } = loaded;
   if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
   if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
 
   const username = String(req.body.username || "").trim().toLowerCase();
@@ -378,6 +382,7 @@ router.get("/:token", async (req, res) => {
   if (!respondent.presurvey_completed_at) {
     return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   }
+  if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
 
   if (!respondent.chosen_mode) {
     return res.render("invite/welcome", {
@@ -411,6 +416,7 @@ router.post("/:token/choose", async (req, res) => {
   const { respondent, study } = loaded;
   if (!await hasCurrentConsent(respondent, study.id)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+  if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
 
   const requested = ["app", "apk", "whatsapp"].includes(req.body.mode) ? req.body.mode : "app";
   const mode = requested === "apk" ? "app" : requested;

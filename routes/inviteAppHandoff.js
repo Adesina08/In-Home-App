@@ -10,6 +10,7 @@ const accounts = require("../lib/respondentAccounts");
 const { logAudit } = require("../lib/audit");
 
 const router = express.Router();
+router.use((req, res, next) => { res.locals.onboardingJourney = "invite"; next(); });
 
 function apkUrl() {
   return (process.env.ANDROID_APK_URL || "").trim() || "/public/downloads/inicio-diary.apk";
@@ -179,6 +180,7 @@ router.post("/:token/account-app", async (req, res, next) => {
   if (!respondent.presurvey_completed_at) {
     return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   }
+  if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
 
   const username = String(req.body.username || "").trim().toLowerCase();
   const password = String(req.body.password || "");

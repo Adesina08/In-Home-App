@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { fetch as expoFetch } from "expo/fetch";
 
 export const API_BASE = (process.env.EXPO_PUBLIC_API_URL || "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net").replace(/\/$/, "");
 const TOKEN_KEY = "inicio.mobile.token";
@@ -114,7 +115,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers || {});
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (!(init.body instanceof FormData) && init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  // Expo File implements Blob for expo/fetch. React Native's fetch can serialize
+  // it as an empty multipart part on Android, so use Expo's transport for files.
+  const response = await (Platform.OS !== "web" && init.body instanceof FormData ? expoFetch : fetch)(
+    `${API_BASE}${path}`, { ...init, headers }
+  );
   let payload: any = null;
   try { payload = await response.json(); } catch { payload = null; }
   if (!response.ok) {
@@ -151,5 +156,6 @@ export const api = {
   analyseMedia: (respondentId: number, form: FormData) => request<any>(`/mobile/api/respondents/${respondentId}/diary/media-analysis`, { method: "POST", body: form }),
   submitDiary: (respondentId: number, form: FormData) => request<{ recordId: number; status: string }>(`/mobile/api/respondents/${respondentId}/diary`, { method: "POST", body: form }),
   videoScript: (respondentId: number) => request<{ prompts: any[]; secondsEach: number; truncated: boolean; totalFillable: number }>(`/mobile/api/respondents/${respondentId}/diary/video-script`),
+  videoPreview: (respondentId: number, form: FormData) => request<any>(`/mobile/api/respondents/${respondentId}/diary/video-preview`, { method: "POST", body: form }),
   analyzeVideo: (respondentId: number, form: FormData) => request<{ recordId: number; status: string }>(`/mobile/api/respondents/${respondentId}/diary/analyze-video`, { method: "POST", body: form }),
 };

@@ -3,25 +3,8 @@ import React, { useEffect, useState } from "react";
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { StatusBar } from "expo-status-bar";
+import { useFonts } from "expo-font";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  useFonts as useInterFonts,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from "@expo-google-fonts/inter";
-import {
-  useFonts as useBricolageFonts,
-  BricolageGrotesque_700Bold,
-  BricolageGrotesque_800ExtraBold,
-} from "@expo-google-fonts/bricolage-grotesque";
-import {
-  useFonts as useMonoFonts,
-  IBMPlexMono_400Regular,
-  IBMPlexMono_500Medium,
-  IBMPlexMono_600SemiBold,
-} from "@expo-google-fonts/ibm-plex-mono";
 import AppRedesign from "./AppRedesign";
 import InterviewerApp from "./InterviewerApp";
 import { LogoLoader } from "./src/components/LogoLoader";
@@ -30,9 +13,15 @@ type AppMode = "respondent" | "interviewer";
 const MODE_KEY = "inicio.appMode";
 
 function AppContent() {
-  const [interLoaded] = useInterFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
-  const [bricolageLoaded] = useBricolageFonts({ BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold });
-  const [monoLoaded] = useMonoFonts({ IBMPlexMono_400Regular, IBMPlexMono_500Medium, IBMPlexMono_600SemiBold });
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular: require("@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf"),
+    Inter_600SemiBold: require("@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf"),
+    Inter_700Bold: require("@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf"),
+    BricolageGrotesque_700Bold: require("@expo-google-fonts/bricolage-grotesque/700Bold/BricolageGrotesque_700Bold.ttf"),
+    BricolageGrotesque_800ExtraBold: require("@expo-google-fonts/bricolage-grotesque/800ExtraBold/BricolageGrotesque_800ExtraBold.ttf"),
+    IBMPlexMono_400Regular: require("@expo-google-fonts/ibm-plex-mono/400Regular/IBMPlexMono_400Regular.ttf"),
+    IBMPlexMono_600SemiBold: require("@expo-google-fonts/ibm-plex-mono/600SemiBold/IBMPlexMono_600SemiBold.ttf"),
+  });
 
   // Respondent and interviewer are different login entities (respondent_accounts
   // vs staff users) with their own bearer tokens (src/api.ts vs
@@ -53,7 +42,7 @@ function AppContent() {
     await AsyncStorage.setItem(MODE_KEY, next);
   }
 
-  if (!interLoaded || !bricolageLoaded || !monoLoaded || !mode) {
+  if (!fontsLoaded || !mode) {
     return <LogoLoader />;
   }
 

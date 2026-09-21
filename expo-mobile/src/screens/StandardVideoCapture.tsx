@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as FileSystem from "expo-file-system/legacy";
 import { preserveMedia, QueuedMedia } from "../diaryQueue";
-import { ScreenDoodleField } from "../components/Doodles";
 
 const LIMIT_SECONDS = 45;
 
@@ -20,20 +19,18 @@ function Action({ title, onPress, disabled = false, secondary = false }: { title
 export function StandardVideoCaptureScreen({
   respondentId,
   questionId,
-  questionText,
   mode,
   onBack,
   onCaptured,
 }: {
   respondentId: number;
   questionId: number;
-  questionText: string;
   mode: "light" | "dark";
   onBack: () => void;
   onCaptured: (asset: QueuedMedia) => void;
 }) {
-  const { height } = useWindowDimensions();
-  const cameraHeight = Math.max(280, Math.min(430, height * .5));
+  const { width } = useWindowDimensions();
+  const cameraHeight = Math.max(210, Math.min(300, width * .65));
   const camera = useRef<CameraView>(null);
   const recordingRef = useRef(false);
   const mounted = useRef(true);
@@ -124,13 +121,10 @@ export function StandardVideoCaptureScreen({
 
   const granted = cameraPermission?.granted && micPermission?.granted;
   const dark = mode === "dark";
-  return <View style={[styles.page, { backgroundColor: dark ? "#0A1628" : "#FAF9F7" }]}>
-    <ScreenDoodleField color={dark ? "#60A5FA" : "#1D4ED8"} withBottom />
-    <View style={styles.header}><Pressable accessibilityRole="button" onPress={requestBack}><Text style={[styles.back, { color: dark ? "#B0C8FF" : "#1D4ED8" }]}>‹ Back to question</Text></Pressable><Text style={[styles.eyebrow, { color: dark ? "#B0C8FF" : "#1D4ED8" }]}>VIDEO ANSWER</Text></View>
-    <ScrollView contentContainerStyle={styles.content}>
-      <Text style={[styles.title, { color: dark ? "#F8FAFC" : "#0F172A" }]}>{draft ? "Review your video" : "Record inside Inicio"}</Text>
-      <Text style={[styles.question, { color: dark ? "#DCE7F7" : "#334155" }]}>{questionText}</Text>
-      <Text style={[styles.copy, { color: dark ? "#B7C5D9" : "#64748B" }]}>{draft ? "Play it below, record again, or attach it to this question." : "The camera stays inside the diary. Keep the requested evidence visible and record for up to 45 seconds."}</Text>
+  return <View style={[styles.panel, { backgroundColor: dark ? "#182A44" : "#EFF4FF", borderColor: dark ? "#304466" : "#C9D9FB" }]}>
+    <View style={styles.header}><Text style={[styles.eyebrow, { color: dark ? "#B0C8FF" : "#1D4ED8" }]}>VIDEO ANSWER</Text><Pressable accessibilityRole="button" onPress={requestBack}><Text style={[styles.back, { color: dark ? "#B0C8FF" : "#1D4ED8" }]}>Close camera</Text></Pressable></View>
+    <View style={styles.content}>
+      <Text style={[styles.copy, { color: dark ? "#B7C5D9" : "#64748B" }]}>{draft ? "Review the recording, then attach it to this question." : "Record for up to 45 seconds. Your other diary answers stay here."}</Text>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {draft ? <>
         <View style={[styles.viewfinder, { height: cameraHeight }]}><Playback uri={draft.uri} /></View>
@@ -148,17 +142,16 @@ export function StandardVideoCaptureScreen({
         </View>
         <Action title={saving ? "Preparing preview…" : recording ? "Stop & review" : "Start recording"} disabled={saving || !ready || !foreground} onPress={recording ? () => camera.current?.stopRecording() : record} />
       </>}
-    </ScrollView>
+    </View>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  back: { fontSize: 14, fontWeight: "800", paddingVertical: 10 },
+  panel: { borderWidth: 1, borderRadius: 18, padding: 12, marginTop: 8 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  back: { fontSize: 12, fontWeight: "800", paddingVertical: 8 },
   eyebrow: { fontSize: 10, letterSpacing: 1.1, fontWeight: "900" },
-  content: { paddingHorizontal: 20, paddingBottom: 32, gap: 13 },
-  title: { fontSize: 25, lineHeight: 31, fontWeight: "900" },
+  content: { gap: 12 },
   question: { fontSize: 15, lineHeight: 21, fontWeight: "800" },
   copy: { fontSize: 13, lineHeight: 19 },
   error: { color: "#D84B5D", fontSize: 13, lineHeight: 19 },
@@ -168,9 +161,9 @@ const styles = StyleSheet.create({
   recordingLabel: { color: "#FFFFFF", backgroundColor: "rgba(8,18,34,.66)", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, fontSize: 11, fontWeight: "900" },
   flip: { backgroundColor: "rgba(8,18,34,.66)", borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
   flipText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
-  action: { minHeight: 50, borderRadius: 14, backgroundColor: "#375BC7", alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
+  action: { minHeight: 50, borderRadius: 14, backgroundColor: "#375BC7", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, paddingVertical: 12 },
   actionSecondary: { backgroundColor: "#334B70", borderColor: "#496188", borderWidth: 1 },
-  actionText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  actionText: { color: "#FFFFFF", fontSize: 15, lineHeight: 22, fontWeight: "800", includeFontPadding: false },
   disabled: { opacity: .45 },
   permission: { borderRadius: 18, padding: 18, gap: 14 },
 });

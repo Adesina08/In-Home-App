@@ -7,8 +7,11 @@ const store = require("../lib/store");
 const { parseOptions, isQuestionActive } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
 const { splitPresurvey, sectionNames } = require("../lib/presurveySections");
+const { canonical: canonicalContact, isEmail } = require("../lib/contact");
+const otp = require("../lib/otp");
 
 const router = express.Router();
+router.use((req, res, next) => { res.locals.onboardingJourney = "invite"; next(); });
 
 async function loadInvite(req, res) {
   const respondent = await store.findOne("respondents", { unique_token: req.params.token });
@@ -70,7 +73,9 @@ router.get("/:token/presurvey", async (req, res) => {
   if (!loaded) return;
   const { respondent, study } = loaded;
   if (!await consentComplete(respondent, study)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
-  if (respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/choose`);
+  if (respondent.presurvey_completed_at && (respondent.contact_verified_at || req.query.edit !== "1")) {
+    return res.redirect(`/invite/${respondent.unique_token}/${respondent.contact_verified_at ? "choose" : "verify"}`);
+  }
   const questions = await presurveyQuestions(study.id);
   return res.render("invite/presurvey", {
     respondent,
@@ -91,7 +96,9 @@ router.post("/:token/presurvey", async (req, res) => {
   if (!loaded) return;
   const { respondent, study } = loaded;
   if (!await consentComplete(respondent, study)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
-  if (respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/choose`);
+  if (respondent.presurvey_completed_at && respondent.contact_verified_at) {
+    return res.redirect(`/invite/${respondent.unique_token}/choose`);
+  }
   const questions = await presurveyQuestions(study.id);
   const name = String(req.body.name || "").trim();
   const contact = String(req.body.contact || "").trim();
@@ -129,12 +136,19 @@ router.post("/:token/presurvey", async (req, res) => {
   if (!name || !contact) {
     return renderFail("Please complete your name and phone number or email before continuing.");
   }
+  const storedContact = canonicalContact(contact, { market: study.market });
+  if (!(isEmail(storedContact)
+    ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(storedContact)
+    : /^\+[1-9]\d{6,14}$/.test(storedContact))) {
+    return renderFail("Please enter a valid email address or phone number with country code.");
+  }
   const missing = questions.find((q) => q.required && isEmptyAnswer(answers[q.id]));
   if (missing) return renderFail(`Please answer “${missing.text}” before continuing.`);
 
   await store.update("respondents", { id: respondent.id }, {
     name,
-    contact,
+    contact: storedContact,
+    contact_verified_at: null,
     presurvey_answers: answers,
     presurvey_completed_at: store.nowSql(),
     // Invitations created under the old flow may already have a channel set.
@@ -150,6 +164,68 @@ router.post("/:token/presurvey", async (req, res) => {
     { configured_question_count: questions.length }
   );
 
+  return res.redirect(`/invite/${respondent.unique_token}/verify`);
+});
+
+async function verificationInvite(req, res) {
+  const loaded = await loadInvite(req, res);
+  if (!loaded) return null;
+  const { respondent, study } = loaded;
+  if (!await consentComplete(respondent, study)) {
+    res.redirect(`/invite/${respondent.unique_token}/consent`);
+    return null;
+  }
+  if (!respondent.presurvey_completed_at || !respondent.contact) {
+    res.redirect(`/invite/${respondent.unique_token}/presurvey`);
+    return null;
+  }
+  if (respondent.contact_verified_at) {
+    res.redirect(`/invite/${respondent.unique_token}/choose`);
+    return null;
+  }
+  return loaded;
+}
+
+function renderVerification(res, respondent, study, { error = null, sent = false, status = 200 } = {}) {
+  return res.status(status).render("invite/verify", {
+    respondent, study, error, sent, ttlMinutes: otp.TTL_MINUTES, user: null,
+  });
+}
+
+router.get("/:token/verify", async (req, res) => {
+  const loaded = await verificationInvite(req, res);
+  if (!loaded) return;
+  return renderVerification(res, loaded.respondent, loaded.study, { sent: req.query.sent === "1" });
+});
+
+router.post("/:token/verify/send", async (req, res) => {
+  const loaded = await verificationInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  try {
+    await otp.sendCode({
+      contact: respondent.contact, respondentId: respondent.id,
+      purpose: "contact_verification", studyName: study.name, requireDelivery: true,
+    });
+  } catch (error) {
+    return renderVerification(res, respondent, study, {
+      error: error.message || "The code could not be sent. Please try again.",
+      status: error.code === "COOLDOWN" ? 429 : 502,
+    });
+  }
+  return res.redirect(`/invite/${respondent.unique_token}/verify?sent=1`);
+});
+
+router.post("/:token/verify", async (req, res) => {
+  const loaded = await verificationInvite(req, res);
+  if (!loaded) return;
+  const { respondent, study } = loaded;
+  const result = await otp.verifyCode({
+    contact: respondent.contact, code: req.body.code, purpose: "contact_verification",
+  });
+  if (!result.ok) return renderVerification(res, respondent, study, { error: result.reason, sent: true, status: 400 });
+  await store.update("respondents", { id: respondent.id }, { contact_verified_at: store.nowSql() });
+  logAudit(`respondent:${respondent.respondent_code}`, "invite_contact_verified", "respondents", respondent.id, {});
   return res.redirect(`/invite/${respondent.unique_token}/choose`);
 });
 

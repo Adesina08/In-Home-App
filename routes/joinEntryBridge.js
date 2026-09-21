@@ -1,12 +1,10 @@
 // Public study join codes must enter the same respondent onboarding state
 // machine as individual invitation links. A join code identifies the study,
 // not a person, so on first open we allocate one respondent shell for this
-// browser session and immediately hand it to /invite/:token/presurvey.
+// browser session and hand it to the invitation introduction.
 //
-// This deliberately replaces the legacy /join welcome -> consent -> OTP ->
-// tutorial -> browser diary entry point. The respondent-facing product now has
-// one onboarding journey:
-//   join code / invite QR -> presurvey -> participation method -> account -> app handoff
+// The respondent-facing journey is introduction and consent -> pre-survey ->
+// participation method -> account -> app/WhatsApp handoff.
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const store = require("../lib/store");
@@ -70,7 +68,7 @@ router.get("/:code", async (req, res, next) => {
     });
   }
 
-  return res.redirect(`/invite/${encodeURIComponent(respondent.unique_token)}/presurvey`);
+  return res.redirect(`/invite/${encodeURIComponent(respondent.unique_token)}`);
 });
 
 module.exports = router;

@@ -134,19 +134,12 @@ app.get("/help", requireLogin, (req, res) => {
   res.render("help", { content, user: req.session.user, currentPath: "/help" });
 });
 
-// Public study-code links enter the full remote-onboarding journey:
-//   welcome/brief -> consent -> profile -> [OTP] -> tutorial -> activate
-//
-// The OTP step is skipped while RESPONDENT_OTP_BYPASS is on (its default) --
-// see lib/respondentOtpMode.js. The verification code is written and tested;
-// it is only bypassed because outbound messaging is not configured yet. Set
-// RESPONDENT_OTP_BYPASS=false in Azure once Twilio is live.
-app.use("/join", require("./routes/join"));
-// joinEntryBridge sent /join/:code straight to /invite/:token/presurvey,
-// skipping the study brief, the consent step and contact verification. It is
-// left mounted AFTER routes/join so its behaviour is preserved for anything
-// that reaches it, but routes/join now answers /join/:code first.
+// Study-code links create or resume an invitation, then use the same four-step
+// browser journey as individual invitation links.
 app.use("/join", require("./routes/joinEntryBridge"));
+// Keep existing in-progress legacy join URLs available for respondents who
+// already opened them before the study-code entry was unified.
+app.use("/join", require("./routes/join"));
 // The first invitation step is isolated from the full diary questionnaire so
 // unrelated diary configuration cannot take down public onboarding.
 app.use("/invite", require("./routes/invitePresurvey"));

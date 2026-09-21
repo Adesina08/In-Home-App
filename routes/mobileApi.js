@@ -284,6 +284,27 @@ router.post("/respondents/:id/diary/media-analysis", requireMobileAuth, upload.s
   res.json({ questionId: question.id, ...transcriptResult, detectionStatus, detectedBrand, detectedCategory, detectionConfidence });
 });
 
+// Video mode preview: the same instant transcript + brand/category read as
+// standard-mode media-analysis, but for the single combined video before it
+// is submitted (Video mode has no per-question evidence, so there is no
+// question_id here). Nothing is persisted -- the final /diary/analyze-video
+// submission re-runs full analysis against the durable video.
+router.post("/respondents/:id/diary/video-preview", requireMobileAuth, upload.single("video"), submission.cleanupUploads, async (req, res) => {
+  const respondent = await ownedRespondent(req, req.params.id);
+  if (!respondent) return res.status(404).json({ error: "Study enrolment not found." });
+  if (!await diaryGate(respondent, res)) return;
+  if (!req.file) return res.status(400).json({ error: "Attach a video recording to analyse." });
+
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  const brands = await require("../lib/productCandidates").forStudy(study);
+  const categories = parseCategories(study.category);
+
+  const transcriptResult = await analyseLocalMedia({ filePath: req.file.path, mediaType: "video", question: null });
+  const outcome = await identifyBrandInFile(req.file.path, "video", req.file.mimetype || null, brands, categories);
+
+  res.json({ ...transcriptResult, detectionStatus: outcome.status, detectedBrand: outcome.detectedBrand, detectedCategory: outcome.detectedCategory, detectionConfidence: outcome.confidence });
+});
+
 // Video mode: the respondent's part ends here. The video is saved as evidence
 // immediately and AI field-extraction (lib/videoEntryAnalysis.js) runs in the
 // background, exactly like the web respondent flow's /diary/analyze-video.

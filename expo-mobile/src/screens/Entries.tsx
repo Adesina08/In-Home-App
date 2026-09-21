@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable, ScrollView, Image } from "react-native";
+import { View, Text, Pressable, FlatList } from "react-native";
 import { useColorScheme } from "nativewind";
 import { Icon, IconName } from "../icons";
 import { TabBar } from "../components/TabBar";
@@ -105,42 +105,45 @@ export function EntriesScreen({
 
   return (
     <View className="flex-1 bg-[#FAF9F7] dark:bg-[#0A1628]">
-      <ScrollView style={{flex:1}} contentContainerStyle={{paddingHorizontal:18,paddingTop:16,paddingBottom:24,gap:13}}>
-        <ScreenDoodleField color={isDark ? "#60A5FA" : "#1D4ED8"} />
-        <View className="flex-row items-center justify-between">
-          <Text
-            className="font-disp-extrabold text-[20px] text-[#0F172A] dark:text-[#F8FAFC]"
-            style={{ letterSpacing: -0.2 }}
-          >
-            My diary
-          </Text>
-          <Pressable
-            onPress={onToggleTheme}
-            className="h-7 w-7 items-center justify-center rounded-[9px] border border-[#E2E8F0] bg-white dark:border-[#1B3556] dark:bg-[#0F2038]"
-          >
-            <Icon name="search" size={14} color="#94A3B8" strokeWidth={1.75} />
-          </Pressable>
-        </View>
-
-        <Pressable accessibilityRole="button" onPress={onStartDiary} style={{minHeight:48,borderRadius:12,backgroundColor:"#1D4ED8",alignItems:"center",justifyContent:"center"}}><Text style={{color:"#FFFFFF",fontWeight:"700",fontSize:14}}>Open diary →</Text></Pressable>
-        <View className="flex-row gap-[7px]">
-          <FilterPill label="All" count={records.length} active />
-          <FilterPill label="Submitted" count={submittedCount} />
-          <FilterPill label="Drafts" count={draftsCount} />
-        </View>
-
-        {records.length > 0 ? (
-          <View className="flex-1 gap-2">
-            {records.map((r) => (
-              <EntryRow key={r.id} isDark={isDark} record={r} />
-            ))}
+      <FlatList
+        style={{ flex: 1 }}
+        data={records}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => <EntryRow isDark={isDark} record={item} />}
+        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 24 }}
+        ListHeaderComponent={
+          <View style={{ gap: 13, marginBottom: 13 }}>
+            <ScreenDoodleField color={isDark ? "#60A5FA" : "#1D4ED8"} />
+            <View className="flex-row items-center justify-between">
+              <Text
+                className="font-disp-extrabold text-[20px] text-[#0F172A] dark:text-[#F8FAFC]"
+                style={{ letterSpacing: -0.2 }}
+              >
+                My diary
+              </Text>
+              <Pressable
+                onPress={onToggleTheme}
+                className="h-7 w-7 items-center justify-center rounded-[9px] border border-[#E2E8F0] bg-white dark:border-[#1B3556] dark:bg-[#0F2038]"
+              >
+                <Icon name="search" size={14} color="#94A3B8" strokeWidth={1.75} />
+              </Pressable>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onStartDiary} style={{ minHeight: 48, borderRadius: 12, backgroundColor: "#1D4ED8", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 14 }}>Open diary →</Text>
+            </Pressable>
+            <View className="flex-row gap-[7px]">
+              <FilterPill label="All" count={records.length} active />
+              <FilterPill label="Submitted" count={submittedCount} />
+              <FilterPill label="Drafts" count={draftsCount} />
+            </View>
           </View>
-        ) : (
-          <Text className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-            No diary entries yet — they'll show up here once you log an occasion.
-          </Text>
-        )}
-      </ScrollView>
+        }
+        ListEmptyComponent={<Text className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">No diary entries yet — they'll show up here once you log an occasion.</Text>}
+      />
       <TabBar active="entries" onNavigate={onNavigate} />
     </View>
   );

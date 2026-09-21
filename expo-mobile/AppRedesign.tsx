@@ -24,7 +24,8 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from "expo-audio";
-import { File as ExpoFile } from "expo-file-system";
+import { File as ExpoFile, Paths } from "expo-file-system";
+import { fetch as expoFetch } from "expo/fetch";
 import { useVideoPlayer, VideoView } from "expo-video";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -74,6 +75,7 @@ type MediaAnalysis = {
   scoreRationale?: string | null;
   detectionStatus?: "processing" | "done" | "needs_review" | "unavailable" | "error" | "pending";
   detectedBrand?: string | null;
+  detectedCategory?: string | null;
   detectionConfidence?: number | null;
 };
 type MediaAnalysisMap = Record<string, MediaAnalysis>;
@@ -327,7 +329,7 @@ function PrimaryButton({ title, onPress, disabled = false, t, inverse = false, a
         style={({ pressed }) => [styles.primaryButton, pressed && !disabled && styles.primaryButtonPressed]}
       >
         <Text style={[styles.primaryButtonText, { color: inverse ? t.blue : t.white }]}>{title}</Text>
-        {arrow ? <Text style={[styles.buttonArrow, { color: inverse ? t.blue : t.white }]}>→</Text> : null}
+        {arrow ? <View pointerEvents="none" style={styles.buttonArrowWrap}><Text style={[styles.buttonArrow, { color: inverse ? t.blue : t.white }]}>→</Text></View> : null}
       </Pressable>
     </View>
   );
@@ -390,7 +392,7 @@ function CapturedEvidence({ type, asset, analysis, t }: { type: "photo" | "video
     {type !== "audio" && analysis ? <View style={[styles.transcriptCard, { backgroundColor: t.bg2, borderColor: t.border }]}>
       <Text style={{ color: t.text, fontWeight: "900", fontSize: 12 }}>Brand detection</Text>
       {analysis.detectionStatus === "processing" ? <View style={styles.analysisBusy}><ActivityIndicator size="small" color={t.blue} /><Text style={[styles.smallMuted, { color: t.muted }]}>Looking for a brand…</Text></View> : null}
-      {(analysis.detectionStatus === "done" || analysis.detectionStatus === "needs_review") && analysis.detectedBrand ? <View style={styles.scoreRow}><View style={[styles.scorePill, { backgroundColor: t.blueSoft }]}><Text style={{ color: t.blue, fontWeight: "900" }}>{analysis.detectedBrand}</Text></View><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800", fontSize: 12 }}>{analysis.detectionStatus === "done" ? "Brand detected" : "Possible brand match"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>{analysis.detectionConfidence != null ? `${Math.round(analysis.detectionConfidence * 100)}% confidence` : "Pending confirmation"}</Text></View></View> : null}
+      {(analysis.detectionStatus === "done" || analysis.detectionStatus === "needs_review") && analysis.detectedBrand ? <View style={styles.scoreRow}><View style={[styles.scorePill, { backgroundColor: t.blueSoft }]}><Text style={{ color: t.blue, fontWeight: "900" }}>{analysis.detectedBrand}</Text></View><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800", fontSize: 12 }}>{analysis.detectionStatus === "done" ? "Brand detected" : "Possible brand match"}{analysis.detectedCategory ? ` · ${analysis.detectedCategory}` : ""}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>{analysis.detectionConfidence != null ? `${Math.round(analysis.detectionConfidence * 100)}% confidence` : "Pending confirmation"}</Text></View></View> : null}
       {analysis.detectionStatus === "pending" ? <Text style={[styles.smallMuted, { color: t.amber }]}>Offline preview only. Brand detection will run when this entry syncs.</Text> : null}
       {analysis.detectionStatus === "unavailable" ? <Text style={[styles.smallMuted, { color: t.muted }]}>No brand was identified. The {type} is still saved.</Text> : null}
       {analysis.detectionStatus === "error" ? <Text style={[styles.smallMuted, { color: t.red }]}>Brand detection failed. Capture it again or submit it for retry.</Text> : null}
@@ -494,6 +496,8 @@ function FieldError({ message, t }: { message?: string; t: Theme }) { return mes
 
 export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: () => void }) {
   const [screen, setScreen] = useState<Screen>("loading");
+  const activeScreen = useRef(screen);
+  activeScreen.current = screen;
   const [mode, setMode] = useState<ThemeMode>("light");
   const { setColorScheme: setNativeWindScheme } = useColorScheme();
   const t = mode === "dark" ? DARK : LIGHT;
@@ -511,6 +515,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [enrolments, setEnrolments] = useState<MobileEnrolment[]>([]);
   const [selected, setSelected] = useState<MobileEnrolment | null>(null);
+  const activeRespondentId = useRef<number | null>(selected?.respondent.id ?? null);
+  activeRespondentId.current = selected?.respondent.id ?? null;
   const [home, setHome] = useState<any>(null);
   const [questionnaire, setQuestionnaire] = useState<any>(null);
   const [answers, setAnswers] = useState<AnswerMap>({});
@@ -540,33 +546,38 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   async function loadMe() {
     const me = await api.me();
-    await AsyncStorage.setItem("inicio.offline.enrolments",JSON.stringify(me.enrolments||[]));
+    void AsyncStorage.setItem("inicio.offline.enrolments",JSON.stringify(me.enrolments||[])).catch(()=>{});
     setEnrolments(me.enrolments || []);
     if ((me.enrolments || []).length === 1) await openStudy(me.enrolments[0], false);
     else setScreen("studies");
   }
 
-  // The profile photo endpoint requires a bearer token, but React Native's
-  // core <Image> component doesn't reliably send custom headers on Android
-  // (worse with the New Architecture) -- the request silently drops the
-  // header and the image never loads. Fetching it in JS with the header set
-  // explicitly, then handing the Image component a plain data: URI, sidesteps
-  // that entirely since no further authenticated request is ever made.
+  // Fetch the private photo with its bearer token, then give Image a local URI.
+  // Image's own network request does not reliably include auth headers.
   async function showProfilePhoto(profile:any) {
     if(!profile?.hasPhoto){setPhotoSource(undefined);return;}
     const token=await getToken();
     if(!token){setPhotoSource(undefined);return;}
     try {
-      const response=await fetch(`${API_BASE}/mobile/api/profile/photo?v=${encodeURIComponent(profile.photoUpdatedAt||'')}`,{headers:{Authorization:`Bearer ${token}`}});
+      const response=await expoFetch(`${API_BASE}/mobile/api/profile/photo?v=${encodeURIComponent(profile.photoUpdatedAt||'')}`,{headers:{Authorization:`Bearer ${token}`}});
       if(!response.ok){setPhotoSource(undefined);return;}
-      const blob=await response.blob();
-      const dataUri:string=await new Promise((resolve,reject)=>{
-        const reader=new FileReader();
-        reader.onerror=()=>reject(new Error('Could not read the downloaded photo.'));
-        reader.onload=()=>resolve(String(reader.result));
-        reader.readAsDataURL(blob);
-      });
-      setPhotoSource({uri:dataUri});
+      if(Platform.OS==='web'){
+        const blob=await response.blob();
+        const dataUri:string=await new Promise((resolve,reject)=>{
+          const reader=new FileReader();
+          reader.onerror=()=>reject(new Error('Could not read the downloaded photo.'));
+          reader.onload=()=>resolve(String(reader.result));
+          reader.readAsDataURL(blob);
+        });
+        setPhotoSource({uri:dataUri});
+      }else{
+        const type=response.headers.get('content-type')||'';
+        const extension=type.includes('png')?'png':type.includes('webp')?'webp':'jpg';
+        const file=new ExpoFile(Paths.cache,`inicio-profile-${profile.id}-${encodeURIComponent(profile.photoUpdatedAt||'current')}.${extension}`);
+        file.create({overwrite:true});
+        file.write(await response.bytes());
+        setPhotoSource({uri:file.uri});
+      }
     } catch { setPhotoSource(undefined); }
   }
   async function captureProfilePhoto(source:'camera'|'library') {
@@ -580,8 +591,10 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       const asset=picked.assets[0];
       if(asset.fileSize&&asset.fileSize>3*1024*1024){Alert.alert('Choose a smaller image','Profile images must be smaller than 3 MB.');return;}
       setPhotoBusy(true);
-      const form=new FormData();form.append('photo',new ExpoFile(asset.uri));
-      const result=await api.uploadProfilePhoto(form);await showProfilePhoto(result.profile);
+      const form=new FormData();
+      form.append('photo',Platform.OS==='web'&&asset.file?asset.file:new ExpoFile(asset.uri));
+      await api.uploadProfilePhoto(form);
+      setPhotoSource({uri:asset.uri});
     } catch(e:any){Alert.alert('Could not upload photo',e.message);}
     finally{setPhotoBusy(false);}
   }
@@ -596,7 +609,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   async function loadProfileGate() {
     const result = await api.profile();
-    await showProfilePhoto(result.profile);
+    // The avatar can come from Blob Storage. It must not hold the login screen
+    // while the profile and study are already ready to show.
+    void showProfilePhoto(result.profile).catch(() => {});
     if (result.required) {
       const p = result.profile;
       setProfileForm({
@@ -756,7 +771,16 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     if (setBusyState) setBusy(true);
     setError("");
     try {
-      let data;try{data=await api.home(item.respondent.id);await AsyncStorage.setItem(`inicio.home.${item.respondent.id}`,JSON.stringify(data));}catch(e:any){if(e.status)throw e;const cached=await AsyncStorage.getItem(`inicio.home.${item.respondent.id}`);if(!cached)throw e;data=JSON.parse(cached);}
+      let data;
+      try {
+        data=await api.home(item.respondent.id);
+        void AsyncStorage.setItem(`inicio.home.${item.respondent.id}`,JSON.stringify(data)).catch(()=>{});
+      } catch(e:any) {
+        if(e.status)throw e;
+        const cached=await AsyncStorage.getItem(`inicio.home.${item.respondent.id}`);
+        if(!cached)throw e;
+        data=JSON.parse(cached);
+      }
       setSelected(item); setHome(data); setScreen("home");
     } catch (e: any) { Alert.alert("Could not open study", e.message); }
     finally { if (setBusyState) setBusy(false); }
@@ -800,9 +824,26 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   }
   async function refreshSync(manual=false){
     if(!selected)return [];
-    setSyncing(true);
-    try{await syncQueue(selected.respondent.id,manual);const list=await listQueue(selected.respondent.id);setPendingEntries(list);return list;}
-    finally{setSyncing(false);}
+    const respondentId=selected.respondent.id;
+    // Most respondents have no queued entries. Avoid waking the upload path
+    // and re-rendering the whole app on every background poll in that case.
+    if(!manual){
+      const queued=await listQueue(respondentId);
+      if(!queued.length){
+        if(activeRespondentId.current===respondentId)setPendingEntries(current=>current.length?[]:current);
+        return [];
+      }
+    }
+    const showProgress=activeScreen.current==='sync';
+    if(showProgress)setSyncing(true);
+    try{
+      await syncQueue(respondentId,manual);
+      const list=await listQueue(respondentId);
+      if(activeRespondentId.current===respondentId){
+        setPendingEntries(current=>JSON.stringify(current)===JSON.stringify(list)?current:list);
+      }
+      return list;
+    }finally{if(showProgress)setSyncing(false);}
   }
   // Runs right after an entry is queued: try to sync it immediately (using
   // the same queue everything else retries from, so a slow network still
@@ -851,10 +892,8 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     };
     const listener = BackHandler.addEventListener("hardwareBackPress", () => {
       if (busy || screen === "loading") return true;
-      // The video-answer recorder is a Modal over the "diary" screen rather
-      // than its own screen (see the Modal below) -- defer to its own
-      // BackHandler (StandardVideoCapture.tsx) while it is open, the same way
-      // this used to defer for the old "diaryQuestionVideo" screen.
+      // Let the inline recorder handle Back, including its recording and
+      // unsaved-preview confirmation.
       if (screen === "diaryVideo" || standardVideoQuestion) return false;
       if (screen === "forgotPassword") { setError(""); setScreen("login"); return true; }
       if (screen === "verifyLoginCode") { setError(""); setScreen("forgotPassword"); return true; }
@@ -879,11 +918,14 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     try {
       const cacheKey=`inicio.questionnaire.${selected.respondent.id}`;
       let q;
-      try{q=diaryQuestionnaire(await api.questionnaire(selected.respondent.id));await AsyncStorage.setItem(cacheKey,JSON.stringify(q));}
+      try{q=diaryQuestionnaire(await api.questionnaire(selected.respondent.id));void AsyncStorage.setItem(cacheKey,JSON.stringify(q)).catch(()=>{});}
       catch(e:any){if(e.status)throw e;const cached=await AsyncStorage.getItem(cacheKey);if(!cached)throw e;q=diaryQuestionnaire(JSON.parse(cached));}
       setQuestionnaire(q);
-      setOccasionNumber((q.occasionNumber||1)+(await listQueue(selected.respondent.id)).filter(p=>p.fields.practice!=='1').length);
-      const saved = draftKey ? await AsyncStorage.getItem(draftKey) : null;
+      const [queued, saved] = await Promise.all([
+        listQueue(selected.respondent.id),
+        draftKey ? AsyncStorage.getItem(draftKey) : Promise.resolve(null),
+      ]);
+      setOccasionNumber((q.occasionNumber||1)+queued.filter(p=>p.fields.practice!=='1').length);
       const draft=saved?JSON.parse(saved):{};
       setAnswers(draft.answers||{});setOtherText(draft.otherText||{});setMedia(draft.media||{});setMediaAnalysis(draft.mediaAnalysis||{});setCaptureTime(draft.captureTime||new Date().toISOString());setOccurrenceTime(draft.occurrenceTime||new Date().toISOString());setEntryKey(draft.entryKey||packetId());setParticipationKind(draft.participationKind||'occasion');setScreen("diary");
     } catch (e: any) {
@@ -961,10 +1003,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   async function pickEvidence(q: any) {
     if (q.type === "video") {
-      // Opened as a modal over the questionnaire (see the Modal in the
-      // "diary" screen render below), not a screen change -- so the
-      // questionnaire stays mounted underneath and answering carries on
-      // exactly where it left off once the recorder closes.
+      // Keep the camera and its preview within this diary question.
       setStandardVideoQuestion(q);
       return;
     }
@@ -1043,9 +1082,33 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   }
 
   const visibleQuestions = useMemo(() => questionnaire?.questions?.filter((q: any) => isVisible(q.id, questionnaire.rules || [], answers)&&(!q.everyNthOccasion||occasionNumber%q.everyNthOccasion===0)&&((q.fromHourUtc==null||q.toHourUtc==null)||((q.fromHourUtc<q.toHourUtc)?(new Date(occurrenceTime).getUTCHours()>=q.fromHourUtc&&new Date(occurrenceTime).getUTCHours()<q.toHourUtc):(new Date(occurrenceTime).getUTCHours()>=q.fromHourUtc||new Date(occurrenceTime).getUTCHours()<q.toHourUtc)))) || [], [questionnaire, answers,occurrenceTime,occasionNumber]);
-  const records = home?.records || [];
-  const submitted = records.filter((r: any) => r.status === "submitted" && !r.isPractice).length;
-  const drafts = records.filter((r: any) => r.status === "draft").length;
+  const records = useMemo(() => home?.records || [], [home?.records]);
+  const today = new Date().toISOString().slice(0, 10);
+  const { submitted, drafts, displayRecords, daysLogged, last14, videoCount, voiceCount, formCount } = useMemo(() => {
+    const displayRecords: DisplayRecord[] = [];
+    const loggedDays = new Set<string>();
+    const submittedByDay = new Map<string, number>();
+    let submitted = 0, drafts = 0, videoCount = 0, voiceCount = 0, formCount = 0;
+    for (const r of records) {
+      const occurred = r.occurrenceTime || r.entryTime;
+      displayRecords.push({ id: r.id, time: formatTime(occurred), day: dayLabel(occurred), bucket: r.status === "submitted" ? "submitted" : r.status === "draft" ? "draft" : "review" });
+      loggedDays.add(dayLabel(occurred));
+      if (r.status === "draft") drafts++;
+      if (r.status !== "submitted" || r.isPractice) continue;
+      submitted++;
+      const day = String(occurred).slice(0, 10);
+      submittedByDay.set(day, (submittedByDay.get(day) || 0) + 1);
+      if (r.entryMode === "video") videoCount++;
+      else if (r.entryMode === "audio") voiceCount++;
+      else if (r.entryMode === "standard") formCount++;
+    }
+    const last14 = Array.from({ length: 14 }, (_, i) => {
+      const day = new Date(`${today}T00:00:00Z`);
+      day.setUTCDate(day.getUTCDate() - (13 - i));
+      return submittedByDay.get(day.toISOString().slice(0, 10)) || 0;
+    });
+    return { submitted, drafts, displayRecords, daysLogged: loggedDays.size, last14, videoCount, voiceCount, formCount };
+  }, [records, today]);
   const respondentName = home?.respondent?.name || selected?.respondent?.name || "";
 
   if(screen==='rewards'&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>My rewards</Text><Text style={{color:t.muted}}>Rewards for {home?.study?.name||'this study'}.</Text>{participation.incentives.length?participation.incentives.map((reward:any,index:number)=><Card key={index} t={t}><Text style={{color:t.text,fontWeight:'700',fontSize:16}}>{reward.milestone==='onboarding'?'Getting started':reward.milestone==='closeout'?'Study completion':'Diary participation'}</Text><Text style={{color:t.blue,fontWeight:'800',fontSize:24,marginVertical:8}}>{reward.currency} {Number(reward.amount).toLocaleString()}</Text><Text style={{color:t.muted}}>{reward.status==='paid'?'Paid':reward.status==='eligible'?'Eligible · awaiting payment':reward.status==='held'?'On hold · under review':reward.status}</Text></Card>):<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>No rewards recorded yet</Text><Text style={{color:t.muted,marginTop:8}}>Your eligible study rewards will appear here when confirmed by the research team.</Text></Card>}</ScrollView></AppFrame>;
@@ -1070,18 +1133,6 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
 
   if ((screen === "home" || screen === "entries" || screen === "activity" || screen === "profile") && selected && home) {
     const consentNeeded = home.respondent.consentStatus !== "given" && home.consent;
-    const displayRecords: DisplayRecord[] = records.map((r: any) => ({
-      id: r.id,
-      time: formatTime(r.occurrenceTime || r.entryTime),
-      day: dayLabel(r.occurrenceTime || r.entryTime),
-      bucket: r.status === "submitted" ? "submitted" : r.status === "draft" ? "draft" : "review",
-    }));
-    const daysLogged = new Set(records.map((r: any) => dayLabel(r.occurrenceTime || r.entryTime))).size;
-    const last14=Array.from({length:14},(_,i)=>{const day=new Date(Date.now()-(13-i)*86400000).toISOString().slice(0,10);return records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&String(r.occurrenceTime||r.entryTime).slice(0,10)===day).length;});
-    const videoCount=records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&r.entryMode==='video').length;
-    const voiceCount=records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&r.entryMode==='audio').length;
-    const formCount=records.filter((r:any)=>r.status==='submitted'&&!r.isPractice&&r.entryMode==='standard').length;
-
     if (screen === "home")
       return (
         <>
@@ -1195,11 +1246,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   if (screen === "diaryVideo" && selected && videoScript)
     return <AppFrame t={t} mode={mode}><VideoDiaryScreen mode={mode} respondentId={selected.respondent.id} script={videoScript} onBack={() => setScreen("diaryMode")} onSubmit={submitRecordedVideo} /></AppFrame>;
 
-  // The video-answer recorder for a "standard" diary question renders as a
-  // Modal inside the "diary" screen below (over the questionnaire, not a
-  // screen navigation) so answering the rest of the form isn't interrupted.
+  // Standard video capture renders inside its question in the diary form.
 
-  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View><TextInput accessibilityLabel={`Answer for ${q.text}`} value={value === undefined || value === null ? "" : String(value)} onChangeText={(v) => setAnswer(q.id, v.replace(/[^0-9.\-]/g, ""))} keyboardType="decimal-pad" placeholder="Enter a number" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border }]} />{(q.minValue != null || q.maxValue != null || q.stepValue) ? <Text style={[styles.smallMuted, { color: t.muted, marginTop: 4 }]}>{[q.minValue != null && q.maxValue != null ? `Between ${q.minValue} and ${q.maxValue}` : q.minValue != null ? `${q.minValue} or more` : q.maxValue != null ? `${q.maxValue} or less` : null, q.stepValue ? `in steps of ${q.stepValue}` : null].filter(Boolean).join(", ")}</Text> : null}</View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? <>Recording… <RecordingClock /> · tap to stop</> : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, busy && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View><Modal visible={!!standardVideoQuestion} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setStandardVideoQuestion(null)}>{standardVideoQuestion && selected ? <StandardVideoCaptureScreen mode={mode} respondentId={selected.respondent.id} questionId={standardVideoQuestion.id} questionText={standardVideoQuestion.text} onBack={() => setStandardVideoQuestion(null)} onCaptured={(asset) => { const question = standardVideoQuestion; setMedia((old) => ({ ...old, [String(question.id)]: asset })); setMediaAnalysis((old) => { const next = { ...old }; delete next[String(question.id)]; return next; }); setStandardVideoQuestion(null); analyseEvidence(question, asset); }} /> : null}</Modal></KeyboardAvoidingView></AppFrame>;
+  if (screen === "diary" && selected && questionnaire) return <AppFrame t={t} mode={mode}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}><View style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.page, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><Pressable disabled={!!standardVideoQuestion} onPress={() => setScreen("diaryMode")}><Text style={{ color: t.muted, fontSize: 14, opacity: standardVideoQuestion ? .45 : 1 }}>‹  Back</Text></Pressable><View style={styles.diaryTitleRow}><Text style={[styles.diaryStudyTitle, { color: t.text }]}>{questionnaire.study.name}</Text></View><Text style={[styles.qText, { color: t.text }]}>When did this occasion happen?</Text><TextInput accessibilityLabel="Occasion date and time with timezone" value={occurrenceTime} onChangeText={setOccurrenceTime} autoCapitalize="none" style={[styles.input,{color:t.text,borderColor:t.border}]} /><Text style={[styles.smallMuted,{color:t.muted}]}>Use YYYY-MM-DDTHH:mm:ssZ (UTC), or include your timezone offset. Back-entry window: {questionnaire.study.backEntryHours} hours.{questionnaire.study.practiceRequired?' This is a practice entry before handover.':''}</Text>{questionnaire.study.diaryMode==='hybrid'?<ChoiceList t={t} options={[["occasion","Consumption occasion"],["period_summary","Period summary"]]} value={participationKind} onChange={setParticipationKind}/>:null}<Text style={styles.aboutLabel}>ABOUT THIS OCCASION</Text>{visibleQuestions.map((q: any) => { const value = answers[String(q.id)]; const problem = problems.find((p) => p.questionId === q.id); return <View key={q.id} style={{ marginBottom: 15 }}><Text style={[styles.qText, { color: t.text }]}>{q.text}{q.required ? <Text style={{ color: t.red }}> *</Text> : null}</Text>{["date","time","rank","scale"].includes(q.type)?<View><Text style={{color:t.muted}}>{q.type==='rank'?`Rank every option using | between them: ${q.options.join(' | ')}`:q.type==='date'?'YYYY-MM-DD':q.type==='time'?'HH:mm (24-hour)':`Scale from ${q.minValue??'no minimum'} to ${q.maxValue??'no maximum'}`}</Text><TextInput value={String(value??'')} onChangeText={v=>setAnswer(q.id,v)} style={[styles.input,{color:t.text,borderColor:t.border}]} keyboardType={q.type==='scale'?'decimal-pad':'default'}/></View>:null}{q.type === "text" ? <TextInput value={String(value ?? "")} onChangeText={(v) => setAnswer(q.id, v)} multiline placeholder="Type your answer" placeholderTextColor={t.subtle} style={[styles.input, styles.textArea, { color: t.text, borderColor: t.border, backgroundColor: t.card }]} /> : null}{q.type === "numeric" ? <View><TextInput accessibilityLabel={`Answer for ${q.text}`} value={value === undefined || value === null ? "" : String(value)} onChangeText={(v) => setAnswer(q.id, v.replace(/[^0-9.\-]/g, ""))} keyboardType="decimal-pad" placeholder="Enter a number" placeholderTextColor={t.subtle} style={[styles.input, { color: t.text, borderColor: t.border }]} />{(q.minValue != null || q.maxValue != null || q.stepValue) ? <Text style={[styles.smallMuted, { color: t.muted, marginTop: 4 }]}>{[q.minValue != null && q.maxValue != null ? `Between ${q.minValue} and ${q.maxValue}` : q.minValue != null ? `${q.minValue} or more` : q.maxValue != null ? `${q.maxValue} or less` : null, q.stepValue ? `in steps of ${q.stepValue}` : null].filter(Boolean).join(", ")}</Text> : null}</View> : null}{q.type === "single" || q.type === "multi" ? <View style={{gap:8}}>{q.options.map((opt: string) => { const on = q.type === "single" ? value === opt : Array.isArray(value) && value.includes(opt); const requiresText = on && (q.otherSpecifyOptions || []).includes(opt); return <View key={opt} style={{gap:6}}><Pressable onPress={() => q.type === "single" ? setAnswer(q.id, opt) : setAnswer(q.id, on ? (value as string[]).filter((x) => x !== opt) : [...(Array.isArray(value) ? value : []), opt])} style={[styles.answerChip, { backgroundColor: on ? t.blueSoft : t.card, borderColor: on ? t.blue : t.border }]}><Text style={{ color: on ? t.blue : t.muted, fontWeight: "700", fontSize: 13 }}>{opt}</Text></Pressable>{requiresText?<TextInput accessibilityLabel={`Please specify ${opt}`} value={otherText[String(q.id)]?.[opt] || ""} onChangeText={(text)=>setOtherSpecify(q.id,opt,text)} placeholder="Please specify…" placeholderTextColor={t.subtle} style={[styles.input,{color:t.text,borderColor:t.blue,backgroundColor:t.card}]}/>:null}</View>; })}</View> : null}{(q.type === "photo" || q.type === "video") && !standardVideoQuestion ? <Pressable onPress={() => pickEvidence(q)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: t.border }]}><Icon glyph={q.type === "video" ? "◧" : "▧"} t={t} /><View style={{ flex: 1 }}><Text style={{ color: t.text, fontWeight: "800" }}>{media[String(q.id)] ? (q.type === "video" ? "Record video again" : "Take photo again") : (q.type === "video" ? "Record video" : "Take photo")}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Opens the in-app camera — no gallery uploads.</Text></View><Text style={{ color: t.muted, fontSize: 22 }}>›</Text></Pressable> : null}{q.type === "video" && standardVideoQuestion?.id === q.id ? <StandardVideoCaptureScreen mode={mode} respondentId={selected.respondent.id} questionId={q.id} onBack={() => setStandardVideoQuestion(null)} onCaptured={(asset) => { setMedia((old) => ({ ...old, [String(q.id)]: asset })); setMediaAnalysis((old) => { const next = { ...old }; delete next[String(q.id)]; return next; }); setStandardVideoQuestion(null); analyseEvidence(q, asset); }} /> : null}{q.type === "audio" ? <Pressable onPress={() => recordingQuestionId === q.id ? stopRecording(q.id) : startRecording(q.id)} style={[styles.evidenceCard, { backgroundColor: t.card, borderColor: recordingQuestionId === q.id ? t.red : t.border }]}><Icon glyph="♩" t={t} tone={recordingQuestionId === q.id ? undefined : "muted"} /><View style={{ flex: 1 }}><Text style={{ color: recordingQuestionId === q.id ? t.red : t.text, fontWeight: "800" }}>{recordingQuestionId === q.id ? <>Recording… <RecordingClock /> · tap to stop</> : media[String(q.id)] ? "Record voice note again" : "Tap to record voice note"}</Text><Text style={[styles.smallMuted, { color: t.muted }]}>Records a short voice note.</Text></View></Pressable> : null}{media[String(q.id)] ? <CapturedEvidence type={q.type} asset={media[String(q.id)]} analysis={mediaAnalysis[String(q.id)]} t={t} /> : null}{problem ? <Text style={{ color: t.red, fontSize: 12, marginTop: 4 }}>{problem.message}</Text> : null}</View>; })}</ScrollView><View style={[styles.diaryFooter, { backgroundColor: t.nav, borderTopColor: t.border }]}><Pressable disabled={!!standardVideoQuestion} onPress={saveDraft} style={[styles.footerSecondary, { borderColor: t.border }, standardVideoQuestion && { opacity: .45 }]}><Text style={{ color: t.text, fontWeight: "800" }}>Save Draft</Text></Pressable><Pressable disabled={busy || !!standardVideoQuestion} onPress={submitDiary} style={[styles.footerPrimary, { backgroundColor: t.blue }, (busy || standardVideoQuestion) && { opacity: .5 }]}><Text style={{ color: t.white, fontWeight: "800" }}>{busy ? "Submitting…" : "Submit Diary Entry"}</Text></Pressable></View></View></KeyboardAvoidingView></AppFrame>;
 
   return <AppFrame t={t} mode={mode}><View style={styles.center}><ActivityIndicator color={t.blue} /></View></AppFrame>;
 }
@@ -1233,17 +1282,13 @@ const styles = StyleSheet.create({
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
   rememberText: { fontSize: 13, fontWeight: "600" },
   textArea: { height: 96, paddingTop: 12, textAlignVertical: "top" },
-  primaryButtonShell: { width: "100%", minHeight: 48, borderRadius: 12, borderWidth: 1, marginTop: 2, overflow: "hidden", elevation: 2, shadowColor: "#091426", shadowOffset: { width: 0, height: 2 }, shadowOpacity: .12, shadowRadius: 4 },
-  primaryButton: { width: "100%", minHeight: 46, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 48, position: "relative" },
+  primaryButtonShell: { width: "100%", borderRadius: 12, borderWidth: 1, marginTop: 2, overflow: "hidden", elevation: 2, shadowColor: "#091426", shadowOffset: { width: 0, height: 2 }, shadowOpacity: .12, shadowRadius: 4 },
+  primaryButton: { width: "100%", minHeight: 48, borderRadius: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 48, paddingVertical: 13, position: "relative" },
   primaryButtonDisabled: { opacity: .5 },
   primaryButtonPressed: { opacity: .84 },
-  // Android adds invisible ascent/descent padding above and below text by
-  // default (includeFontPadding), which is asymmetric enough on a heavy
-  // (900) weight to make the label look pinned to the top of the button even
-  // though the flexbox centering above it is correct -- textAlignVertical is
-  // the Android-only counterpart that actually centers within that padding.
-  primaryButtonText: { fontSize: 15, fontWeight: "900", textAlign: "center", includeFontPadding: false, textAlignVertical: "center" },
-  buttonArrow: { position: "absolute", right: 18, top: 10, fontSize: 20, lineHeight: 24 },
+  primaryButtonText: { fontSize: 15, lineHeight: 22, fontWeight: "900", textAlign: "center", includeFontPadding: false, textAlignVertical: "center" },
+  buttonArrowWrap: { position: "absolute", top: 0, bottom: 0, right: 18, justifyContent: "center" },
+  buttonArrow: { fontSize: 20, lineHeight: 24, includeFontPadding: false },
   outlineButton: { minHeight: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 2 },
   outlineButtonText: { fontSize: 14, fontWeight: "800" },
   firstTimeCard: { borderWidth: 1, borderRadius: 14, padding: 12, flexDirection: "row", gap: 10, alignItems: "center", marginTop: 80 },
