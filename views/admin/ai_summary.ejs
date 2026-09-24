@@ -3,7 +3,7 @@
 <link rel="stylesheet" href="/public/analysis.css" />
 <script src="/public/js/reports.js" defer></script>
 <div class="report-page">
-  <div class="report-heading"><div><div class="report-kicker">Study intelligence / <%= study.name %></div><h1>Every study has a story.</h1><p class="report-lead">Bring the findings, respondent language and everyday moments together in one AI Summary.</p></div><span class="report-badge"><%= aiConfigured ? aiProviderLabel + ' connected' : 'AI setup required' %></span></div>
+  <div class="report-heading"><div><div class="report-kicker"><%= study.name %></div><h1>AI Summary</h1><p class="report-lead">Executive summary, key charts, respondent language and media in one clear view.</p></div><span class="report-badge"><%= aiConfigured ? aiProviderLabel + ' connected' : 'AI setup required' %></span></div>
   <% if (error) { %><div class="report-notice error" role="alert"><%= error %></div><% } %>
   <form class="report-toolbar" method="GET" action="/admin/ai-summary">
     <input type="hidden" name="study" value="<%= study.id %>" />
@@ -13,7 +13,7 @@
   </form>
   <dl class="report-stats"><% [['Submitted entries',report.submitted,'Within this period'],['Contributors',report.contributors,'With submitted entries'],['Eligible media',report.media.length,'Photos, videos and voice notes'],['Written answers',report.openText.length,'Eligible for word frequency']].forEach(([label,value,note]) => { %><div class="report-stat"><dt><%= label %></dt><dd><%= value %></dd><dd class="report-stat-note"><%= note %></dd></div><% }) %></dl>
   <section class="report-panel">
-    <div class="report-panel-head"><div><div class="report-kicker">The research story</div><h2>Summary</h2><p><%= from || 'Beginning of study' %> → <%= to || 'Latest available data' %></p></div>
+    <div class="report-panel-head"><div><div class="report-kicker">Research story</div><h2>Executive summary</h2><p><%= from || 'Beginning of study' %> → <%= to || 'Latest available data' %></p></div>
       <form method="POST" action="/admin/ai-summary/generate" data-generate-summary><input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" /><input type="hidden" name="force" value="1" /><button type="submit" class="report-button"><%= selected ? 'Generate updated summary' : 'Generate summary' %></button></form>
     </div>
     <% if (selected) { %>
@@ -25,23 +25,24 @@
         <% if (snapshot && snapshot.base) { %><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"><%= JSON.stringify(snapshot, null, 2) %></pre><% } else { %><p class="report-muted">The saved metric snapshot is unavailable.</p><% } %>
         <% if (Array.isArray(sample)) sample.forEach(a => { %><blockquote style="margin-top:14px;font-size:13px"><strong><%= a.question %></strong><p><%= a.answer %></p></blockquote><% }) %>
       </details>
-    <% } else { %><div class="report-empty">No saved summary for this period yet. Generate one from the study’s figures and up to <%= openTextSampleSize %> eligible written answers.</div><% } %>
+    <% } else { %><div class="report-empty">No saved summary for this period yet. Generate one from the study’s figures and up to <%= openTextSampleSize %> eligible written and transcribed responses.</div><% } %>
     <% if (!aiConfigured) { %><p class="report-muted" style="margin-top:16px">Connect Azure OpenAI or Gemini (AI_SUMMARY_PROVIDER) to generate summaries. The latest successful summary remains visible if the provider is unavailable.</p><% } %>
   </section>
+  <%- include('../partials/questionnaire_dashboard', { questionnaireDashboard }) %>
+  <%- include('../partials/report_dashboard_charts', { report }) %>
+  <%- include('../partials/report_visuals', { report }) %>
+  <details class="report-panel dashboard-extra ai-summary-more">
+    <summary>More analysis and history</summary>
+    <p class="report-muted">Study objectives, detailed brand results, themes, sentiment, demographic crosstabs and saved summary versions.</p>
+
   <div class="report-two">
     <section class="report-panel">
       <div class="report-panel-head"><div><div class="report-kicker">What respondents are saying</div><h2>Thematic analysis</h2><p>AI-read themes from the same written and transcribed sample as the summary.</p></div></div>
       <% if (selected && themes.length) { %>
-        <ul class="theme-list">
-          <% themes.forEach(t => { %>
-            <li>
-              <div class="theme-head"><strong><%= t.name %></strong><span class="sentiment-badge <%= t.sentiment %>"><%= t.sentiment %></span></div>
-              <p class="report-muted"><%= t.mentions %> mention<%= t.mentions === 1 ? '' : 's' %> in the sample</p>
-              <% if (t.example) { %><p class="theme-quote">“<%= t.example %>”</p><% } %>
-            </li>
-          <% }) %>
-        </ul>
-      <% } else if (selected) { %><div class="report-empty">No themes were read from this period's written sample.</div>
+        <div class="dashboard-table-scroll"><table class="report-table dashboard-table"><thead><tr><th scope="col">Theme</th><th scope="col">Mentions</th><th scope="col">Tone</th><th scope="col">Example</th></tr></thead><tbody>
+          <% themes.forEach(t => { %><tr><th scope="row"><%= t.name %></th><td><%= t.mentions %> mention<%= t.mentions === 1 ? '' : 's' %> in the sample</td><td><span class="sentiment-badge <%= t.sentiment %>"><%= t.sentiment %></span></td><td><%= t.example || '—' %></td></tr><% }) %>
+        </tbody></table></div>
+      <% } else if (selected) { %><div class="report-empty">No themes were read from this period's response sample.</div>
       <% } else { %><div class="report-empty">Generate a summary to read thematic analysis from its open-text sample.</div><% } %>
       <p class="report-muted" style="margin-top:18px">Read from up to <%= openTextSampleSize %> sampled answers, not the full base. AI-generated — review before sharing.</p>
     </section>
@@ -54,7 +55,9 @@
       <% } else { %><div class="report-empty">Generate a summary to read sentiment from its open-text sample.</div><% } %>
     </section>
   </div>
-  <section class="report-panel">
+    <%- include('../partials/report_objectives', { objectiveGroups, configureUrl: '/admin/studies/' + study.id + '/kpis' }) %>
+    <%- include('../partials/report_brand_table', { report }) %>
+  <details class="report-panel dashboard-extra"><summary>View demographic crosstabs</summary>
     <div class="report-panel-head"><div><div class="report-kicker">Compare consumer groups</div><h2>Crosstab · <%= banners.questionLabel %></h2><p>Location, Gender and Age banners for one questionnaire question.</p></div></div>
     <form class="report-toolbar" method="GET" action="/admin/ai-summary" style="margin-bottom:6px">
       <input type="hidden" name="study" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" />
@@ -71,12 +74,11 @@
       <% } else { %><div class="report-empty">No eligible answers for this selection.</div><% } %>
     <% }) %>
     <p class="report-muted" style="margin-top:16px">Percentages use answered occasions in each row; multi-select answers can total over 100%.</p>
-  </section>
-  <div class="report-notice">The visuals below show the current data for this period. A saved narrative retains the figures available when it was generated. New entries or QC decisions can change the visuals.</div>
-  <%- include('../partials/report_visuals', { report }) %>
+  </details>
   <section class="report-panel"><div class="report-panel-head"><div><h2>Summary history</h2><p>Select a saved summary to view its period and narrative.</p></div></div>
-    <% if (summaries.length) { %><div class="report-history"><% summaries.forEach(s => { %><a href="/admin/ai-summary?study=<%= study.id %>&summary=<%= s.id %>" aria-current="<%= !!selected && selected.id === s.id %>"><strong><%= s.period_start || 'Start' %> → <%= s.period_end || 'All data' %></strong><small><%= s.generated_at %></small><small><%= s.base_records %> entries · <%= s.used_ai_model ? 'AI-generated' : 'Rules-based' %></small></a><% }) %></div><% } else { %><p class="report-muted">Generated summaries will be saved here.</p><% } %>
+    <% if (summaries.length) { %><div class="dashboard-table-scroll"><table class="report-table dashboard-table"><thead><tr><th scope="col">Period</th><th scope="col">Saved</th><th scope="col">Entries</th><th scope="col">Source</th><th scope="col">View</th></tr></thead><tbody><% summaries.forEach(s => { %><tr><td><%= s.period_start || 'Start' %> → <%= s.period_end || 'All data' %></td><td><%= s.generated_at %></td><td><%= s.base_records %></td><td><%= s.used_ai_model ? 'AI-generated' : 'Rules-based' %></td><td><a href="/admin/ai-summary?study=<%= study.id %>&summary=<%= s.id %>" <%- !!selected && selected.id === s.id ? 'aria-current="page"' : '' %>>View summary</a></td></tr><% }) %></tbody></table></div><% } else { %><p class="report-muted">Generated summaries will be saved here.</p><% } %>
   </section>
+  </details>
 </div>
 <% if (stale && aiConfigured && !error) { %><script>
 document.addEventListener('DOMContentLoaded', async function () {

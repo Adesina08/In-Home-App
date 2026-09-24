@@ -1,13 +1,14 @@
+<% const completedTranscriptCount = report.media.filter(m => ['audio', 'video'].includes(m.media_type) && m.transcript_status === 'done' && String(m.transcript_text || '').trim()).length; %>
 <div class="report-two">
   <section class="report-panel">
-    <div class="report-panel-head"><div><div class="report-kicker">Respondent language</div><h2>In their own words</h2><p>Word frequency across <%= report.openText.length %> eligible open-text answers.</p></div></div>
+    <div class="report-panel-head"><div><div class="report-kicker">Respondent language</div><h2>Word cloud</h2><p>Word frequency across <%= report.openText.length %> written answer<%= report.openText.length === 1 ? '' : 's' %> and <%= completedTranscriptCount %> completed audio/video transcript<%= completedTranscriptCount === 1 ? '' : 's' %>.</p></div></div>
     <% if (report.words.length) { const max = report.words[0].count; %>
       <div class="report-cloud" aria-label="Word cloud; exact frequencies are in the table below">
         <% report.words.forEach(w => { %><span style="font-size:<%= Math.round(15 + 30 * w.count / max) %>px" title="<%= w.count %> mentions"><%= w.word %></span><% }) %>
       </div>
       <details><summary>View word frequencies</summary><table class="report-table"><caption class="sr-only">Most frequent words</caption><thead><tr><th scope="col">Word</th><th scope="col">Mentions</th></tr></thead><tbody><% report.words.forEach(w => { %><tr><td><%= w.word %></td><td><%= w.count %></td></tr><% }) %></tbody></table></details>
       <p class="report-muted">Common English words are removed. Size reflects mentions, not sentiment or the number of respondents.</p>
-    <% } else { %><div class="report-empty">The word cloud will appear when this period has eligible written answers. Media uploads alone do not create words.</div><% } %>
+    <% } else { %><div class="report-empty">The word cloud will appear when this period has eligible written answers or completed audio/video transcripts.</div><% } %>
   </section>
   <section class="report-panel">
     <div class="report-panel-head"><div><div class="report-kicker">Consumption context</div><h2>Occasions that stand out</h2><p>Answer counts from eligible entries.</p></div></div>

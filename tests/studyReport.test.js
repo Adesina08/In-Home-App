@@ -5,6 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const store = require('../lib/store');
 const { loadStudyReport, validatePeriod, wordCloud } = require('../lib/studyReport');
+const { clientSafeReport } = require('../lib/researchAccess');
 const { generateSummary } = require('../lib/aiSummary');
 let dir, study;
 before(async () => {
@@ -14,6 +15,7 @@ before(async () => {
   study = await store.insert('studies', { name: 'Report study',minimum_base_size:2 });
   for(const id of [99,100])await store.insert('respondents',{id,study_id:study.id,activation_status:'active',consent_status:'given',media_consent:true,created_at:'2026-09-01 00:00:00'});
   await store.insert('client_grants',{user_id:7,study_id:study.id,enabled:true,media:true,text:true,exports:true});
+  await store.insert('kpi_config',{study_id:study.id,objective_key:'what',metric:'count_entries',label:'Eligible diary occasions',enabled:1});
   const other = await store.insert('studies', { name: 'Foreign study' });
   const q = await store.insert('questions', { study_id: study.id, type: 'text', code: 'brand', text: 'Experience' });
   for (const [sid, status, practice, date, flagged, source, verified, value] of [
@@ -28,7 +30,7 @@ before(async () => {
   ]) {
     const r = await store.insert('diary_records', { study_id: sid, respondent_id: source==='ai_video'?100:99, status, is_practice: practice, entry_time: date });
     await store.insert('responses', { record_id: r.id, question_id: q.id, value, source, verified });
-    await store.insert('media', { record_id: r.id, media_type: 'video', file_path: `${value}.mp4` });
+    await store.insert('media', { record_id: r.id, media_type: 'video', file_path: `${value}.mp4`, ...(value === 'Fresh fresh breakfast' ? { transcript_status: 'done', transcript_text: 'Crunchy morning' } : {}) });
     if (flagged) await store.insert('qc_flags', { record_id: r.id, status: 'open' });
   }
 });
@@ -45,7 +47,7 @@ test('visual base scopes study and inclusive dates, excludes drafts, practice, f
   assert.equal(report.media.length, 3);
   assert.equal(report.openText.length, 2);
   assert.deepEqual(report.provenance, { respondent: 1, aiConfirmed: 1, excluded: 2 });
-  assert.deepEqual(report.words, [{ word: 'fresh', count: 3 }, { word: 'breakfast', count: 2 }]);
+  assert.deepEqual(report.words, [{ word: 'fresh', count: 3 }, { word: 'breakfast', count: 2 }, { word: 'crunchy', count: 1 }, { word: 'morning', count: 1 }]);
   assert.equal(report.entries.length, 3);
   assert.equal(report.brands.length, 2);
 });
@@ -56,6 +58,18 @@ test('empty study period produces honest empty collections', async () => {
 });
 test('cloud removes common words and contact/link tokens', () => {
   assert.deepEqual(wordCloud(['The fresh and fresh https://site.test/secret me@example.org +234 800 123 4567']), [{ word: 'fresh', count: 2 }]);
+});
+test('client word cloud excludes transcripts from media without respondent consent', async () => {
+  await store.update('respondents', { id: 99 }, { media_consent: false });
+  try {
+    const raw = await loadStudyReport(study.id, { from: '2026-09-06', to: '2026-09-06' });
+    const safe = clientSafeReport(raw, { media: true, text: true });
+    assert.equal(safe.media.some(item => item.transcript_text === 'Crunchy morning'), false);
+    assert.equal(safe.words.some(item => ['crunchy', 'morning'].includes(item.word)), false);
+    assert.equal(safe.words.some(item => item.word === 'fresh'), true);
+  } finally {
+    await store.update('respondents', { id: 99 }, { media_consent: true });
+  }
 });
 test('summary generation awaits the metrics and stores real distributions', async () => {
   const originalFetch = global.fetch;
@@ -71,7 +85,7 @@ test('summary generation awaits the metrics and stores real distributions', asyn
     assert.equal(metrics.quality.qc_flag_rate_pct, 25);
     assert.equal(summary.used_ai_model, 1);
     assert.match(summary.narrative, /4/);
-    assert.equal(JSON.parse(summary.open_text_json).length, 2);
+    assert.equal(JSON.parse(summary.open_text_json).length, 3);
     await assert.rejects(generateSummary(study.id, { from: '2026-02-30' }));
   } finally {
     global.fetch = originalFetch;
@@ -97,9 +111,24 @@ test('client routes enforce assignment, render inline media and export the same 
   await new Promise(resolve => server.once('listening', resolve));
   const url = `http://127.0.0.1:${server.address().port}/client`;
   try {
+    const overview = await fetch(`${url}?study=${study.id}&from=2026-09-06&to=2026-09-06`);
+    assert.equal(overview.status, 200);
+    const overviewHtml = await overview.text();
+    assert.match(overviewHtml, /Study dashboard/);
+    assert.match(overviewHtml, /Built from the questionnaire/);
+    assert.match(overviewHtml, /Questionnaire dashboard/);
+    assert.match(overviewHtml, /Experience/);
+    assert.match(overviewHtml, /Study objectives/);
+    assert.match(overviewHtml, /Eligible diary occasions/);
+    assert.match(overviewHtml, /Entries over time/);
+    assert.match(overviewHtml, /Brand table/);
     const response = await fetch(`${url}/insights?study=${study.id}&from=2026-09-06&to=2026-09-06`);
     assert.equal(response.status, 200);
     const html = await response.text();
+    assert.match(html, /Questionnaire dashboard/);
+    assert.match(html, /Experience/);
+    assert.match(html, /Entries over time/);
+    assert.match(html, /Brand table/);
     assert.match(html, /<video controls playsinline preload="none"/);
     assert.doesNotMatch(html, /<a[^>]*href="[^\"]*(?:records|Foreign|Flagged|Draft|Practice)/);
     assert.doesNotMatch(html, /Foreign\.mp4|Flagged\.mp4|Tomorrow\.mp4/);
@@ -119,4 +148,15 @@ test('client routes enforce assignment, render inline media and export the same 
     const anonymous = await fetch(`${url}/insights?from=2030-01-01`);
     assert.match(await anonymous.text(), /No eligible media/);
   } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('word cloud includes completed audio transcripts', async () => {
+  const record = await store.insert('diary_records', { study_id: study.id, respondent_id: 100, status: 'submitted', is_practice: 0, entry_time: '2026-09-06 18:00:00' });
+  await store.insert('media', { record_id: record.id, media_type: 'audio', file_path: 'voice-note.m4a', transcript_status: 'done', transcript_text: 'Spoken flavour memory' });
+  const report = await loadStudyReport(study.id, { from: '2026-09-06', to: '2026-09-06' });
+  assert.deepEqual(report.words.filter(item => ['spoken', 'flavour', 'memory'].includes(item.word)), [
+    { word: 'flavour', count: 1 },
+    { word: 'memory', count: 1 },
+    { word: 'spoken', count: 1 },
+  ]);
 });

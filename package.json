@@ -12,7 +12,9 @@
     "seed": "node lib/seed.js",
     "build": "npm run build:css",
     "build:css": "tailwindcss -i ./src/tailwind-input.css -o ./public/tailwind.css --minify",
-    "migrate:contacts": "node lib/migrateContacts.js"
+    "migrate:contacts": "node lib/migrateContacts.js",
+    "whatsapp:flow:export": "node scripts/exportWhatsappFlow.js",
+    "whatsapp:flow:template": "node scripts/setupWhatsappFlowTemplate.js"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.33.0",

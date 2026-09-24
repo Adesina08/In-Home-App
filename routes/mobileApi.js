@@ -203,7 +203,20 @@ router.get('/respondents/:id/submissions/:key',requireMobileAuth,async(req,res)=
 router.get('/respondents/:id/participation',requireMobileAuth,async(req,res)=>{
   const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);const study=await store.findOne('studies',{id:r.study_id});
   const due=r.end_validation_status==='pending'||study.status==='closed'||study.end_date&&study.end_date<store.nowSql().slice(0,10);
-  res.json({mediaConsent:r.media_consent===true,withdrawn:!!r.withdrawn_at,closeoutDue:!!due,closeoutCompleted:r.end_validation_status==='completed',questions:require('../lib/closeOutQuestionnaire').questionsFor(study),incentives:(await store.find('incentive_ledger',{respondent_id:r.id})).map(i=>({milestone:i.milestone,amount:i.amount,currency:i.currency,status:i.status}))});
+  const rewardData=await require('../lib/researchOperations').rewardProgress(study.id,r.id);
+  res.json({mediaConsent:r.media_consent===true,withdrawn:!!r.withdrawn_at,closeoutDue:!!due,closeoutCompleted:r.end_validation_status==='completed',questions:require('../lib/closeOutQuestionnaire').questionsFor(study),...rewardData,incentives:rewardData.rewards});
+});
+router.post('/respondents/:id/rewards/celebrations/seen',requireMobileAuth,async(req,res)=>{
+  const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);
+  const items=Array.isArray(req.body.items)?req.body.items.slice(0,20):[];
+  for(const item of items){
+    const row=await store.findOne('incentive_ledger',{id:item.ledgerId,respondent_id:r.id,study_id:r.study_id});
+    if(!row)continue;
+    const current=Math.max(1,Number(row.celebration_version)||1);
+    const seen=Math.min(current,Math.max(0,Number(item.version)||0));
+    if(seen>(Number(row.celebration_seen_version)||0))await store.update('incentive_ledger',{id:row.id},{celebration_seen_version:seen,celebration_seen_at:store.nowSql()});
+  }
+  res.json({ok:true});
 });
 router.post('/respondents/:id/media-consent',requireMobileAuth,async(req,res)=>{
   const r=await ownedRespondent(req,req.params.id);if(!r)return res.sendStatus(404);if(r.consent_status!=='given'||r.withdrawn_at)return res.sendStatus(403);

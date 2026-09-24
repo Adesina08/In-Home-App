@@ -219,7 +219,7 @@
       (AI_FILLABLE.indexOf(q.type) > -1 ?
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
-        '<button id="addOpt" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add option</button></div>' : '') +
+        '<button type="button" id="addOpt" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add option</button></div>' : '') +
       '<div class="mt-5 pt-4 border-t border-slate-100"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Logic for this question</div><div id="ruleList" class="space-y-2"></div><button id="addRule" type="button" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add show / hide rule</button><div id="ruleForm" class="hidden mt-3 space-y-2 text-xs"></div></div>' +
       '<div class="mt-5 pt-4 border-t border-slate-100">' +
         (canAiFill(q)
@@ -248,7 +248,7 @@
         '<input class="opt-in flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm" value="' + esc(o) + '" data-i="' + i + '" />' +
         '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'"><option value="">Continue</option><option value="study" '+(terminationFor(q.id,o)?'selected':'')+'>Terminate</option></select>'+
         '<label class="text-[11px] text-slate-600 whitespace-nowrap"><input type="checkbox" class="opt-specify" data-option="'+esc(o)+'" '+(specify.indexOf(o)>-1?'checked':'')+' /> Other text</label>'+
-        '<button class="opt-del text-slate-400 hover:text-red-600 text-sm px-1" data-i="' + i + '">&times;</button></div>';
+        '<button type="button" class="opt-del text-slate-400 hover:text-red-600 text-sm px-1" data-i="' + i + '">&times;</button></div>';
     }).join('') || '<div class="text-xs text-slate-400">No options yet — this question cannot be answered until it has some.</div>';
 
     host.querySelectorAll('.opt-in').forEach(function (inp) {
@@ -310,7 +310,14 @@
   async function patch(id, body) {
     try {
       var updated = await api('PATCH', '/admin/studies/' + STUDY_ID + '/questions/' + id, body);
-      questions = questions.map(function (q) { return q.id === id ? Object.assign({}, q, updated.question || body) : q; });
+      // The API returns the canonical stored question. Use it so option edits
+      // update options_json (the field optionsOf() renders) instead of merging
+      // the request's differently named `options` field and redrawing stale
+      // options immediately after a successful save.
+      var savedQuestion = updated.question || updated;
+      questions = questions.map(function (q) {
+        return q.id === id ? Object.assign({}, q, savedQuestion) : q;
+      });
       renderList(); renderEditor(); saved();
     } catch (e) { fail(e); }
   }

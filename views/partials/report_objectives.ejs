@@ -1,0 +1,15 @@
+<section class="objective-dashboard" aria-labelledby="study-objectives-title">
+  <div class="objective-dashboard-heading"><div><div class="report-kicker">Reporting framework</div><h2 id="study-objectives-title">Study objectives</h2><p class="report-muted">Each study maps its own questionnaire measures to these six sections.</p></div><% if (typeof configureUrl !== 'undefined' && configureUrl) { %><a class="report-button secondary" href="<%= configureUrl %>">Configure measures</a><% } %></div>
+  <div class="objective-grid">
+    <% objectiveGroups.forEach((objective, index) => { %>
+      <section class="report-panel objective-card" aria-labelledby="objective-<%= objective.key %>">
+        <div class="objective-card-heading"><span class="objective-index"><%= String(index + 1).padStart(2, '0') %></span><div><h3 id="objective-<%= objective.key %>"><%= objective.label %></h3><p><%= objective.description %></p></div></div>
+        <% if (objective.kpis.length) { %>
+          <div class="dashboard-table-scroll"><table class="report-table objective-table"><thead><tr><th scope="col">Measure</th><th scope="col">Value</th></tr></thead><tbody>
+            <% objective.kpis.forEach(kpi => { %><tr><th scope="row"><%= kpi.label %><% if (kpi.basis) { %><small><%= kpi.basis %></small><% } %></th><td><%= kpi.display || '—' %></td></tr><% }) %>
+          </tbody></table></div>
+        <% } else { %><p class="objective-empty">No study-specific KPI configured for this objective.</p><% } %>
+      </section>
+    <% }) %>
+  </div>
+</section>

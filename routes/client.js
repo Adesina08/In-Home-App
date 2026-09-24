@@ -28,7 +28,18 @@ async function loadPage(req, res, next) {
   const fmt=n=>n===null||n===undefined?'—':`${n}%`;
   const builtIn={completion_rate:fmt(a.compliance.rate),compliance_rate:fmt(a.compliance.rate),active_respondents:report.suppressed?'—':raw.respondents.length,qc_flag_rate:report.suppressed?'—':fmt(require('../lib/researchMetrics').percent(raw.flagged,raw.submitted)),brand_incidence:'See brand table',avg_occasions_per_week:a.avg_occasions_per_week??'—'};
   const kpiValues=kpis.map(k=>{const result=!report.suppressed?(user.role==='client'?clientKpi(k,raw):computeKpi(k,raw.entries,{respondentIds:raw.respondents.map(r=>r.id)})):null;return{...k,display:result?.display??builtIn[k.kpi_key]??'—',basis:result?.basis||''};});
-  res.locals.clientData={study,studies,report,kpis:kpiValues,insight,grant,completionRate:a.compliance.rate,active:report.suppressed?'—':raw.respondents.length,totalRespondents:report.suppressed?'—':raw.respondents.length,...period};
+  let dashboardMedia=raw.media;
+  if(user.role==='client'){
+    if(!grant.media)dashboardMedia=[];
+    else{
+      const consentingPeople=new Set(raw.respondents.filter(respondent=>respondent.media_consent===true).map(respondent=>respondent.id));
+      const consentingRecords=new Set(raw.eligibleRecords.filter(record=>consentingPeople.has(record.respondent_id)).map(record=>record.id));
+      dashboardMedia=raw.media.filter(item=>consentingRecords.has(item.record_id));
+    }
+  }
+  const questionnaireDashboard=require('../lib/questionnaireDashboard').buildQuestionnaireDashboard(raw,{minimumBase:user.role==='client'?report.minimumBase:1,suppressed:!!report.suppressed,allowText:user.role!=='client'||!!grant.text,allowMedia:user.role!=='client'||!!grant.media,media:dashboardMedia});
+  const { objectiveGroups, OBJECTIVE_KEYS } = require('../lib/studyObjectives');
+  res.locals.clientData={study,studies,report,questionnaireDashboard,kpis:kpiValues.filter(kpi=>!OBJECTIVE_KEYS.has(kpi.objective_key)),objectiveGroups:objectiveGroups(kpiValues),insight,grant,completionRate:a.compliance.rate,active:report.suppressed?'—':raw.respondents.length,totalRespondents:report.suppressed?'—':raw.respondents.length,...period};
   next();
 }
 router.get(['/', '/insights'], loadPage, (req, res) => res.render('client/dashboard', { ...res.locals.clientData, insights: req.path === '/insights' }));

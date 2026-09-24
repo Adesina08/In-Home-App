@@ -37,6 +37,8 @@ import { HomeScreen, DisplayRecord } from "./src/screens/Home";
 import { EntriesScreen } from "./src/screens/Entries";
 import { ActivityScreen } from "./src/screens/Activity";
 import { ProfileScreen } from "./src/screens/Profile";
+import { RewardCelebrationData, RewardsData, RewardsScreen } from "./src/screens/Rewards";
+import { RewardCelebration } from "./src/components/RewardCelebration";
 import { LoginDoodleField, ScreenDoodleField } from "./src/components/Doodles";
 import { Icon as LineIcon } from "./src/icons";
 import { LogoLoader } from "./src/components/LogoLoader";
@@ -79,6 +81,13 @@ type MediaAnalysis = {
   detectionConfidence?: number | null;
 };
 type MediaAnalysisMap = Record<string, MediaAnalysis>;
+type ParticipationData = RewardsData & {
+  mediaConsent: boolean;
+  withdrawn: boolean;
+  closeoutDue: boolean;
+  closeoutCompleted: boolean;
+  questions: any[];
+};
 
 // Older offline questionnaire caches may still contain invitation questions.
 // Keep the diary screen limited to diary sections even before it reconnects.
@@ -763,7 +772,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     try { await api.logout(); } catch {}
     await setToken(null);
     await AsyncStorage.removeItem("inicio.offline.enrolments");
-    setSelected(null); setHome(null); setEnrolments([]); setError(""); setScreen("login");
+    setSelected(null); setHome(null); setParticipation(null); setRewardCelebration(null); setEnrolments([]); setError(""); setScreen("login");
     setBusy(false);
   }
 
@@ -781,7 +790,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
         if(!cached)throw e;
         data=JSON.parse(cached);
       }
-      setSelected(item); setHome(data); setScreen("home");
+      setSelected(item); setHome(data); setParticipation(null); setRewardCelebration(null); setScreen("home"); void loadParticipation(item.respondent.id,true,false).catch(()=>{});
     } catch (e: any) { Alert.alert("Could not open study", e.message); }
     finally { if (setBusyState) setBusy(false); }
   }
@@ -798,9 +807,38 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     setScreen("diaryMode");
   }
 
-  const [participation,setParticipation]=useState<any>(null);
+  const [participation,setParticipation]=useState<ParticipationData|null>(null);
+  const [rewardCelebration,setRewardCelebration]=useState<RewardCelebrationData|null>(null);
+  const [rewardRefreshing,setRewardRefreshing]=useState(false);
   const [closeoutAnswers,setCloseoutAnswers]=useState<Record<string,string>>({});
-  async function openParticipation(target: "participation" | "rewards" = "participation"){if(!selected)return;try{setParticipation(await api.participation(selected.respondent.id));setScreen(target);}catch(e:any){Alert.alert("Connection needed",e.message);}}
+  async function loadParticipation(respondentId:number,allowCache=true,showError=false){
+    setRewardRefreshing(true);
+    try{
+      const data=await api.participation(respondentId) as ParticipationData;
+      setParticipation(data);
+      setRewardCelebration(data.celebration||null);
+      void AsyncStorage.setItem(`inicio.rewards.${respondentId}`,JSON.stringify(data)).catch(()=>{});
+      return data;
+    }catch(e:any){
+      if(!e.status&&allowCache){
+        const cached=await AsyncStorage.getItem(`inicio.rewards.${respondentId}`);
+        if(cached){const data=JSON.parse(cached) as ParticipationData;setParticipation(data);return data;}
+      }
+      if(showError)Alert.alert("Rewards unavailable",e.message);
+      throw e;
+    }finally{setRewardRefreshing(false);}
+  }
+  async function openParticipation(target:"participation"|"rewards"="participation"){
+    if(!selected)return;
+    if(participation)setScreen(target);
+    try{await loadParticipation(selected.respondent.id,true,!participation);setScreen(target);}catch{}
+  }
+  function dismissRewardCelebration(viewRewards=false){
+    const current=rewardCelebration;setRewardCelebration(null);
+    setParticipation(previous=>previous?{...previous,celebration:null}:previous);
+    if(selected&&current)void api.acknowledgeRewardCelebration(selected.respondent.id,current.items.map(item=>({ledgerId:item.ledgerId,version:item.version}))).catch(()=>{});
+    if(viewRewards)setScreen("rewards");
+  }
   const [pendingEntries,setPendingEntries]=useState<DiaryPacket[]>([]);
   const [syncing,setSyncing]=useState(false);
   const [submitSyncing,setSubmitSyncing]=useState(false);
@@ -871,6 +909,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       setSubmitSyncing(false);
     }
     try{setHome(await api.home(respondentId));}catch{}
+    void loadParticipation(respondentId,true,false).catch(()=>{});
   }
   useEffect(()=>{
     if(!selected)return;
@@ -1111,7 +1150,19 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
   }, [records, today]);
   const respondentName = home?.respondent?.name || selected?.respondent?.name || "";
 
-  if(screen==='rewards'&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>My rewards</Text><Text style={{color:t.muted}}>Rewards for {home?.study?.name||'this study'}.</Text>{participation.incentives.length?participation.incentives.map((reward:any,index:number)=><Card key={index} t={t}><Text style={{color:t.text,fontWeight:'700',fontSize:16}}>{reward.milestone==='onboarding'?'Getting started':reward.milestone==='closeout'?'Study completion':'Diary participation'}</Text><Text style={{color:t.blue,fontWeight:'800',fontSize:24,marginVertical:8}}>{reward.currency} {Number(reward.amount).toLocaleString()}</Text><Text style={{color:t.muted}}>{reward.status==='paid'?'Paid':reward.status==='eligible'?'Eligible · awaiting payment':reward.status==='held'?'On hold · under review':reward.status}</Text></Card>):<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>No rewards recorded yet</Text><Text style={{color:t.muted,marginTop:8}}>Your eligible study rewards will appear here when confirmed by the research team.</Text></Card>}</ScrollView></AppFrame>;
+  if(screen==='rewards'&&participation)return <AppFrame t={t} mode={mode}>
+    <>
+    <RewardsScreen
+      studyName={home?.study?.name||'This study'}
+      data={participation}
+      pendingCount={pendingEntries.length}
+      refreshing={rewardRefreshing}
+      onBack={()=>setScreen('profile')}
+      onRefresh={()=>{if(selected)void loadParticipation(selected.respondent.id,false,true).catch(()=>{});}}
+    />
+    <RewardCelebration celebration={rewardCelebration} onContinue={()=>dismissRewardCelebration(false)} onViewRewards={()=>dismissRewardCelebration(true)} />
+    </>
+  </AppFrame>;
   if(screen==='participation'&&selected&&participation)return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('profile')}><Text style={{color:t.blue}}>← Back to profile</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Your participation</Text><Card t={t}><Text style={{color:t.text}}>Allow authorised client researchers to view your study photos, video and audio?</Text><ChoiceList t={t} options={[["yes","Yes, share study media"],["no","No, keep media with the research team"]]} value={participation.mediaConsent?'yes':'no'} onChange={async value=>{try{await api.mediaConsent(selected.respondent.id,value==='yes');await openParticipation();}catch(e:any){Alert.alert('Could not save',e.message);}}}/></Card>{participation.closeoutDue&&!participation.closeoutCompleted?<Card t={t}><Text style={{color:t.text,fontWeight:'700'}}>Final study validation</Text>{participation.questions.map((q:any)=><View key={q.code}><Text style={{color:t.text}}>{q.text}{q.required?' *':''}</Text>{q.type==='single'?<ChoiceList t={t} options={q.options.map((o:string)=>[o,o])} value={closeoutAnswers[q.code]||''} onChange={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))}/>:<TextInput value={closeoutAnswers[q.code]||''} onChangeText={value=>setCloseoutAnswers(a=>({...a,[q.code]:value}))} style={[styles.input,{color:t.text,borderColor:t.border}]} />}</View>)}<PrimaryButton t={t} title="Submit final validation" onPress={async()=>{try{await api.closeout(selected.respondent.id,closeoutAnswers);await openParticipation();}catch(e:any){Alert.alert('Check your answers',e.message);}}}/></Card>:null}{participation.closeoutCompleted?<Text style={{color:t.green}}>Final validation completed.</Text>:null}<Pressable onPress={()=>Alert.alert('Withdraw from this study?','You will stop participating. The research team will process your data according to the study retention policy.',[{text:'Keep participating',style:'cancel'},{text:'Withdraw',style:'destructive',onPress:async()=>{try{await api.withdraw(selected.respondent.id);await logout();}catch(e:any){Alert.alert('Could not withdraw',e.message);}}}])}><Text style={{color:t.red}}>Withdraw from study</Text></Pressable></ScrollView></AppFrame>;
   if(screen==='sync')return <AppFrame t={t} mode={mode}><ScrollView contentContainerStyle={styles.page}><Pressable onPress={()=>setScreen('home')}><Text style={{color:t.blue}}>← Back to diary</Text></Pressable><Text style={[styles.screenTitle,{color:t.text}]}>Saved on this device</Text><Text style={{color:t.muted}}>Entries remain here until the server confirms receipt. Pending entries retry while the app is open.</Text>
     {syncing?<View style={styles.syncingRow}><ActivityIndicator size="small" color={t.blue} /><Text style={{color:t.muted}}>Syncing…</Text></View>:<PrimaryButton title="Retry sync" t={t} onPress={()=>refreshSync(true)} />}
@@ -1148,6 +1199,9 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
             totalCount={records.length}
             recentRecords={displayRecords.slice(0, 2)}
             occasionRecords={displayRecords.slice(0, 4)}
+            rewardSummary={participation?.summary?.[0]}
+            rewardProgress={participation?.rewards?.find(reward=>reward.active&&reward.milestone==='participation'&&['in_progress','under_review'].includes(reward.status))}
+            onOpenRewards={()=>openParticipation("rewards")}
             onStartDiary={openDiaryModePicker}
             onOpenStudies={() => setScreen("studies")}
             onViewAllEntries={() => setScreen("entries")}
@@ -1160,6 +1214,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
             onDismiss={() => setSubmitOutcome(null)}
             onReview={(packet) => { setSubmitOutcome(null); reviewQueued(packet); }}
           />
+          <RewardCelebration celebration={submitSyncing || submitOutcome ? null : rewardCelebration} onContinue={()=>dismissRewardCelebration(false)} onViewRewards={()=>dismissRewardCelebration(true)} />
         </>
       );
 

@@ -55,17 +55,34 @@ router.post('/studies/:id/research/:action',async(req,res)=>{
       await ops.audit(actor,action,study.id,{user_id:user.id});await store.insert('fieldwork_visits',{study_id:study.id,user_id:user.id,household_code:String(b.household_code),address:String(b.address),visit_date:from,status:'planned',created_at:store.nowSql()});
     }else if(action==='incentive-rule'){
       if(!['onboarding','participation','closeout'].includes(b.milestone))throw new Error('Choose an approved milestone.');
-      if(!/^[A-Z]{3}$/.test(b.currency||''))throw new Error('Enter a three-letter currency code.');
-      const rule={study_id:study.id,milestone:b.milestone,amount:positive(b.amount,'Amount'),currency:b.currency,required_periods:b.milestone==='participation'?whole(b.required_periods,'Completed periods'):null,enabled:true};
+      const currency=String(b.currency||'').trim().toUpperCase();
+      if(!/^[A-Z]{3}$/.test(currency))throw new Error('Enter a three-letter currency code.');
+      const activeRules=await store.find('incentive_rules',{study_id:study.id,enabled:true});
+      if(activeRules.some(existing=>existing.currency!==currency))throw new Error('Use one currency for all active rewards in a study.');
+      if(b.milestone==='closeout'&&!activeRules.some(existing=>existing.milestone==='participation'))throw new Error('Add at least one participation milestone before the final completion bonus.');
+      const rule={study_id:study.id,milestone:b.milestone,amount:positive(b.amount,'Amount'),currency,required_periods:b.milestone==='participation'?whole(b.required_periods,'Completed periods'):null,enabled:true};
       if(await store.findOne('incentive_rules',{study_id:study.id,milestone:rule.milestone,required_periods:rule.required_periods,enabled:true}))throw new Error('An active rule already exists for this milestone. Disable it before configuring a replacement.');
       await ops.audit(actor,action,study.id,rule);await store.insert('incentive_rules',rule);
     }else if(action==='disable-rule'||action==='disable-schedule'){
       const collection=action==='disable-rule'?'incentive_rules':'report_schedules';const row=await store.findOne(collection,{id:Number(b.id),study_id:study.id});if(!row)throw new Error('Configuration not found.');await ops.audit(actor,action,study.id,{id:row.id});await store.update(collection,{id:row.id},{enabled:false});if(action==='disable-rule')await ops.incentives(study.id);
     }else if(action==='incentive-evaluate'){await ops.incentives(study.id);await ops.audit(actor,action,study.id);
-    }else if(action==='incentive-pay'){
+    }else if(action==='reward-settings'){
+      const color=value=>{const normalized=String(value||'').trim().toUpperCase();if(!/^#[0-9A-F]{6}$/.test(normalized))throw new Error('Celebration colours must use six-digit hex values.');return normalized;};
+      const duration=whole(b.duration_ms,'Celebration duration',6000);if(duration<1500)throw new Error('Celebration duration must be at least 1500 milliseconds.');
+      const patch={reward_celebration_enabled:b.enabled==='1',reward_celebration_headline:String(b.headline||'').trim().slice(0,80)||'Reward unlocked!',reward_celebration_message:String(b.message||'').trim().slice(0,240)||'You completed {milestone}. {amount} is eligible and awaiting payment.',reward_celebration_primary_color:color(b.primary_color),reward_celebration_accent_color:color(b.accent_color),reward_celebration_duration_ms:duration};
+      await ops.audit(actor,action,study.id,patch);await store.update('studies',{id:study.id},patch);
+    }else if(action==='incentive-process'){
       await ops.incentives(study.id);const row=await store.findOne('incentive_ledger',{id:b.ledger_id,study_id:study.id,status:'eligible'});if(!row)throw new Error('This reward is not currently eligible.');
+      const method=String(b.payment_method||'').trim();if(!['bank_transfer','airtime','voucher','cash','other'].includes(method))throw new Error('Choose how finance will process this reward.');
+      const patch={status:'processing',payment_method:method,finance_note:String(b.finance_note||'').trim().slice(0,500),processing_at:store.nowSql(),processing_by:actor,updated_at:store.nowSql()};
+      await ops.audit(actor,action,study.id,{ledger_id:row.id,payment_method:method});await store.update('incentive_ledger',{id:row.id,status:'eligible'},patch);
+    }else if(action==='incentive-pay'){
+      await ops.incentives(study.id);const row=await store.findOne('incentive_ledger',{id:b.ledger_id,study_id:study.id,status:'processing'});if(!row)throw new Error('Send this reward to finance before confirming payment.');
       if(!String(b.reference||'').trim())throw new Error('Enter the completed payment reference.');
-      await ops.audit(actor,action,study.id,{ledger_id:row.id,reference:b.reference});await store.update('incentive_ledger',{id:row.id,status:'eligible'},{status:'paid',paid_at:store.nowSql(),paid_by:actor,payment_reference:b.reference});
+      await ops.audit(actor,action,study.id,{ledger_id:row.id,reference:b.reference});await store.update('incentive_ledger',{id:row.id},{status:'paid',paid_at:store.nowSql(),paid_by:actor,payment_reference:String(b.reference).trim().slice(0,120),updated_at:store.nowSql()});
+    }else if(action==='reward-replay'){
+      const row=await store.findOne('incentive_ledger',{id:b.ledger_id,study_id:study.id,status:{$in:['eligible','processing','paid']}});if(!row)throw new Error('Only an eligible, processing or paid reward can be replayed.');
+      const version=(Number(row.celebration_version)||1)+1;await ops.audit(actor,action,study.id,{ledger_id:row.id,version});await store.update('incentive_ledger',{id:row.id},{celebration_version:version,updated_at:store.nowSql()});
     }else if(action==='grant'){
       const user=await store.findOne('users',{id:Number(b.user_id),role:'client'});if(!user)throw new Error('Choose a client account.');
       const id=`${study.id}:${user.id}`;await ops.audit(actor,action,study.id,{user_id:user.id});await ops.insertOnce('client_grants',id,{study_id:study.id,user_id:user.id});await store.update('client_grants',{id},{enabled:b.enabled==='1',media:b.media==='1',text:b.text==='1',exports:b.exports==='1'});
@@ -92,7 +109,7 @@ router.post('/studies/:id/research/:action',async(req,res)=>{
     }else if(action==='code-theme'){
       const record=await store.findOne('diary_records',{id:Number(b.record_id),study_id:study.id});const theme=await store.findOne('theme_codes',{id:Number(b.theme_id),study_id:study.id});if(!record||!theme)throw new Error('Choose a study record and theme.');await ops.audit(actor,action,study.id,{record_id:record.id,theme_id:theme.id});await ops.insertOnce('coded_verbatims',`${record.id}:${theme.id}`,{study_id:study.id,record_id:record.id,theme_id:theme.id,review_status:'approved',reviewed_by:actor});
     }else throw new Error('Unknown research action.');
-    const fieldworkActions=new Set(['assignment','visit','backcheck','incentive-rule','disable-rule','incentive-evaluate','incentive-pay','record-review']);
+    const fieldworkActions=new Set(['assignment','visit','backcheck','incentive-rule','disable-rule','incentive-evaluate','reward-settings','incentive-process','incentive-pay','reward-replay','record-review']);
     const anchor=fieldworkActions.has(action)?'fieldwork-operations':'analysis';
     return res.redirect(`/admin?study=${study.id}&saved=1#${anchor}`);
   }catch(e){return res.redirect(`/admin?study=${study.id}&error=${encodeURIComponent(e.message)}#fieldwork-operations`);}

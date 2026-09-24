@@ -1,0 +1,42 @@
+<section class="questionnaire-dashboard" aria-labelledby="questionnaire-dashboard-title">
+  <div class="questionnaire-dashboard-heading">
+    <div>
+      <div class="report-kicker">Built from the questionnaire</div>
+      <h2 id="questionnaire-dashboard-title">Questionnaire dashboard</h2>
+      <p class="report-muted">Sections, chart titles and visual types are generated from the study’s questions and validated answers.</p>
+    </div>
+    <% if (questionnaireDashboard.chartCount) { %><span class="report-badge"><%= questionnaireDashboard.chartCount %> generated view<%= questionnaireDashboard.chartCount === 1 ? '' : 's' %></span><% } %>
+  </div>
+  <% if (questionnaireDashboard.sections.length) { %>
+    <% questionnaireDashboard.sections.forEach(section => { %>
+      <section class="report-panel questionnaire-section">
+        <div class="report-panel-head"><div><div class="report-kicker">Questionnaire section</div><h2><%= section.name %></h2></div></div>
+        <div class="questionnaire-chart-grid">
+          <% section.charts.forEach(chart => { %>
+            <article class="questionnaire-chart">
+              <div class="questionnaire-chart-head">
+                <div><div class="questionnaire-code"><%= chart.code %></div><h3><%= chart.title %></h3></div>
+                <span><%= chart.respondents %> respondent<%= chart.respondents === 1 ? '' : 's' %></span>
+              </div>
+              <p class="report-muted"><%= chart.subtitle %></p>
+              <% if (chart.kind === 'distribution' || chart.kind === 'scale') { %>
+                <% if (chart.kind === 'scale' && chart.average != null) { %><div class="questionnaire-average"><span>Average</span><strong><%= chart.average %></strong></div><% } %>
+                <%- include('report_bars', { items: chart.items, empty: 'No releasable answers for this question.' }) %>
+              <% } else if (chart.kind === 'numeric' || chart.kind === 'media') { %>
+                <% if (chart.metrics.length) { %><dl class="questionnaire-metrics"><% chart.metrics.forEach(metric => { %><div><dt><%= metric.label %></dt><dd><%= metric.value %></dd></div><% }) %></dl>
+                <% } else { %><div class="report-empty">No valid answers for this question.</div><% } %>
+              <% } else if (chart.kind === 'text') { %>
+                <% if (chart.items.length) { %><div class="questionnaire-terms"><% chart.items.forEach(item => { %><span><%= item.label %> <strong><%= item.n %></strong></span><% }) %></div>
+                <% } else { %><div class="report-empty">No repeated terms yet.</div><% } %>
+              <% } %>
+              <p class="questionnaire-base"><%= chart.answered %> eligible answer<%= chart.answered === 1 ? '' : 's' %></p>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+    <% }) %>
+    <% if (questionnaireDashboard.omittedCount) { %><p class="report-muted">Showing the first <%= questionnaireDashboard.chartCount %> generated views. <%= questionnaireDashboard.omittedCount %> additional answered question<%= questionnaireDashboard.omittedCount === 1 ? '' : 's' %> remain available in the source questionnaire.</p><% } %>
+  <% } else { %>
+    <div class="report-panel report-empty">Question-level charts will appear when this selection has enough eligible questionnaire answers.</div>
+  <% } %>
+</section>

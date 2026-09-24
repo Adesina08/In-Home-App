@@ -136,6 +136,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   submissionReceipt:(id:number,key:string)=>request<any>(`/mobile/api/respondents/${id}/submissions/${encodeURIComponent(key)}`),
   participation:(id:number)=>request<any>(`/mobile/api/respondents/${id}/participation`),
+  acknowledgeRewardCelebration:(id:number,items:{ledgerId:number|string;version:number}[])=>request<{ok:boolean}>(`/mobile/api/respondents/${id}/rewards/celebrations/seen`,{method:'POST',body:JSON.stringify({items})}),
   closeout:(id:number,answers:Record<string,string>)=>request<any>(`/mobile/api/respondents/${id}/closeout`,{method:'POST',body:JSON.stringify({answers})}),
   mediaConsent:(id:number,given:boolean)=>request<any>(`/mobile/api/respondents/${id}/media-consent`,{method:'POST',body:JSON.stringify({given})}),
   withdraw:(id:number)=>request<any>(`/mobile/api/respondents/${id}/withdraw`,{method:'POST'}),

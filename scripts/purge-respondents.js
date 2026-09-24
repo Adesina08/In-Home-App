@@ -33,6 +33,7 @@ const BACKUP_COLLECTIONS = [
   "reminders",
   "whatsapp_outbox",
   "whatsapp_sessions",
+  "whatsapp_inbound_messages",
   "otp_codes",
   "push_subscriptions",
   "end_validations",

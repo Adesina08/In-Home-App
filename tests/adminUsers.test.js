@@ -106,3 +106,61 @@ test('inline questionnaire timing and rotation settings persist and invalid valu
   assert.equal(normalized.to_hour_utc, null);
   assert.equal(normalized.applicable_cadences, '["realtime"]');
 });
+
+test('superadmin can change a user\'s role and study scope, and only a superadmin may', async () => {
+  const { id } = await store.insert('users', { name: 'Scope Target', email: 'scope.target@example.test', role: 'interviewer', password_hash: 'x' });
+  await store.insert('interviewer_assignments', { study_id: 1, user_id: id, enabled: true });
+
+  const body = new URLSearchParams(); body.append('role', 'client'); body.append('study_id', '2'); body.append('study_id', '3');
+  const denied = await fetch(`${base}/admin/users/${id}/update`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'admin' }, body });
+  assert.equal(denied.status, 403);
+
+  const response = await fetch(`${base}/admin/users/${id}/update`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body });
+  assert.equal(response.status, 302);
+  const updated = await store.findOne('users', { id });
+  assert.equal(updated.role, 'client');
+  assert.equal(updated.study_id, 2);
+
+  // The stale interviewer assignment is disabled, not left dangling, once the
+  // account is no longer an interviewer.
+  const staleAssignments = await store.find('interviewer_assignments', { user_id: id, enabled: true });
+  assert.equal(staleAssignments.length, 0);
+  const grants = await store.find('client_grants', { user_id: id, enabled: true });
+  assert.deepEqual(grants.map((g) => g.study_id).sort(), [2, 3]);
+});
+
+test('cannot demote or delete the platform\'s last superadmin', async () => {
+  await store.remove('users', { role: 'superadmin' });
+  const { id } = await store.insert('users', { name: 'Only Super', email: 'only.super@example.test', role: 'superadmin', password_hash: 'x' });
+
+  const demote = await fetch(`${base}/admin/users/${id}/update`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: new URLSearchParams({ role: 'admin' }) });
+  assert.equal(demote.status, 400);
+  assert.equal((await store.findOne('users', { id })).role, 'superadmin');
+
+  const del = await fetch(`${base}/admin/users/${id}/delete`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: new URLSearchParams({ confirm: 'DELETE' }) });
+  assert.equal(del.status, 400);
+  assert.ok(await store.findOne('users', { id }));
+
+  // A second superadmin makes the first deletable/demotable again.
+  await store.insert('users', { name: 'Second Super', email: 'second.super@example.test', role: 'superadmin', password_hash: 'x' });
+  const demoteOk = await fetch(`${base}/admin/users/${id}/update`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: new URLSearchParams({ role: 'admin' }) });
+  assert.equal(demoteOk.status, 302);
+});
+
+test('superadmin can hard-delete a user, cleaning up dependent rows and unlinking enrolled respondents', async () => {
+  const { id } = await store.insert('users', { name: 'Delete Target', email: 'delete.target@example.test', role: 'interviewer', password_hash: 'x' });
+  await store.insert('interviewer_assignments', { study_id: 1, user_id: id, enabled: true });
+  const { id: respondentId } = await store.insert('respondents', { study_id: 1, interviewer_id: id, respondent_code: 'R-DEL-1' });
+
+  const withoutConfirm = await fetch(`${base}/admin/users/${id}/delete`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: new URLSearchParams({ confirm: 'nope' }) });
+  assert.equal(withoutConfirm.status, 400);
+  assert.ok(await store.findOne('users', { id }));
+
+  const response = await fetch(`${base}/admin/users/${id}/delete`, { method: 'POST', redirect: 'manual', headers: { 'x-test-role': 'superadmin' }, body: new URLSearchParams({ confirm: 'delete' }) });
+  assert.equal(response.status, 302);
+  assert.equal(await store.findOne('users', { id }), undefined);
+  assert.equal(await store.count('interviewer_assignments', { user_id: id }), 0);
+
+  const respondent = await store.findOne('respondents', { id: respondentId });
+  assert.equal(respondent.interviewer_id, null);
+});

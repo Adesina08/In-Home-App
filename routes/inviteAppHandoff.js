@@ -8,6 +8,7 @@ const express = require("express");
 const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
 const { logAudit } = require("../lib/audit");
+const whatsappLinks = require("../lib/whatsappLinks");
 
 const router = express.Router();
 router.use((req, res, next) => { res.locals.onboardingJourney = "invite"; next(); });
@@ -17,15 +18,11 @@ function apkUrl() {
 }
 
 function whatsappReady() {
-  return (process.env.WHATSAPP_BOT_NUMBER || "").trim() || null;
+  return whatsappLinks.configuredNumber();
 }
 
 function whatsappChatUrl(inviteToken) {
-  const configured = whatsappReady();
-  if (!configured) return null;
-  const digits = configured.replace(/^whatsapp:/i, "").replace(/\D/g, "");
-  if (!digits) return null;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(`JOIN ${inviteToken}`)}`;
+  return whatsappLinks.chatUrl(inviteToken);
 }
 
 const CADENCE = {

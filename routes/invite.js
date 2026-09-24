@@ -12,6 +12,7 @@ const otp = require("../lib/otp");
 const messaging = require("../lib/whatsapp");
 const { isBypassed: respondentOtpBypassed } = require("../lib/respondentOtpMode");
 const { isEmail: contactIsEmail } = require("../lib/contact");
+const whatsappLinks = require("../lib/whatsappLinks");
 
 const router = express.Router();
 router.use((req, res, next) => { res.locals.onboardingJourney = "invite"; next(); });
@@ -21,15 +22,11 @@ function apkUrl() {
 }
 
 function whatsappReady() {
-  return (process.env.WHATSAPP_BOT_NUMBER || "").trim() || null;
+  return whatsappLinks.configuredNumber();
 }
 
 function whatsappChatUrl(inviteToken) {
-  const configured = whatsappReady();
-  if (!configured) return null;
-  const digits = configured.replace(/^whatsapp:/i, "").replace(/\D/g, "");
-  if (!digits) return null;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(`JOIN ${inviteToken}`)}`;
+  return whatsappLinks.chatUrl(inviteToken);
 }
 
 const CADENCE = {
@@ -129,6 +126,18 @@ router.get("/:token/account", async (req, res) => {
   if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
   if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
 
+  // WhatsApp proves the handoff with the already-verified phone number and does
+  // not need an app username/password. Credentials are created only if this
+  // person later switches to the mobile app.
+  if (respondent.chosen_mode === "whatsapp") {
+    const wa = whatsappChatUrl(respondent.unique_token);
+    if (wa) return res.redirect(wa);
+    return res.status(503).render("error", {
+      message: "WhatsApp participation is not configured for this deployment yet. Please return to your invitation and choose the INICIO Diary mobile app.",
+      user: null,
+    });
+  }
+
   const existing = respondent.account_id ? await accounts.getById(respondent.account_id) : null;
   res.render("invite/account", {
     respondent,
@@ -158,6 +167,7 @@ router.post("/:token/account", async (req, res) => {
   if (!respondent.presurvey_completed_at) return res.redirect(`/invite/${respondent.unique_token}/presurvey`);
   if (!respondent.contact_verified_at) return res.redirect(`/invite/${respondent.unique_token}/verify`);
   if (!respondent.chosen_mode) return res.redirect(`/invite/${respondent.unique_token}`);
+  if (respondent.chosen_mode === "whatsapp") return continueAfterAccount(res, respondent);
 
   const username = String(req.body.username || "").trim().toLowerCase();
   const password = String(req.body.password || "");
@@ -422,12 +432,33 @@ router.post("/:token/choose", async (req, res) => {
   const mode = requested === "apk" ? "app" : requested;
   const preferredChannel = mode === "whatsapp" ? "whatsapp" : "app";
 
+  if (mode === "whatsapp" && contactIsEmail(respondent.contact)) {
+    return res.status(400).render("invite/welcome", {
+      respondent,
+      study,
+      cadence: CADENCE[study.diary_mode] || "from time to time",
+      apkUrl: apkUrl(),
+      whatsappNumber: whatsappReady(),
+      declined: false,
+      error: "WhatsApp participation needs a verified phone number. Change the contact from your verified email to the phone number you use for WhatsApp, then verify it.",
+      user: null,
+    });
+  }
+
   await store.update("respondents", { id: respondent.id }, {
     chosen_mode: mode,
     preferred_channel: preferredChannel,
   });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_mode_chosen", "respondents", respondent.id, { mode });
 
+  if (mode === "whatsapp") {
+    const wa = whatsappChatUrl(respondent.unique_token);
+    if (wa) return res.redirect(wa);
+    return res.status(503).render("error", {
+      message: "WhatsApp participation is not configured for this deployment yet. Please choose the INICIO Diary mobile app instead.",
+      user: null,
+    });
+  }
   return res.redirect(`/invite/${respondent.unique_token}/account`);
 });
 

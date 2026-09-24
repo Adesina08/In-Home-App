@@ -1,0 +1,16 @@
+<div class="report-two dashboard-charts">
+  <section class="report-panel">
+    <div class="report-panel-head"><div><div class="report-kicker">Participation</div><h2>Entries over time</h2><p>Submitted diary entries by day in the selected period.</p></div></div>
+    <% if (report.trend.length) { const maximum = Math.max(1, ...report.trend.map(day => day.n)); %>
+      <div class="report-trend" role="img" aria-label="Submitted entries by day; exact counts are in the table below">
+        <% report.trend.forEach(day => { %><div title="<%= day.day %>: <%= day.n %> entries"><span style="height:<%= day.n / maximum * 100 %>%"></span></div><% }) %>
+      </div>
+      <div class="report-trend-label"><span><%= report.trend[0].day %></span><span><%= report.trend.at(-1).day %></span></div>
+      <details><summary>View daily counts</summary><div class="dashboard-table-scroll"><table class="report-table"><thead><tr><th scope="col">Date</th><th scope="col">Entries</th></tr></thead><tbody><% report.trend.forEach(day => { %><tr><td><%= day.day %></td><td><%= day.n %></td></tr><% }) %></tbody></table></div></details>
+    <% } else { %><div class="report-empty">No releasable daily entry counts for this period.</div><% } %>
+  </section>
+  <section class="report-panel">
+    <div class="report-panel-head"><div><div class="report-kicker">Consumption</div><h2>Brands in diary entries</h2><p>Eligible brand occasions. Open QC flags and unconfirmed AI answers are excluded.</p></div></div>
+    <%- include('report_bars', { items: report.brands, empty: 'No releasable brand results for this period.' }) %>
+  </section>
+</div>

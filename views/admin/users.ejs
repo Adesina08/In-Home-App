@@ -7,6 +7,25 @@
   actions: user.role === 'superadmin' ? '<button type="button" data-open-dialog="create-user" class="console-button is-primary">' + icon('plus', 'w-4 h-4') + 'Create user</button>' : '',
 }) %>
 
+<% if (updated) { %>
+  <div class="bg-white border-2 border-verified/40 rounded-2xl p-5 mb-6">
+    <div class="flex items-start gap-2.5">
+      <span class="text-verified mt-0.5"><%- icon('check-circle', 'w-5 h-5') %></span>
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-900">User updated</div>
+        <p class="text-sm text-slate-600 mt-0.5">Role and study scope were saved. If they're currently signed in, the change takes effect next time they log in.</p>
+      </div>
+    </div>
+  </div>
+<% } %>
+<% if (deleted) { %>
+  <div class="bg-white border-2 border-verified/40 rounded-2xl p-5 mb-6">
+    <div class="flex items-start gap-2.5">
+      <span class="text-verified mt-0.5"><%- icon('check-circle', 'w-5 h-5') %></span>
+      <div class="min-w-0"><div class="font-semibold text-slate-900">User deleted</div></div>
+    </div>
+  </div>
+<% } %>
 <% if (delivery) { %>
   <div class="bg-white border-2 <%= delivery === 'sent' ? 'border-verified/40' : 'border-red-200' %> rounded-2xl p-5 mb-6">
     <div class="flex items-start gap-2.5">
@@ -33,7 +52,15 @@
           <td class="py-2.5 text-slate-500 text-xs"><%= u.study_name || (u.role === 'admin' ? 'All studies' : 'No studies assigned') %></td>
           <td class="py-2.5"><span class="text-[11px] font-semibold px-2 py-0.5 rounded-full <%= u.invite_delivery_status === 'failed' ? 'bg-red-50 text-red-700' : u.invite_delivery_status === 'sent' ? 'bg-blue-50 text-blue-700' : 'bg-verified-soft text-verified' %>"><%= u.invite_delivery_status || 'activated' %></span></td>
           <td class="py-2.5 pr-5 text-right">
-            <% if (user.role === 'superadmin') { %><form method="POST" action="/admin/users/<%= u.id %>/resend-credentials" onsubmit="return confirm('Email a new 24-hour temporary password to <%= u.email %>? Their current password stops working immediately.')"><button class="text-xs font-medium text-signal hover:underline"><%= u.must_change_password ? 'Resend' : 'Reset & email' %></button></form><% } %>
+            <% if (user.role === 'superadmin') { %>
+              <div class="flex items-center justify-end gap-3">
+                <form method="POST" action="/admin/users/<%= u.id %>/resend-credentials" onsubmit="return confirm('Email a new 24-hour temporary password to <%= u.email %>? Their current password stops working immediately.')"><button class="text-xs font-medium text-signal hover:underline"><%= u.must_change_password ? 'Resend' : 'Reset & email' %></button></form>
+                <% if (u.id !== user.id) { %>
+                  <button type="button" data-open-dialog="edit-user-<%= u.id %>" class="text-xs font-medium text-signal hover:underline">Edit</button>
+                  <button type="button" data-open-dialog="delete-user-<%= u.id %>" class="text-xs font-medium text-red-600 hover:underline">Delete</button>
+                <% } %>
+              </div>
+            <% } %>
           </td>
         </tr>
       <% }) %>
@@ -42,6 +69,48 @@
     </table>
     </div>
   </div>
+  <% if (user.role === 'superadmin') { %>
+  <% users.forEach(u => { if (u.id === user.id) return; %>
+    <dialog id="edit-user-<%= u.id %>" class="console-dialog" aria-label="Edit <%= u.name %>">
+      <div class="console-panel-heading"><h2>Edit <%= u.name %></h2><button type="button" data-close-dialog class="console-icon-button" aria-label="Close edit user">✕</button></div>
+      <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card p-5 h-fit">
+        <form method="POST" action="/admin/users/<%= u.id %>/update" class="space-y-3 text-sm">
+          <p class="text-xs text-slate-500"><%= u.email %></p>
+          <div>
+            <label class="block text-sm font-medium text-slate-600 mb-1.5">Role</label>
+            <select name="role" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
+              <% ['admin', 'interviewer', 'client', 'superadmin'].forEach(r => { %>
+                <option value="<%= r %>" <%= u.role === r ? 'selected' : '' %>><%= r.charAt(0).toUpperCase() + r.slice(1) %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-600 mb-1.5">Study scope (client/interviewer)</label>
+            <select name="study_id" multiple size="5" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
+              <% studies.forEach(s => { %><option value="<%= s.id %>" <%= u.study_ids.includes(s.id) ? 'selected' : '' %>><%= s.name %></option><% }) %>
+            </select>
+            <p class="text-xs text-slate-400 mt-1">For Interviewer or Client, hold Ctrl/Cmd (or tap each) to grant more than one study. For Admin, choose at most one study to confine the account, or none for full platform access. Ignored for Superadmin.</p>
+          </div>
+          <p class="text-xs text-slate-400">Takes effect next time this account signs in.</p>
+          <button class="w-full inline-flex items-center justify-center gap-1.5 bg-signal text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-signal-bright transition shadow-card">Save changes</button>
+        </form>
+      </div>
+    </dialog>
+    <dialog id="delete-user-<%= u.id %>" class="console-dialog" aria-label="Delete <%= u.name %>">
+      <div class="console-panel-heading"><h2>Delete <%= u.name %></h2><button type="button" data-close-dialog class="console-icon-button" aria-label="Close delete user">✕</button></div>
+      <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card p-5 h-fit">
+        <form method="POST" action="/admin/users/<%= u.id %>/delete" class="space-y-3 text-sm" onsubmit="return confirm('Permanently delete <%= u.email %>? This removes the account and all of its assignments/grants. This cannot be undone.')">
+          <p class="text-sm text-slate-600">This permanently deletes <strong><%= u.email %></strong> and its study assignments/grants. Respondents this interviewer enrolled are kept, just unlinked from this account. This cannot be undone.</p>
+          <div>
+            <label class="block text-sm font-medium text-slate-600 mb-1.5">Type DELETE to confirm</label>
+            <input name="confirm" required placeholder="DELETE" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 transition" />
+          </div>
+          <button class="w-full inline-flex items-center justify-center gap-1.5 bg-red-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-700 transition shadow-card">Delete user permanently</button>
+        </form>
+      </div>
+    </dialog>
+  <% }) %>
+  <% } %>
   <% if (user.role === 'superadmin') { %><dialog id="create-user" class="console-dialog" aria-label="Create user"><div class="console-panel-heading"><h2>Create user</h2><button type="button" data-close-dialog class="console-icon-button" aria-label="Close create user">✕</button></div>
   <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card hover:shadow-card-hover transition-shadow p-5 h-fit">
     <div class="font-semibold text-slate-800 mb-3 flex items-center gap-2"><%- icon('plus', 'w-4 h-4 text-signal') %> Create User</div>

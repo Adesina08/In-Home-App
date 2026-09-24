@@ -73,7 +73,8 @@ router.get("/:token/presurvey", async (req, res) => {
   if (!loaded) return;
   const { respondent, study } = loaded;
   if (!await consentComplete(respondent, study)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
-  if (respondent.presurvey_completed_at && (respondent.contact_verified_at || req.query.edit !== "1")) {
+  const editingContact = req.query.edit === "1";
+  if (respondent.presurvey_completed_at && !editingContact) {
     return res.redirect(`/invite/${respondent.unique_token}/${respondent.contact_verified_at ? "choose" : "verify"}`);
   }
   const questions = await presurveyQuestions(study.id);
@@ -86,6 +87,7 @@ router.get("/:token/presurvey", async (req, res) => {
       contact: respondent.contact || "",
       answers: respondent.presurvey_answers || {},
     },
+    editingContact,
     error: null,
     user: null,
   });
@@ -96,7 +98,8 @@ router.post("/:token/presurvey", async (req, res) => {
   if (!loaded) return;
   const { respondent, study } = loaded;
   if (!await consentComplete(respondent, study)) return res.redirect(`/invite/${respondent.unique_token}/consent`);
-  if (respondent.presurvey_completed_at && respondent.contact_verified_at) {
+  const editingContact = req.body.edit_contact === "1";
+  if (respondent.presurvey_completed_at && respondent.contact_verified_at && !editingContact) {
     return res.redirect(`/invite/${respondent.unique_token}/choose`);
   }
   const questions = await presurveyQuestions(study.id);
@@ -115,6 +118,7 @@ router.post("/:token/presurvey", async (req, res) => {
           study,
           questions,
           values: { name, contact, answers: { ...answers, [q.id]: value } },
+          editingContact,
           error: `Please enter a valid number for “${q.text}”.`,
           user: null,
         });
@@ -129,6 +133,7 @@ router.post("/:token/presurvey", async (req, res) => {
     study,
     questions,
     values: { name, contact, answers },
+    editingContact,
     error,
     user: null,
   });

@@ -6,6 +6,7 @@ const profiles = require("../lib/respondentProfiles");
 const { normalizeContact } = require("../lib/otp");
 const { logAudit } = require("../lib/audit");
 const whatsappDiary = require("../lib/whatsappDiary");
+const whatsappFlow = require("../lib/whatsappFlow");
 const messaging = require("../lib/whatsapp");
 
 const router = express.Router();
@@ -76,6 +77,21 @@ async function saveSession(contact, patch) {
   }
   const { id } = await store.insert("whatsapp_sessions", next);
   return store.findOne("whatsapp_sessions", { id });
+}
+
+async function rememberedInbound(messageSid) {
+  if (!messageSid) return null;
+  return store.findOne("whatsapp_inbound_messages", { message_sid: messageSid });
+}
+
+async function rememberInbound(messageSid, contact, respondentId, message) {
+  if (!messageSid || await rememberedInbound(messageSid)) return;
+  await store.insert("whatsapp_inbound_messages", {
+    message_sid: messageSid,
+    contact,
+    respondent_id: respondentId || null,
+    reply: message,
+  });
 }
 
 const PROFILE_STEPS = [
@@ -154,54 +170,98 @@ function profileInput(profile) {
   };
 }
 
-async function consentPrompt(respondent) {
-  const study = await store.findOne("studies", { id: respondent.study_id });
+async function currentConsent(respondent) {
+  if (!respondent || respondent.consent_status !== "given") return null;
   const consent = await store.findOne(
     "consent_versions",
     { study_id: respondent.study_id, status: "approved" },
     { sort: { version: -1 } }
   );
-  if (!study || !consent) return { ready: false, message: "This study is not ready for WhatsApp onboarding yet. Please contact the study team." };
-  const body = String(consent.body || "").trim();
-  const shortened = body.length > 1200 ? `${body.slice(0, 1197)}...` : body;
-  return {
-    ready: true,
-    message: `Your INICIO profile is complete. Now we need consent for this study specifically.\n\n${study.name}\n\n${shortened}\n\nReply YES to take part in this study, or NO to decline.`,
-  };
+  return consent && Number(respondent.consent_version) === Number(consent.version) ? consent : null;
+}
+
+function missingProfileIndex(profile, after = -1) {
+  for (let index = after + 1; index < PROFILE_STEPS.length; index += 1) {
+    const value = profile ? profile[PROFILE_STEPS[index].key] : null;
+    if (value === undefined || value === null || String(value).trim() === "") return index;
+  }
+  return -1;
+}
+
+async function finishOnboarding(contact, respondent, profile, welcome = "Thank you") {
+  await profiles.ensureStudySnapshot({ ...respondent, profile_id: profile.id });
+  await saveSession(contact, {
+    respondent_id: respondent.id,
+    profile_id: profile.id,
+    step: "ready",
+    profile_index: null,
+  });
+  const study = await store.findOne("studies", { id: respondent.study_id });
+  return `${welcome}. You're ready to take part in ${study ? study.name : "the study"} through WhatsApp. Reply DIARY to start an entry, STATUS for your progress, or MENU for help.`;
 }
 
 async function startInvite(contact, token) {
   let respondent = await store.findOne("respondents", { unique_token: token });
   if (!respondent) return { message: "That INICIO invitation is not valid. Please reopen the invitation link and choose WhatsApp again." };
 
-  const existingVerified = respondent.contact_verified_at && respondent.contact
-    ? normalizeContact(respondent.contact)
-    : null;
-  if (existingVerified && existingVerified !== contact) {
-    return { message: "This invitation is already linked to a different verified contact. Please ask the study team for help." };
+  // JOIN is only a handoff from the completed browser journey. A token copied
+  // into WhatsApp must never bypass consent, the study pre-survey, exact-contact
+  // verification, or the explicit participation-method choice.
+  if (!await currentConsent(respondent)) {
+    return { message: "Please reopen your INICIO invitation and complete the current study consent before continuing in WhatsApp." };
+  }
+  if (!respondent.presurvey_completed_at) {
+    return { message: "Please reopen your INICIO invitation and complete the pre-survey before continuing in WhatsApp." };
+  }
+  if (!respondent.contact_verified_at || !respondent.contact) {
+    return { message: "Please reopen your INICIO invitation and verify your phone number before continuing in WhatsApp." };
+  }
+  if (respondent.chosen_mode !== "whatsapp") {
+    return { message: "Please reopen your INICIO invitation and choose WhatsApp as your participation method first." };
+  }
+  const existingVerified = normalizeContact(respondent.contact);
+  if (existingVerified !== contact) {
+    return { message: "This invitation is linked to a different verified phone number. Open it using that number or ask the study team for help." };
+  }
+
+  const existingSession = await sessionFor(contact);
+  if (existingSession && existingSession.respondent_id && existingSession.respondent_id !== respondent.id && ["diary", "paused_diary", "closeout", "paused_closeout", "stop_confirm"].includes(existingSession.step)) {
+    return { message: "You already have a diary entry in progress for another study. Reply CONTINUE to finish it or CANCEL to discard it before switching studies." };
   }
 
   const account = await accounts.findOrCreate({ contact, name: respondent.name || null });
   await accounts.markVerified(account.id);
   await store.update("respondents", { id: respondent.id }, {
     account_id: account.id,
-    contact,
-    contact_verified_at: store.nowSql(),
     chosen_mode: "whatsapp",
     preferred_channel: "whatsapp",
+    ...(["invited", "screened"].includes(respondent.activation_status)
+      ? { activation_status: "activated", activated_at: store.nowSql() }
+      : {}),
   });
   respondent = await store.findOne("respondents", { id: respondent.id });
-  const profile = await profiles.linkVerifiedAccount(respondent, account);
+  let profile = await profiles.linkVerifiedAccount(respondent, account);
 
-  if (profile && profile.completed_at) {
-    const consent = await consentPrompt(respondent);
-    if (!consent.ready) return { message: consent.message };
-    await saveSession(contact, { respondent_id: respondent.id, profile_id: profile.id, step: "study_consent", profile_index: null });
-    return { message: `Welcome back${profile.name ? `, ${profile.name.split(" ")[0]}` : ""}. We already have your one-time INICIO profile, so you do not need to answer those questions again.\n\n${consent.message}` };
+  // The browser has already collected and verified the respondent's name. Use
+  // it instead of asking the same question again in chat.
+  if (profile && !profile.name && respondent.name) {
+    profile = await profiles.patchProfile(profile.id, { name: respondent.name });
   }
 
-  await saveSession(contact, { respondent_id: respondent.id, profile_id: profile.id, step: "profile", profile_index: 0 });
-  return { message: PROFILE_STEPS[0].prompt };
+  if (profile && profile.completed_at) {
+    return { message: await finishOnboarding(contact, respondent, profile, `Welcome back${profile.name ? `, ${profile.name.split(" ")[0]}` : ""}`) };
+  }
+
+  const nextIndex = missingProfileIndex(profile);
+  if (nextIndex < 0) {
+    const completed = await profiles.completeProfile(profile.id, profileInput(profile));
+    if (completed.ok) return { message: await finishOnboarding(contact, respondent, completed.profile) };
+  }
+  await saveSession(contact, { respondent_id: respondent.id, profile_id: profile.id, step: "profile", profile_index: nextIndex });
+  const intro = nextIndex === 0
+    ? "Before we begin, please complete your one-time INICIO profile."
+    : "We'll use the name you already gave us. Please complete the remaining fields in your one-time INICIO profile.";
+  return { message: `${intro}\n\n${PROFILE_STEPS[nextIndex].prompt}` };
 }
 
 async function handleProfile(contact, session, body) {
@@ -213,14 +273,14 @@ async function handleProfile(contact, session, body) {
   if (!parsed.ok) return { message: `${parsed.error}\n\n${step.prompt}` };
   await profiles.patchProfile(session.profile_id, { [step.key]: parsed.value });
 
-  const nextIndex = index + 1;
-  if (nextIndex < PROFILE_STEPS.length) {
+  const updatedProfile = await profiles.getById(session.profile_id);
+  const nextIndex = missingProfileIndex(updatedProfile, index);
+  if (nextIndex >= 0) {
     await saveSession(contact, { profile_index: nextIndex, step: "profile" });
     return { message: PROFILE_STEPS[nextIndex].prompt };
   }
 
-  const current = await profiles.getById(session.profile_id);
-  const completed = await profiles.completeProfile(session.profile_id, profileInput(current));
+  const completed = await profiles.completeProfile(session.profile_id, profileInput(updatedProfile));
   if (!completed.ok) {
     // This should only happen if data was externally edited mid-conversation.
     // Restart cleanly instead of silently marking an incomplete profile done.
@@ -235,16 +295,24 @@ async function handleProfile(contact, session, body) {
     recontact_consent: completed.profile.recontact_consent,
   });
 
-  const consent = await consentPrompt(respondent);
-  if (!consent.ready) return { message: consent.message };
-  await saveSession(contact, { step: "study_consent", profile_index: null });
-  return { message: `Thanks${completed.profile.name ? `, ${completed.profile.name.split(" ")[0]}` : ""}. ${consent.message}` };
+  if (!await currentConsent(respondent)) {
+    await saveSession(contact, { step: "needs_browser", profile_index: null });
+    return { message: "Your profile is saved, but the study consent has changed. Please reopen your invitation and review the current wording before continuing." };
+  }
+  return { message: await finishOnboarding(contact, respondent, completed.profile, `Thanks${completed.profile.name ? `, ${completed.profile.name.split(" ")[0]}` : ""}`) };
 }
 
 async function handleStudyConsent(contact, session, body) {
   const answer = String(body || "").trim().toLowerCase();
   const respondent = await store.findOne("respondents", { id: session.respondent_id });
   if (!respondent) return { message: "We couldn't find your study enrolment. Please reopen your invitation." };
+
+  // Older in-progress sessions may still point at this retired step. Browser
+  // consent is authoritative; do not ask for it a second time in WhatsApp.
+  if (await currentConsent(respondent)) {
+    const next = await saveSession(contact, { step: "ready" });
+    return { message: await whatsappDiary.readyMessage(next, body, (patch) => saveSession(contact, patch)) };
+  }
 
   if (["no", "n", "2"].includes(answer)) {
     await store.update("respondents", { id: respondent.id }, {
@@ -290,9 +358,28 @@ router.post("/", async (req, res) => {
   const buttonPayload = String(req.body.ButtonPayload || "").trim();
   const tappedOption = /^opt_(\d+)$/.exec(buttonPayload);
   const body = tappedOption ? tappedOption[1] : String(req.body.Body || "").trim();
+  const messageSid = String(req.body.MessageSid || "").trim();
+  const remembered = await rememberedInbound(messageSid);
+  if (remembered && remembered.reply) return reply(res, remembered.reply);
   const existingSession = await sessionFor(contact);
-  if (req.body.MessageSid && existingSession && existingSession.last_message_sid === req.body.MessageSid && existingSession.last_reply) {
+  if (messageSid && existingSession && existingSession.last_message_sid === messageSid && existingSession.last_reply) {
     return reply(res, existingSession.last_reply);
+  }
+
+  const flowSubmission = whatsappFlow.submissionFrom(req.body);
+  if (flowSubmission) {
+    const message = await whatsappFlow.handleSubmission({
+      contact,
+      body: req.body,
+      session: existingSession,
+      saveSession: (patch) => saveSession(contact, patch),
+    });
+    const submittedSession = await sessionFor(contact);
+    if (submittedSession && messageSid) {
+      await saveSession(contact, { last_message_sid: messageSid, last_reply: message });
+    }
+    await rememberInbound(messageSid, contact, submittedSession && submittedSession.respondent_id, message);
+    return reply(res, message);
   }
 
   const join = /^JOIN\s+(.+)$/i.exec(body);
@@ -300,13 +387,16 @@ router.post("/", async (req, res) => {
     const token = String(join[1] || "").trim().replace(/^.*\/invite\//, "").split(/[?#]/)[0];
     const result = await startInvite(contact, token);
     const joinedSession = await sessionFor(contact);
-    if (joinedSession && req.body.MessageSid) await saveSession(contact, { last_message_sid: req.body.MessageSid, last_reply: result.message });
+    if (joinedSession && messageSid) await saveSession(contact, { last_message_sid: messageSid, last_reply: result.message });
+    await rememberInbound(messageSid, contact, joinedSession && joinedSession.respondent_id, result.message);
     return reply(res, result.message);
   }
 
   const session = existingSession;
   if (!session) {
-    return reply(res, "To begin, open your INICIO invitation and choose WhatsApp. It will start this chat with your study invitation automatically.");
+    const message = "To begin, open your INICIO invitation and choose WhatsApp. It will start this chat with your study invitation automatically.";
+    await rememberInbound(messageSid, contact, null, message);
+    return reply(res, message);
   }
 
   const saveCurrentSession = (patch) => saveSession(contact, patch);
@@ -314,12 +404,43 @@ router.post("/", async (req, res) => {
   let result;
   if (session.step === "profile") result = await handleProfile(contact, session, body);
   else if (session.step === "study_consent") result = await handleStudyConsent(contact, session, body);
+  else if (session.step === "ready" && whatsappFlow.isStartCommand(body)) {
+    const launched = await whatsappFlow.launch({
+      session,
+      contact,
+      saveSession: saveCurrentSession,
+      source: "chat",
+    });
+    if (launched.launched) {
+      result = {
+        message: "Your diary form is open in the WhatsApp message above.",
+        flowLaunched: true,
+      };
+    } else if (launched.message) {
+      result = diaryOutcome(launched.message);
+    } else {
+      result = diaryOutcome(await whatsappDiary.readyMessage(session, body, saveCurrentSession));
+    }
+  }
   else if (session.step === "ready") result = diaryOutcome(await whatsappDiary.readyMessage(session, body, saveCurrentSession));
   else if (session.step === "diary") result = diaryOutcome(await whatsappDiary.handleDiaryAnswer(session, body, saveCurrentSession, inboundMedia(req)));
+  else if (session.step === "paused_diary") result = diaryOutcome(await whatsappDiary.pausedMessage(session, body, saveCurrentSession));
+  else if (session.step === "closeout") result = diaryOutcome(await whatsappDiary.handleCloseoutAnswer(session, body, saveCurrentSession));
+  else if (session.step === "paused_closeout") result = diaryOutcome(await whatsappDiary.pausedCloseoutMessage(session, body, saveCurrentSession));
+  else if (session.step === "stop_confirm") result = diaryOutcome(await whatsappDiary.stopConfirmationMessage(session, body, saveCurrentSession));
+  else if (session.step === "closeout_done") result = { message: "Your final study check is complete and your diary is closed. Thank you for taking part." };
+  else if (session.step === "withdrawn") result = { message: "You have withdrawn from this study. Contact the study team if you need help with your data or believe this was a mistake." };
+  else if (session.step === "needs_browser") result = { message: "Please reopen your INICIO invitation and complete the required browser step before continuing in WhatsApp." };
   else if (session.step === "declined") result = { message: "You previously declined this study. Contact the study team if you want to change that choice." };
   else result = { message: "Please reopen your INICIO invitation and choose WhatsApp again." };
 
-  if (req.body.MessageSid) await saveSession(contact, { last_message_sid: req.body.MessageSid, last_reply: result.message });
+  if (messageSid) await saveSession(contact, { last_message_sid: messageSid, last_reply: result.message });
+  const updatedSession = await sessionFor(contact);
+  await rememberInbound(messageSid, contact, updatedSession && updatedSession.respondent_id, result.message);
+
+  if (result.flowLaunched) {
+    return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
 
   if (result.listPicker) {
     const { question, options } = result.listPicker;

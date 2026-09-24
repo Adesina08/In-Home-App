@@ -41,6 +41,33 @@ test('incentive eligibility is idempotent, period-based and held after QC exclud
  await ops.incentives(s.id);await ops.incentives(s.id);let rows=await store.find('incentive_ledger',{study_id:s.id});assert.equal(rows.length,1);assert.equal(rows[0].status,'eligible');
  await store.insert('qc_flags',{record_id:record.id,status:'open'});await ops.incentives(s.id);rows=await store.find('incentive_ledger',{study_id:s.id});assert.equal(rows[0].status,'held');
 });
+test('incremental milestones expose progress and gate the final bonus on the highest valid-period target',async()=>{
+ const s=await study(),r=await person(s.id,{end_validation_status:'completed'});
+ const first=await store.insert('diary_records',{study_id:s.id,respondent_id:r.id,status:'submitted',occurrence_time:'2026-09-01'});
+ const one=await store.insert('incentive_rules',{study_id:s.id,enabled:true,milestone:'participation',required_periods:1,amount:100,currency:'NGN'});
+ const two=await store.insert('incentive_rules',{study_id:s.id,enabled:true,milestone:'participation',required_periods:2,amount:200,currency:'NGN'});
+ const final=await store.insert('incentive_rules',{study_id:s.id,enabled:true,milestone:'closeout',required_periods:null,amount:300,currency:'NGN'});
+ let progress=await ops.rewardProgress(s.id,r.id);let byRule=new Map(progress.rewards.map(reward=>[reward.ruleId,reward]));
+ assert.equal(byRule.get(one.id).status,'eligible');assert.equal(byRule.get(two.id).status,'in_progress');assert.equal(byRule.get(final.id).status,'in_progress');assert.equal(byRule.get(two.id).completedPeriods,1);
+ const second=await store.insert('diary_records',{study_id:s.id,respondent_id:r.id,status:'submitted',occurrence_time:'2026-09-02'});
+ progress=await ops.rewardProgress(s.id,r.id);byRule=new Map(progress.rewards.map(reward=>[reward.ruleId,reward]));
+ assert.equal(byRule.get(two.id).status,'eligible');assert.equal(byRule.get(final.id).status,'eligible');
+ const firstLedger=await store.findOne('incentive_ledger',{respondent_id:r.id,rule_id:one.id});await store.update('incentive_ledger',{id:firstLedger.id},{status:'paid',paid_at:'2026-09-03 10:00:00',payment_reference:'PAY-100'});
+ await store.insert('qc_flags',{respondent_id:r.id,record_id:second.id,status:'open',severity:'high'});progress=await ops.rewardProgress(s.id,r.id);byRule=new Map(progress.rewards.map(reward=>[reward.ruleId,reward]));
+ assert.equal(byRule.get(one.id).status,'paid');assert.equal(byRule.get(two.id).status,'held');assert.equal(byRule.get(final.id).status,'held');
+ assert.deepEqual(progress.summary,[{currency:'NGN',potential:600,eligible:0,processing:0,paid:100,held:500}]);assert.equal(byRule.get(one.id).paymentReference,'PAY-100');assert.equal(first.id>0,true);
+});
+
+test('reward celebrations are versioned and processing remains subject to eligibility review',async()=>{
+ const s=await study({reward_celebration_headline:'Well done',reward_celebration_message:'{amount} for {milestone}'}),r=await person(s.id);
+ const record=await store.insert('diary_records',{study_id:s.id,respondent_id:r.id,status:'submitted',occurrence_time:'2026-09-01'});
+ await store.insert('incentive_rules',{study_id:s.id,enabled:true,milestone:'participation',required_periods:1,amount:250,currency:'NGN'});
+ let progress=await ops.rewardProgress(s.id,r.id);assert.equal(progress.celebration.headline,'Well done');assert.match(progress.celebration.message,/NGN 250/);
+ const ledger=await store.findOne('incentive_ledger',{respondent_id:r.id});await store.update('incentive_ledger',{id:ledger.id},{celebration_seen_version:1,status:'processing'});
+ progress=await ops.rewardProgress(s.id,r.id);assert.equal(progress.celebration,null);assert.equal(progress.summary[0].processing,250);
+ await store.insert('qc_flags',{record_id:record.id,status:'open'});await ops.rewardProgress(s.id,r.id);assert.equal((await store.findOne('incentive_ledger',{id:ledger.id})).status,'held');
+});
+
 test('concurrent scheduled jobs create one snapshot and retain approval separation',async()=>{
  const s=await study();await store.insert('report_schedules',{study_id:s.id,enabled:true,next_run:'2026-09-06',interval_days:7,lookback_days:7,compliance_below:50});
  await Promise.all([ops.runResearchJobs(new Date('2026-09-06')),ops.runResearchJobs(new Date('2026-09-06'))]);const rows=await store.find('report_snapshots',{study_id:s.id});assert.equal(rows.length,1);assert.equal(rows[0].status,'draft');assert.deepEqual(rows[0].payload.analytics.compliance.missing,[]);

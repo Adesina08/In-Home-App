@@ -26,6 +26,17 @@ test('native final validation is gated, validates configured questions, and bloc
  await store.update('respondents',{id:r.id},{activation_status:'active'});const endpoint=url+`/mobile/api/respondents/${r.id}/closeout`;const post=answers=>fetch(endpoint,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({answers})});assert.equal((await post({})).status,409);
  await store.update('studies',{id:s.id},{close_out_questions:[{code:'feedback',text:'How was the study?',type:'single',options:['Easy','Difficult'],required:true}]});await store.update('respondents',{id:r.id},{end_validation_status:'pending'});assert.equal((await post({feedback:'Other'})).status,400);assert.equal((await post({feedback:'Easy'})).status,200);const blocked=await fetch(url+`/mobile/api/respondents/${r.id}/diary`,{method:'POST',headers:headers(),body:packet('after_closeout_12345')});assert.equal(blocked.status,410);
 });
+test('participation API returns configured reward progress, totals and the compatibility incentive list',async()=>{
+ const today=new Date().toISOString().slice(0,10);await store.update('studies',{id:s.id},{start_date:today,diary_mode:'daily'});
+ const milestone=await store.insert('incentive_rules',{study_id:s.id,enabled:true,milestone:'participation',required_periods:1,amount:500,currency:'NGN'});
+ const completion=await store.insert('incentive_rules',{study_id:s.id,enabled:true,milestone:'closeout',required_periods:null,amount:700,currency:'NGN'});
+ const response=await fetch(url+`/mobile/api/respondents/${r.id}/participation`,{headers:headers()});assert.equal(response.status,200,await response.clone().text());const body=await response.json();
+ assert.equal(body.rewards.length,2);assert.equal(body.incentives.length,2);assert.deepEqual(body.summary,[{currency:'NGN',potential:1200,eligible:1200,processing:0,paid:0,held:0}]);assert.equal(body.celebration.items.length,2);
+ const byRule=new Map(body.rewards.map(reward=>[reward.ruleId,reward]));assert.equal(byRule.get(milestone.id).status,'eligible');assert.equal(byRule.get(completion.id).status,'eligible');assert.ok(body.lastUpdated);
+ const seen=await fetch(url+`/mobile/api/respondents/${r.id}/rewards/celebrations/seen`,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({items:body.celebration.items})});assert.equal(seen.status,200);
+ const refreshed=await fetch(url+`/mobile/api/respondents/${r.id}/participation`,{headers:headers()});assert.equal((await refreshed.json()).celebration,null);
+});
+
 
 test('profile gate covers standard and video capture endpoints before any diary data is accepted',async()=>{
  for(const route of ['/questionnaire','/diary','/diary/analyze-video','/diary/video-script','/diary/media-analysis']){const response=await fetch(url+`/gated/respondents/${r.id}`+route,{method:route.includes('script')||route==='/questionnaire'?'GET':'POST',headers:headers()});assert.equal(response.status,428);assert.equal((await response.json()).profileRequired,true);}

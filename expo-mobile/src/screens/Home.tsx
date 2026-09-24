@@ -77,6 +77,9 @@ export function HomeScreen({
   totalCount,
   recentRecords,
   occasionRecords,
+  rewardSummary,
+  rewardProgress,
+  onOpenRewards,
   onStartDiary,
   onOpenStudies,
   onViewAllEntries,
@@ -93,6 +96,9 @@ export function HomeScreen({
   totalCount: number;
   recentRecords: DisplayRecord[];
   occasionRecords: DisplayRecord[];
+  rewardSummary?: { currency: string; eligible: number; processing: number; paid: number; potential: number };
+  rewardProgress?: { completedPeriods: number; requiredPeriods: number; cadence: string; status: string };
+  onOpenRewards: () => void;
   onStartDiary: () => void;
   onOpenStudies: () => void;
   onViewAllEntries: () => void;
@@ -230,6 +236,26 @@ export function HomeScreen({
             </View>
           </View>
         </View>
+
+        {rewardSummary ? (
+          <Pressable onPress={onOpenRewards} className="rounded-2xl border border-[#BFDBFE] bg-[#EFF4FF] p-3 dark:border-[#1E40AF] dark:bg-[rgba(29,78,216,0.16)]">
+            <View className="flex-row items-center gap-3">
+              <View className="h-9 w-9 items-center justify-center rounded-xl bg-white dark:bg-[#0F2038]"><Icon name="archive" size={17} color={blueIcon} strokeWidth={1.9} /></View>
+              <View className="min-w-0 flex-1">
+                <Text className="text-[11px] font-sans-semibold text-[#64748B] dark:text-[#94A3B8]">{rewardSummary.processing > 0 ? "With finance" : rewardSummary.eligible > 0 ? "Eligible reward" : rewardSummary.paid > 0 ? "Rewards paid" : "Total rewards available"}</Text>
+                <Text className="mt-[1px] font-mono-semibold text-[17px] text-[#1D4ED8] dark:text-[#60A5FA]">{rewardSummary.currency} {Number(rewardSummary.processing > 0 ? rewardSummary.processing : rewardSummary.eligible > 0 ? rewardSummary.eligible : rewardSummary.paid > 0 ? rewardSummary.paid : rewardSummary.potential).toLocaleString()}{rewardSummary.processing > 0 ? " processing" : rewardSummary.eligible > 0 ? " awaiting finance" : rewardSummary.paid > 0 ? " paid" : " available"}</Text>
+              </View>
+              <Icon name="chevronRight" size={15} color={blueIcon} strokeWidth={1.9} />
+            </View>
+            {rewardProgress && rewardProgress.requiredPeriods > 0 ? (
+              <View className="mt-3">
+                <View className="mb-1 flex-row justify-between"><Text className="text-[9.5px] text-[#64748B] dark:text-[#94A3B8]">Next milestone · {rewardProgress.completedPeriods} of {rewardProgress.requiredPeriods} valid periods</Text><Text className="font-mono text-[9.5px] text-[#64748B] dark:text-[#94A3B8]">{Math.round(Math.min(1, rewardProgress.completedPeriods / rewardProgress.requiredPeriods) * 100)}%</Text></View>
+                <View className="h-[6px] overflow-hidden rounded-full bg-[#DBEAFE] dark:bg-[#1B3556]"><View className="h-full rounded-full bg-[#1D4ED8]" style={{width:`${Math.min(1, rewardProgress.completedPeriods / rewardProgress.requiredPeriods) * 100}%`}} /></View>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
+
 
         {/* Study guide card */}
         <View className="flex-row items-center gap-[10px] rounded-2xl border border-[#E2E8F0] bg-white px-3 py-[9px] dark:border-[#1B3556] dark:bg-[#0F2038]">

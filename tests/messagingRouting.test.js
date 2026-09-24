@@ -109,6 +109,8 @@ test('Twilio uses independent SMS and WhatsApp sender numbers', async () => {
   process.env.TWILIO_AUTH_TOKEN = 'test-token';
   process.env.TWILIO_SMS_FROM_NUMBER = '+18038860281';
   process.env.TWILIO_WHATSAPP_FROM_NUMBER = '+14155238886';
+  process.env.TWILIO_WHATSAPP_OTP_CONTENT_SID = `HX${'c'.repeat(32)}`;
+  process.env.TWILIO_WHATSAPP_DIARY_DUE_CONTENT_SID = `HX${'d'.repeat(32)}`;
   delete process.env.TWILIO_MESSAGING_SERVICE_SID;
   delete process.env.TWILIO_SMS_MESSAGING_SERVICE_SID;
   delete process.env.TWILIO_WHATSAPP_MESSAGING_SERVICE_SID;
@@ -122,6 +124,13 @@ test('Twilio uses independent SMS and WhatsApp sender numbers', async () => {
     const provider = require('../lib/whatsapp').getProvider();
     await provider.send({ respondentId: smsRespondent.id, to: '+2348022222222', channel: 'sms', template: 'otp_contact_verification', variables: { code: '123456' } });
     await provider.send({ respondentId: whatsappRespondent.id, to: '+2348011111111', channel: 'whatsapp', template: 'otp_contact_verification', variables: { code: '654321' } });
+    await provider.send({
+      respondentId: whatsappRespondent.id,
+      to: '+2348011111111',
+      channel: 'whatsapp',
+      template: 'diary_due_reminder',
+      variables: { name: 'Ada', study: 'Test study', link: 'https://wa.me/15551234567?text=JOIN%20token' },
+    });
   } finally {
     global.fetch = originalFetch;
   }
@@ -129,4 +138,23 @@ test('Twilio uses independent SMS and WhatsApp sender numbers', async () => {
   assert.equal(calls[0].To, '+2348022222222');
   assert.equal(calls[1].From, 'whatsapp:+14155238886');
   assert.equal(calls[1].To, 'whatsapp:+2348011111111');
+  assert.equal(calls[1].ContentSid, `HX${'c'.repeat(32)}`);
+  assert.deepEqual(JSON.parse(calls[1].ContentVariables), { '1': '654321' });
+  assert.equal(calls[2].ContentSid, `HX${'d'.repeat(32)}`);
+  assert.deepEqual(JSON.parse(calls[2].ContentVariables), {
+    '1': 'Ada', '2': 'Test study', '3': 'https://wa.me/15551234567?text=JOIN%20token',
+  });
+});
+
+test('Twilio refuses cold WhatsApp reminders when the approved template SID is missing', async () => {
+  delete process.env.TWILIO_WHATSAPP_DIARY_DUE_CONTENT_SID;
+  const result = await require('../lib/whatsapp').getProvider().send({
+    respondentId: whatsappRespondent.id,
+    to: '+2348011111111',
+    channel: 'whatsapp',
+    template: 'diary_due_reminder',
+    variables: { name: 'Ada', study: 'Test study', link: 'https://wa.me/example' },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /TWILIO_WHATSAPP_DIARY_DUE_CONTENT_SID/);
 });

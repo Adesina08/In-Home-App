@@ -139,7 +139,11 @@
 .console-study-tabs a{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;padding:0 0 14px;font-size:11px;color:#596b83;border-bottom:2px solid transparent;font-weight:550}
 .console-study-tabs a.is-active{color:#3c5d9f;border-color:#3c5d9f}
 .console-dialog{border:1px solid var(--console-line);border-radius:15px;width:min(620px,calc(100% - 32px));max-height:90dvh;padding:0;color:var(--console-ink);box-shadow:0 24px 80px #142c5440;margin:auto}
-.console-dialog::backdrop{background:#15264380;backdrop-filter:blur(3px)}
+/* No backdrop-filter here: blurring behind a <dialog> forces a repaint of that
+   blur on every frame a native <select> popup is open on top of it, which
+   flashes/flickers the whole backdrop the moment a dropdown inside the
+   dialog is clicked (a known Chromium/WebKit interaction, worse on Linux). */
+.console-dialog::backdrop{background:#15264399}
 .console-dialog .console-panel-body{overflow:auto}
 .console-icon-button{padding:7px;border:1px solid var(--console-line);border-radius:6px;background:#fff;display:grid;place-items:center;color:#6f7e94}
 .console-menu,.console-scrim{display:none}

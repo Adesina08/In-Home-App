@@ -20,12 +20,15 @@ let presurveyId;
 let diaryId;
 let sentCode;
 let originalEmailSend;
+let originalWhatsappNumber;
 
 before(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "inicio-invite-order-"));
   process.env.RESEND_API_KEY = "test-key";
   process.env.RESEND_FROM = "Inicio <sender@example.test>";
   process.env.APP_BASE_URL = "https://example.test";
+  originalWhatsappNumber = process.env.WHATSAPP_BOT_NUMBER;
+  process.env.WHATSAPP_BOT_NUMBER = "+15551234567";
   originalEmailSend = staffEmail.sendRespondentMessage;
   staffEmail.sendRespondentMessage = async ({ variables }) => {
     sentCode = variables.code;
@@ -58,6 +61,8 @@ before(async () => {
 
 after(async () => {
   staffEmail.sendRespondentMessage = originalEmailSend;
+  if (originalWhatsappNumber === undefined) delete process.env.WHATSAPP_BOT_NUMBER;
+  else process.env.WHATSAPP_BOT_NUMBER = originalWhatsappNumber;
   await new Promise((resolve) => server.close(resolve));
   await store.close();
   await fs.rm(directory, { recursive: true, force: true });
@@ -114,7 +119,11 @@ test("invitation enforces introduction, consent, pre-survey, method and account 
   const choice = await request("");
   const choiceHtml = await choice.text();
   assert.match(choiceHtml, /How would you like to take part\?/);
+  assert.match(choiceHtml, /Phone required/);
   assert.equal((choiceHtml.match(/class="onboarding-step-number"/g) || []).length, 4);
+  const whatsappWithEmail = await request("/choose", { method: "POST", body: new URLSearchParams({ mode: "whatsapp" }) });
+  assert.equal(whatsappWithEmail.status, 400);
+  assert.match(await whatsappWithEmail.text(), /needs a verified phone number/);
   const selected = await request("/choose", { method: "POST", body: new URLSearchParams({ mode: "app" }) });
   assert.equal(selected.headers.get("location"), "/invite/invite-order-token/account");
   const account = await request("/account");
@@ -179,6 +188,15 @@ test("phone entered during invite setup receives an SMS code and verifies", asyn
     });
     assert.equal(verified.headers.get("location"), "/invite/invite-phone-token/choose");
     assert.ok((await store.findOne("respondents", { id })).contact_verified_at);
+    const chosen = await fetch(`${base}/invite/invite-phone-token/choose`, {
+      method: "POST", redirect: "manual", body: new URLSearchParams({ mode: "whatsapp" }),
+    });
+    assert.equal(chosen.headers.get("location"), "https://wa.me/15551234567?text=JOIN%20invite-phone-token");
+    const whatsappRespondent = await store.findOne("respondents", { id });
+    assert.equal(whatsappRespondent.chosen_mode, "whatsapp");
+    assert.equal(whatsappRespondent.account_id, undefined);
+    const directAccount = await fetch(`${base}/invite/invite-phone-token/account`, { redirect: "manual" });
+    assert.equal(directAccount.headers.get("location"), "https://wa.me/15551234567?text=JOIN%20invite-phone-token");
   } finally {
     global.fetch = originalFetch;
     if (priorProvider === undefined) delete process.env.MESSAGING_PROVIDER;

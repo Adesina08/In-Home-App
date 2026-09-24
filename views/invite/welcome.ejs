@@ -8,6 +8,8 @@
       <p class="text-sm text-slate-500 mt-2"><%= study.name %></p>
     </div>
 
+    <% if (typeof error !== 'undefined' && error) { %><div class="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm p-3"><%= error %></div><% } %>
+
     <% if (declined) { %>
       <div class="bg-slate-50 border border-slate-200 text-slate-600 text-sm rounded-xl p-4 mb-5 leading-relaxed">
         You previously declined this study, so we've stopped contacting you about it. If that was a mistake, you can choose a participation option below.
@@ -28,7 +30,7 @@
     <% if (returning) { %>
       <p class="text-xs text-slate-500 mb-4 leading-relaxed">Your <strong>INICIO Diary</strong> login is already set up. Choose how you'd like to continue this study.</p>
     <% } else { %>
-      <p class="text-xs text-slate-500 mb-4 leading-relaxed">Your pre-survey is complete. Choose how to take part, then create your reusable <strong>INICIO Diary</strong> username and password.</p>
+      <p class="text-xs text-slate-500 mb-4 leading-relaxed">Your pre-survey is complete. Choose how you would like to complete this study.</p>
     <% } %>
 
     <div class="space-y-3">
@@ -45,18 +47,28 @@
         </button>
       </form>
 
-      <% if (whatsappNumber) { %>
+      <% const whatsappPhoneEligible = whatsappNumber && respondent.contact && !String(respondent.contact).includes('@'); %>
+      <% if (whatsappPhoneEligible) { %>
         <form method="POST" action="/invite/<%= respondent.unique_token %>/choose">
           <input type="hidden" name="mode" value="whatsapp" />
           <button class="w-full text-left bg-white border border-slate-300 rounded-xl p-4 hover:border-emerald-300 hover:bg-emerald-50 transition flex items-start gap-3">
             <span class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><%- icon('chat', 'w-5 h-5') %></span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-semibold text-slate-900">Use WhatsApp</span>
-              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5"><%= returning ? 'Continue this study through WhatsApp.' : 'Create your INICIO Diary login next, then continue the study through WhatsApp.' %></span>
+              <span class="block text-xs text-slate-500 leading-relaxed mt-0.5"><%= returning ? 'Continue this study through WhatsApp.' : 'Continue directly to WhatsApp. No app login is needed.' %></span>
             </span>
             <%- icon('arrow-right', 'w-4 h-4 text-emerald-600 mt-1 shrink-0') %>
           </button>
         </form>
+      <% } else if (whatsappNumber) { %>
+        <div class="w-full text-left bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 flex items-start gap-3">
+          <span class="w-10 h-10 rounded-xl bg-white text-slate-400 flex items-center justify-center shrink-0"><%- icon('chat', 'w-5 h-5') %></span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-semibold text-slate-500">Use WhatsApp <span class="ml-1 text-[10px] uppercase tracking-wide bg-slate-200 text-slate-500 rounded px-1.5 py-0.5 align-middle">Phone required</span></span>
+            <span class="block text-xs text-slate-400 leading-relaxed mt-0.5">WhatsApp must use the exact phone number you verify for this study.</span>
+            <a href="/invite/<%= respondent.unique_token %>/presurvey?edit=1" class="inline-flex mt-2 text-xs font-semibold text-brand-600 hover:underline">Change and verify my contact</a>
+          </span>
+        </div>
       <% } else { %>
         <div class="w-full text-left bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 flex items-start gap-3">
           <span class="w-10 h-10 rounded-xl bg-white text-slate-400 flex items-center justify-center shrink-0"><%- icon('chat', 'w-5 h-5') %></span>

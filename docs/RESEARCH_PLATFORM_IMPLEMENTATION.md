@@ -22,10 +22,19 @@ Implemented in the local checkout:
 - [x] First WhatsApp diary slice: command-based start/status/cancel, text and structured questionnaire answers, skip/termination rules, submission, QC and analysis integration
 - [x] Secure inbound WhatsApp photo/video/audio capture with trusted-host checks, authenticated bounded downloads, private storage, question linkage and AI-processing handoff
 - [x] Contact/preference-aware OTP, invitation and reminder routing across Resend email, Twilio SMS and Twilio WhatsApp, with independent phone senders and shared delivery logging
+- [x] Guarded browser-to-WhatsApp handoff, passwordless WhatsApp participation, pause/resume/back/help/withdrawal commands, multi-study selection, durable webhook replay handling and WhatsApp-native close-out
+- [x] Approved Content SID routing for cold WhatsApp invitations/reminders, with study-specific `wa.me` JOIN links
+- [x] Version-aware native WhatsApp Flow compilation and signed submissions for supported structured questions, with list-picker/text/media fallback in chat
 
-WhatsApp work still in progress:
-- [ ] Complete WhatsApp end-of-study validation and richer reminder-to-diary entry points
-- [ ] Validate the full webhook and approved-template journey against the intended Twilio WhatsApp Business sender
+WhatsApp deployment work still in progress:
+- [ ] Create/approve the configured Twilio Content templates and populate their `HX...` SIDs
+- [ ] Publish each study/questionnaire-version Flow asset and populate `TWILIO_WHATSAPP_FLOW_CONTENT_SIDS`
+- [ ] Validate the full webhook, reminder, media, withdrawal and close-out journey against the intended Twilio WhatsApp Business sender
+
+Validation on 2026-09-24:
+- `node --test tests/*.test.js`: 105 tests passed, including secure WhatsApp JOIN, replay protection, conversational controls, multi-study switching, close-out, media, native Flow compilation/submission, reminder entry and typed fallback.
+- `npm run build`: passed (with the repository's existing Browserslist database age warning).
+- `git diff --check`: passed.
 
 Validation on 2026-09-08:
 - `node --test tests/*.test.js`: 54 tests passed. Includes offline queue restart with disk-backed adapters, multipart retry, private media ownership, profile gating, closed-study capture, WhatsApp diary completion/retry/media handling, channel-aware SendGrid/Twilio delivery, report calculations, staff account delivery, inline questionnaire behaviour, bulk deletion and checksum-verified local restore.

@@ -37,6 +37,11 @@ TWILIO_API_KEY_SID=SK...            # preferred over the account auth token
 TWILIO_API_KEY_SECRET=...
 TWILIO_MESSAGING_SERVICE_SID=MG...  # preferred over a bare from-number
 TWILIO_CHANNEL=sms                  # or: whatsapp
+TWILIO_WHATSAPP_OTP_CONTENT_SID=HX...            # approved authentication template
+TWILIO_WHATSAPP_SURVEY_INVITE_CONTENT_SID=HX...  # approved utility template
+TWILIO_WHATSAPP_DIARY_INVITE_CONTENT_SID=HX...   # approved utility template
+TWILIO_WHATSAPP_DIARY_DUE_CONTENT_SID=HX...      # approved utility template
+TWILIO_WHATSAPP_DIARY_MISSED_CONTENT_SID=HX...   # approved utility template
 APP_BASE_URL=https://your-app-host  # so background reminders can include a working link
 ```
 
@@ -52,6 +57,8 @@ INICIO can route SMS and WhatsApp at the same time. Set `TWILIO_SMS_FROM_NUMBER`
 
 **SMS vs WhatsApp.** SMS is the default and needs nothing beyond a Twilio number that can send to your market. WhatsApp needs an approved WhatsApp Business sender and message templates pre-approved by Meta, which takes days — and if your other project already has an approved sender, both applications would send from the same business identity. Start on SMS; switch `TWILIO_CHANNEL=whatsapp` later if you want to.
 
+INICIO refuses business-initiated WhatsApp OTP/invitation/reminder sends when the matching approved Content SID is absent. This prevents a free-form message outside the 24-hour window from being treated as delivered. Utility templates use `{{1}}` respondent name, `{{2}}` study name and `{{3}}` the personal link; see `docs/AZURE_MESSAGING_SETUP.md`.
+
 **Numbers must be in international format** (`+2348012345678`). A local-format number is rejected before the API call with a message naming the number, rather than coming back as an opaque Twilio error code. Worth checking the respondent contacts already captured in the pilot data.
 
 ### Inbound WhatsApp diary and media
@@ -63,6 +70,8 @@ https://your-app-host/webhooks/twilio/whatsapp
 ```
 
 Keep `VERIFY_TWILIO_WEBHOOKS=true`. Inbound signature verification and authenticated media downloads require `TWILIO_AUTH_TOKEN` even when outbound messages use an API key. Attachments are accepted only from HTTPS Twilio media/API hosts, capped by `WHATSAPP_MEDIA_MAX_BYTES` (16 MB by default), and then copied into the configured private media store; the temporary Twilio URL is never saved as the research record.
+
+For a native WhatsApp Flow form, compile and publish one immutable Flow asset per published questionnaire version, then map its `HX...` Content SID with `TWILIO_WHATSAPP_FLOW_CONTENT_SIDS` (for example `{"12:3":"HX..."}`). `TWILIO_WHATSAPP_FLOW_CONTENT_SID` is the single-study fallback. Set a long random `WHATSAPP_FLOW_TOKEN_SECRET`; the signed token binds each form to the verified respondent, study, questionnaire version and diary occasion. Unsupported, conditional-dependent and media questions continue safely in the chat rather than being omitted.
 
 ### Checking it works
 

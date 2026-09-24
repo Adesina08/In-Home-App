@@ -1,0 +1,11 @@
+<section class="report-panel">
+  <div class="report-panel-head"><div><div class="report-kicker">Brand results</div><h2>Brand table</h2><p>Incidence uses eligible enrolled respondents. Occasion share uses valid diary occasions.</p></div></div>
+  <div class="dashboard-table-scroll" tabindex="0" role="region" aria-label="Brand results table"><table class="report-table dashboard-table">
+    <thead><tr><th scope="col">Brand</th><th scope="col">Consumers</th><th scope="col">Incidence</th><th scope="col">Occasions</th><th scope="col">Occasion share</th></tr></thead>
+    <tbody>
+      <% report.analytics.brands.forEach(brand => { %><tr><th scope="row"><%= brand.brand %></th><td><%= brand.consumers %></td><td><%= brand.consumer_incidence_pct == null ? '—' : brand.consumer_incidence_pct + '%' %></td><td><%= brand.occasions %></td><td><%= brand.share_of_occasions_pct == null ? '—' : brand.share_of_occasions_pct + '%' %></td></tr><% }) %>
+      <% if (!report.analytics.brands.length) { %><tr><td colspan="5">No releasable brand results for this period.</td></tr><% } %>
+    </tbody>
+  </table></div>
+  <p class="report-muted dashboard-note">Multiple brands can make occasion shares total over 100%.</p>
+</section>

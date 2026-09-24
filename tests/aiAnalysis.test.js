@@ -14,8 +14,11 @@ before(async () => {
   person = await store.insert('respondents', { study_id: study.id, is_practice: 0, activation_status: 'activated', consent_status: 'given', gender: 'Outdated', participation_start: '2026-01-01' });
   await store.insert('respondent_profile_snapshots', { study_id: study.id, respondent_id: person.id, snapshot_json: JSON.stringify({ gender: 'Women', age: 29, location: 'Lagos' }) });
   question = await store.insert('questions', { study_id: study.id, code: 'brand', type: 'multi', text: 'Brands' });
+  await store.insert('kpi_config', { study_id: study.id, objective_key: 'what', metric: 'count_entries', label: 'Eligible diary occasions', enabled: 1 });
+  const longTextQuestion = await store.insert('questions', { study_id: study.id, code: 'experience', type: 'longtext', text: 'Tell us about the experience' });
   const record = await store.insert('diary_records', { study_id: study.id, respondent_id: person.id, status: 'submitted', is_practice: 0, occurrence_time: '2026-01-02', entry_mode: 'standard' });
   await store.insert('responses', { record_id: record.id, question_id: question.id, value: 'A|B', source: 'form', verified: 0 });
+  await store.insert('responses', { record_id: record.id, question_id: longTextQuestion.id, value: 'Fresh breakfast felt fresh and convenient.', source: 'form', verified: 0 });
   await store.insert('ai_summaries', {
     study_id: study.id, period_start: null, period_end: null,
     base_records: 1, base_respondents: 1,
@@ -31,6 +34,7 @@ before(async () => {
   const app = express();
   app.set('views', path.join(__dirname, '../views')); app.set('view engine', 'ejs');
   app.locals.icon = require('../lib/icons').icon;
+  app.use(express.urlencoded({ extended: true }));
   app.use((req, res, next) => { req.session = { user: req.headers['x-test-role'] ? { role: req.headers['x-test-role'], name: 'Test staff', email: 'staff@example.test' } : null }; res.locals.user = req.session.user; res.locals.currentPath = req.path; next(); });
   app.use('/admin', require('../routes/admin'));
   server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r)); base = `http://127.0.0.1:${server.address().port}`;
@@ -43,8 +47,21 @@ test('AI summary page surfaces thematic analysis, sentiment and Location/Gender/
   const res = await fetch(`${base}/admin/ai-summary?study=${study.id}&summary=${summary.id}`, { headers: { 'x-test-role': 'admin' } });
   assert.equal(res.status, 200);
   const html = await res.text();
+  assert.match(html, /<h1>AI Summary<\/h1>/);
+  assert.match(html, /Study objectives/);
+  assert.match(html, /Eligible diary occasions/);
+  assert.match(html, /Entries over time/);
+  assert.match(html, /Brand table/);
+  assert.match(html, /Executive summary/);
+  assert.match(html, /Built from the questionnaire/);
+  assert.match(html, /Questionnaire dashboard/);
+  assert.match(html, /Tell us about the experience/);
+  assert.match(html, /Word cloud/);
+  assert.match(html, />fresh<\/span>/);
+  assert.match(html, /Respondent media/);
   assert.match(html, /Thematic analysis/);
   assert.match(html, /Convenience/);
+  assert.match(html, /More analysis and history/);
   assert.match(html, /3 mentions in the sample/);
   assert.match(html, /Sentiment analysis/);
   assert.match(html, /Positive/);
@@ -62,4 +79,22 @@ test('AI summary page degrades gracefully when no summary has been generated yet
   const html = await res.text();
   assert.match(html, /Generate a summary to read thematic analysis/);
   assert.match(html, /Generate a summary to read sentiment/);
+});
+
+test('new study KPI is assigned to a valid objective', async () => {
+  const response = await fetch(`${base}/admin/studies/${study.id}/kpis`, {
+    method: 'POST', redirect: 'manual',
+    headers: { 'x-test-role': 'admin', 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ label: 'Reasons mentioned', metric: 'count_entries', objective_key: 'why' }),
+  });
+  assert.equal(response.status, 302);
+  const saved = await store.findOne('kpi_config', { study_id: study.id, label: 'Reasons mentioned' });
+  assert.equal(saved.objective_key, 'why');
+  const invalid = await fetch(`${base}/admin/studies/${study.id}/kpis`, {
+    method: 'POST', redirect: 'manual',
+    headers: { 'x-test-role': 'admin', 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ label: 'Invalid objective', metric: 'count_entries', objective_key: 'unknown' }),
+  });
+  assert.match(invalid.headers.get('location'), /Choose%20which%20study%20objective/);
+  assert.ok(!await store.findOne('kpi_config', { study_id: study.id, label: 'Invalid objective' }));
 });

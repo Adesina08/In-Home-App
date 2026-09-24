@@ -59,6 +59,7 @@ async function deleteRespondentCascade(respondentId) {
   await removeWhere("reminders", { respondent_id: respondentId });
   await removeWhere("whatsapp_outbox", { respondent_id: respondentId });
   await removeWhere("whatsapp_sessions", { respondent_id: respondentId });
+  await removeWhere("whatsapp_inbound_messages", { respondent_id: respondentId });
   await removeWhere("respondent_credentials", { respondent_id: respondentId });
   await removeWhere("otp_codes", { respondent_id: respondentId });
   await removeWhere("push_subscriptions", { respondent_id: respondentId });

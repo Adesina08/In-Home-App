@@ -12,5 +12,57 @@
     <div class="rounded-2xl bg-slate-50 p-4"><h3 class="font-semibold mb-2">Upcoming visits</h3><% if(!operations.visits.length){ %><p class="text-xs text-slate-500">No visits planned.</p><% } %><% operations.visits.slice(0,6).forEach(function(v){ %><p class="text-xs py-1"><%= v.visit_date %> · <%= v.household_code %> · <%= v.status %></p><% }) %></div>
     <div class="rounded-2xl bg-slate-50 p-4"><h3 class="font-semibold mb-2">Recent backchecks</h3><% if(!operations.backchecks.length){ %><p class="text-xs text-slate-500">No backchecks recorded.</p><% } %><% operations.backchecks.slice(0,6).forEach(function(b){ %><p class="text-xs py-1">Respondent <%= b.respondent_id %> · <%= b.result %> · <%= b.notes %></p><% }) %></div>
   </div>
-  <details class="border-t border-slate-100 p-5"><summary class="font-semibold cursor-pointer">Incentive rules and payments</summary><form method="post" action="<%= opAction('incentive-rule') %>" class="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4"><select name="milestone" class="border rounded-xl p-2 bg-white"><option value="onboarding">Onboarding</option><option value="participation">Participation</option><option value="closeout">Close-out</option></select><input name="required_periods" type="number" min="1" placeholder="Periods" class="border rounded-xl p-2" /><input name="amount" type="number" min="0.01" step="0.01" required placeholder="Amount" class="border rounded-xl p-2" /><input name="currency" maxlength="3" pattern="[A-Z]{3}" required placeholder="NGN" class="border rounded-xl p-2 uppercase" /><button class="console-button is-primary">Add rule</button></form><div class="mt-3 text-xs text-slate-600"><% operations.incentiveRules.forEach(function(r){ %><p><%= r.milestone %> · <%= r.currency %> <%= r.amount %> · <%= r.enabled ? 'Active' : 'Disabled' %></p><% }) %><% if(!operations.incentiveRules.length){ %>No incentive rules configured.<% } %></div></details>
+  <details class="border-t border-slate-100 p-5">
+    <summary class="font-semibold cursor-pointer">Reward milestones and payments</summary>
+    <p class="mt-3 text-xs text-slate-500">Each amount is an additional reward. Participation milestones count valid calendar periods, not the number of uploads. Add participation milestones before the final completion bonus.</p>
+    <form method="post" action="<%= opAction('reward-settings') %>" class="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2"><div><h4 class="text-sm font-semibold">Respondent celebration</h4><p class="text-xs text-slate-500">Shown once when confirmed eligibility is first detected. It never confirms payment.</p></div><label class="flex gap-2 text-xs"><input name="enabled" value="1" type="checkbox" <%= study.reward_celebration_enabled !== false ? 'checked' : '' %> /> Enabled</label></div>
+      <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label class="text-xs text-slate-500">Headline<input name="headline" maxlength="80" value="<%= study.reward_celebration_headline || 'Reward unlocked!' %>" class="mt-1 w-full border rounded-xl p-2 bg-white" /></label>
+        <label class="text-xs text-slate-500">Message<input name="message" maxlength="240" value="<%= study.reward_celebration_message || 'You completed {milestone}. {amount} is eligible and awaiting payment.' %>" class="mt-1 w-full border rounded-xl p-2 bg-white" /><span class="mt-1 block">Use {amount}, {milestone}, or {count}.</span></label>
+        <label class="text-xs text-slate-500">Primary colour<input name="primary_color" type="color" value="<%= study.reward_celebration_primary_color || '#1D4ED8' %>" class="mt-1 h-10 w-full border rounded-xl bg-white p-1" /></label>
+        <label class="text-xs text-slate-500">Accent colour<input name="accent_color" type="color" value="<%= study.reward_celebration_accent_color || '#72D8FF' %>" class="mt-1 h-10 w-full border rounded-xl bg-white p-1" /></label>
+        <label class="text-xs text-slate-500">Confetti duration (milliseconds)<input name="duration_ms" type="number" min="1500" max="6000" step="100" value="<%= study.reward_celebration_duration_ms || 3200 %>" class="mt-1 w-full border rounded-xl p-2 bg-white" /></label>
+        <button class="console-button is-primary self-end">Save celebration</button>
+      </div>
+    </form>
+    <form method="post" action="<%= opAction('incentive-rule') %>" class="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
+      <label class="text-xs text-slate-500">Reward type<select name="milestone" class="mt-1 w-full border rounded-xl p-2 bg-white"><option value="participation">Participation milestone</option><option value="closeout">Final completion bonus</option><option value="onboarding">Getting-started reward</option></select></label>
+      <label class="text-xs text-slate-500">Valid periods<input name="required_periods" type="number" min="1" placeholder="Required for participation" class="mt-1 w-full border rounded-xl p-2" /></label>
+      <label class="text-xs text-slate-500">Additional amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="Amount" class="mt-1 w-full border rounded-xl p-2" /></label>
+      <label class="text-xs text-slate-500">Currency<input name="currency" maxlength="3" pattern="[A-Za-z]{3}" required placeholder="NGN" class="mt-1 w-full border rounded-xl p-2 uppercase" /></label>
+      <button class="console-button is-primary self-end">Add reward</button>
+    </form>
+    <div class="mt-4 space-y-2">
+      <% operations.incentiveRules.forEach(function(rule){ %>
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs">
+          <span><strong><%= rule.milestone === 'participation' ? rule.required_periods + ' valid periods' : rule.milestone === 'closeout' ? 'Final study completion' : 'Getting started' %></strong> · additional <%= rule.currency %> <%= Number(rule.amount).toLocaleString() %> · <%= rule.enabled ? 'Active' : 'Disabled' %></span>
+          <% if(rule.enabled){ %><form method="post" action="<%= opAction('disable-rule') %>"><input type="hidden" name="id" value="<%= rule.id %>" /><button class="text-red-600 font-semibold">Disable future eligibility</button></form><% } %>
+        </div>
+      <% }) %>
+      <% if(!operations.incentiveRules.length){ %><p class="text-xs text-slate-500">No rewards are configured for this study.</p><% } %>
+    </div>
+    <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+      <div><h4 class="text-sm font-semibold">Eligibility and finance ledger</h4><p class="text-xs text-slate-500">Send eligible rewards to finance, then record the real reference only after manual payment is completed.</p></div>
+      <form method="post" action="<%= opAction('incentive-evaluate') %>"><button class="console-button">Refresh eligibility</button></form>
+    </div>
+    <div class="mt-3 space-y-3">
+      <% const rewardPeople = new Map(operations.respondents.map(function(person){ return [person.id, person]; })); %>
+      <% operations.incentiveLedger.forEach(function(reward){ const person = rewardPeople.get(reward.respondent_id); %>
+        <div class="rounded-xl border border-slate-200 p-3 text-xs">
+          <div class="flex flex-wrap items-center justify-between gap-2"><strong><%= person ? person.respondent_code + ' · ' + person.name : 'Respondent ' + reward.respondent_id %></strong><span><%= reward.currency %> <%= Number(reward.amount).toLocaleString() %> · <%= reward.status %></span></div>
+          <% if(reward.status === 'eligible'){ %>
+            <form method="post" action="<%= opAction('incentive-process') %>" class="mt-2 grid grid-cols-1 md:grid-cols-[180px_1fr_auto] gap-2"><input type="hidden" name="ledger_id" value="<%= reward.id %>" /><select name="payment_method" required class="border rounded-xl p-2 bg-white"><option value="">Payment method...</option><option value="bank_transfer">Bank transfer</option><option value="airtime">Airtime</option><option value="voucher">Voucher</option><option value="cash">Cash</option><option value="other">Other</option></select><input name="finance_note" maxlength="500" placeholder="Finance note (optional)" class="border rounded-xl p-2" /><button class="console-button is-primary">Send to finance</button></form>
+          <% } else if(reward.status === 'processing'){ %>
+            <p class="mt-2 text-blue-700">With finance since <%= reward.processing_at || '' %> - <%= String(reward.payment_method || 'method not set').replaceAll('_',' ') %></p>
+            <form method="post" action="<%= opAction('incentive-pay') %>" class="mt-2 flex flex-wrap gap-2"><input type="hidden" name="ledger_id" value="<%= reward.id %>" /><input name="reference" required maxlength="120" placeholder="Completed payment reference" class="min-w-[220px] flex-1 border rounded-xl p-2" /><button class="console-button is-primary">Confirm paid</button></form>
+          <% } else if(reward.status === 'paid'){ %><p class="mt-2 text-emerald-700">Paid <%= reward.paid_at || '' %> · reference <%= reward.payment_reference || 'not recorded' %></p>
+          <% } else if(reward.hold_reason){ %><p class="mt-2 text-amber-700"><%= reward.hold_reason %></p><% } %>
+          <% if(['eligible','processing','paid'].includes(reward.status)){ %><form method="post" action="<%= opAction('reward-replay') %>" class="mt-2"><input type="hidden" name="ledger_id" value="<%= reward.id %>" /><button class="text-blue-700 font-semibold">Replay celebration on next app visit</button></form><% } %>
+        </div>
+      <% }) %>
+      <% if(!operations.incentiveLedger.length){ %><p class="text-xs text-slate-500">No respondent has reached a reward milestone yet.</p><% } %>
+    </div>
+    <% if(operations.rewardPagination && operations.rewardPagination.pages > 1){ %><div class="mt-4 flex items-center justify-between text-xs"><span>Page <%= operations.rewardPagination.page %> of <%= operations.rewardPagination.pages %> - <%= operations.rewardPagination.total %> rewards</span><div class="flex gap-3"><% if(operations.rewardPagination.page > 1){ %><a class="text-blue-700 font-semibold" href="/admin?study=<%= study.id %>&rewardPage=<%= operations.rewardPagination.page - 1 %>#fieldwork-operations">Previous</a><% } %><% if(operations.rewardPagination.page < operations.rewardPagination.pages){ %><a class="text-blue-700 font-semibold" href="/admin?study=<%= study.id %>&rewardPage=<%= operations.rewardPagination.page + 1 %>#fieldwork-operations">Next</a><% } %></div></div><% } %>
+  </details>
 </section>

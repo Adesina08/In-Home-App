@@ -230,12 +230,14 @@ router.get("/", async (req, res) => {
   let analysis;
   try { analysis = await require("../lib/staffAnalysis").staffAnalysis(study.id, { ...analysisPeriod, question: req.query.question, segment: req.query.segment }); }
   catch (error) { return res.status(400).render("error", { message: error.message, user: req.session.user }); }
-  const [assignments, visits, backchecks, incentiveRules, incentiveLedger, reportSnapshots, reportSchedules, researchAlerts, themeCodes, respondents, users] = await Promise.all([
+  const rewardPageSize=20,rewardPage=Math.max(1,Number.parseInt(req.query.rewardPage,10)||1);
+  const [assignments, visits, backchecks, incentiveRules, incentiveLedger, incentiveLedgerTotal, reportSnapshots, reportSchedules, researchAlerts, themeCodes, respondents, users] = await Promise.all([
     store.find("interviewer_assignments", { study_id: study.id }, { sort: { updated_at: -1 } }),
     store.find("fieldwork_visits", { study_id: study.id }, { sort: { visit_date: -1 } }),
     store.find("backchecks", { study_id: study.id }, { sort: { created_at: -1 }, limit: 12 }),
     store.find("incentive_rules", { study_id: study.id }, { sort: { id: -1 } }),
-    store.find("incentive_ledger", { study_id: study.id }, { sort: { id: -1 }, limit: 20 }),
+    store.find("incentive_ledger", { study_id: study.id }, { sort: { id: -1 }, skip:(rewardPage-1)*rewardPageSize, limit:rewardPageSize }),
+    store.count("incentive_ledger", { study_id: study.id }),
     store.find("report_snapshots", { study_id: study.id }, { sort: { created_at: -1 }, limit: 10 }),
     store.find("report_schedules", { study_id: study.id }, { sort: { id: -1 } }),
     store.find("research_alerts", { study_id: study.id }, { sort: { created_at: -1 }, limit: 10 }),
@@ -264,7 +266,7 @@ router.get("/", async (req, res) => {
     weekly: await weeklyProgress(study),
     recentActivity: await recentActivity(study),
     analysis: { ...analysisPeriod, ...analysis },
-    operations: { assignments, visits, backchecks, incentiveRules, incentiveLedger, reportSnapshots, reportSchedules, researchAlerts, themeCodes, respondents, users },
+    operations: { assignments, visits, backchecks, incentiveRules, incentiveLedger, rewardPagination:{page:rewardPage,pages:Math.max(1,Math.ceil(incentiveLedgerTotal/rewardPageSize)),total:incentiveLedgerTotal}, reportSnapshots, reportSchedules, researchAlerts, themeCodes, respondents, users },
     operationSaved: req.query.saved === "1",
     operationError: req.query.error || "",
   });
@@ -1047,6 +1049,7 @@ router.get("/studies/:id/kpis", async (req, res) => {
     questions,
     questionsById,
     metrics: kpiEngine.METRICS,
+    objectives: require('../lib/studyObjectives').OBJECTIVES,
     operators: kpiEngine.OPERATORS,
     describeKpi: (k) => kpiEngine.describeKpi(k, questionsById),
     computed: results,
@@ -1083,12 +1086,17 @@ router.post("/studies/:id/kpis", async (req, res) => {
 
   const label = (req.body.label || "").trim();
   const metric = req.body.metric || "";
+  const objectiveKey = String(req.body.objective_key || '');
   if (!label) return back("Give the KPI a name so the client knows what they're looking at.");
   if (!kpiEngine.METRICS[metric]) return back("Choose what this KPI measures.");
+  if (!require('../lib/studyObjectives').OBJECTIVE_KEYS.has(objectiveKey)) return back('Choose which study objective this KPI answers.');
 
   const spec = kpiEngine.METRICS[metric];
   const questionId = req.body.question_id ? Number(req.body.question_id) : null;
   if (spec.needsQuestion && !questionId) return back("Choose which question this KPI is about.");
+  const studyQuestions = await store.find('questions', { study_id: toId(studyId), active: 1 });
+  const questionIds = new Set(studyQuestions.map(question => question.id));
+  if (questionId && !questionIds.has(questionId)) return back('Choose a question from this study.');
 
   // Option values arrive as a checkbox group -- one or several.
   let optionValue = null;
@@ -1105,6 +1113,7 @@ router.post("/studies/:id/kpis", async (req, res) => {
   const conditions = cq
     .map((q, i) => ({ question_id: Number(q), operator: co[i] || "equals", value: (cv[i] || "").trim() }))
     .filter((c) => c.question_id && c.value !== "");
+  if (conditions.some(condition => !questionIds.has(condition.question_id))) return back('Choose filter questions from this study.');
 
   // kpi_key is kept for the six built-ins and for CSV column headers; a
   // generated one keeps custom KPIs distinguishable without asking an admin
@@ -1116,12 +1125,13 @@ router.post("/studies/:id/kpis", async (req, res) => {
     label,
     enabled: 1,
     metric,
+    objective_key: objectiveKey,
     question_id: questionId,
     option_value: optionValue,
     conditions_json: conditions.length ? JSON.stringify(conditions) : null,
     unit: (req.body.unit || "").trim() || null,
   });
-  logAudit(req.session.user.email, "create_kpi", "kpi_config", id, { label, metric });
+  logAudit(req.session.user.email, "create_kpi", "kpi_config", id, { label, metric, objectiveKey });
   back(null);
 });
 
@@ -1150,9 +1160,13 @@ router.get("/users", async (req, res) => {
       : u.role === "client" ? grants.filter((g) => g.user_id === u.id)
       : [];
     const names = [...new Set(rows.map((r) => studiesById.get(r.study_id)?.name).filter(Boolean))];
+    // Feeds the "Edit user" dialog's study multi-select so it opens with the
+    // account's actual current scope pre-selected, not just its display name.
+    const studyIds = rows.length ? [...new Set(rows.map((r) => r.study_id))] : (u.study_id ? [u.study_id] : []);
     return {
       ...u,
       study_name: names.length ? names.join(", ") : (studiesById.has(u.study_id) ? studiesById.get(u.study_id).name : null),
+      study_ids: studyIds,
     };
   });
   res.render("admin/users", {
@@ -1160,6 +1174,8 @@ router.get("/users", async (req, res) => {
     // Shown once, immediately after a reset, then gone on the next load.
     delivery: req.query.delivery || null,
     deliveryEmail: req.query.email || null,
+    updated: req.query.updated === "user",
+    deleted: req.query.deleted === "user",
   });
 });
 
@@ -1283,6 +1299,133 @@ router.post("/users/:id/resend-credentials", requireRole("superadmin"), async (r
   res.redirect(`/admin/users?delivery=${delivery.ok ? "sent" : "failed"}&email=${encodeURIComponent(target.email)}`);
 });
 
+// Re-points an account's role and study scope. Reuses the same
+// interviewer_assignments / client_grants rows the account list reads (see
+// GET /users above) so the edit stays consistent with how scope is both
+// displayed and enforced everywhere else -- rather than writing only the
+// legacy users.study_id column and leaving those tables stale.
+async function reconcileScope(userId, role, studyIds) {
+  const [existingAssignments, existingGrants] = await Promise.all([
+    store.find("interviewer_assignments", { user_id: userId, enabled: true }),
+    store.find("client_grants", { user_id: userId, enabled: true }),
+  ]);
+  for (const a of existingAssignments) {
+    if (role !== "interviewer" || !studyIds.includes(a.study_id)) {
+      await store.update("interviewer_assignments", { id: a.id }, { enabled: false, updated_at: store.nowSql() });
+    }
+  }
+  for (const g of existingGrants) {
+    if (role !== "client" || !studyIds.includes(g.study_id)) {
+      await store.update("client_grants", { id: g.id }, { enabled: false });
+    }
+  }
+  if (role === "interviewer") {
+    for (const studyId of studyIds) {
+      const assignmentId = `${studyId}:${userId}`;
+      await researchOps.insertOnce("interviewer_assignments", assignmentId, { study_id: studyId, user_id: userId });
+      await store.update("interviewer_assignments", { id: assignmentId }, { enabled: true, updated_at: store.nowSql() });
+    }
+  } else if (role === "client") {
+    for (const studyId of studyIds) {
+      const grantId = `${studyId}:${userId}`;
+      await researchOps.insertOnce("client_grants", grantId, { study_id: studyId, user_id: userId });
+      await store.update("client_grants", { id: grantId }, { enabled: true, media: true, text: true, exports: true });
+    }
+  }
+}
+
+router.post("/users/:id/update", requireRole("superadmin"), async (req, res) => {
+  const id = Number(req.params.id);
+  const target = await store.findOne("users", { id });
+  if (!target) return res.status(404).render("error", { message: "User not found.", user: req.session.user });
+
+  // Editing your own role/scope from this form risks locking yourself out of
+  // the section that could undo it. Use another superadmin account instead.
+  if (id === req.session.user.id) {
+    return res.status(400).render("error", { message: "You cannot edit your own account here. Ask another superadmin.", user: req.session.user });
+  }
+
+  const { role } = req.body;
+  if (!["admin", "interviewer", "client", "superadmin"].includes(role)) {
+    return res.status(400).render("error", { message: "Choose a supported role.", user: req.session.user });
+  }
+  if (target.role === "superadmin" && role !== "superadmin") {
+    const superadminCount = await store.count("users", { role: "superadmin" });
+    if (superadminCount <= 1) {
+      return res.status(400).render("error", { message: "Cannot demote the platform's last superadmin.", user: req.session.user });
+    }
+  }
+
+  const rawStudyIds = req.body.study_id === undefined ? [] : [].concat(req.body.study_id);
+  const studyIds = [...new Set(rawStudyIds.map(toId).filter((v) => Number.isInteger(v)))];
+  if (studyIds.length && !(await store.find("studies", { id: { $in: studyIds } })).length) {
+    return res.status(400).render("error", { message: "Choose a valid study.", user: req.session.user });
+  }
+  if (role === "admin" && studyIds.length > 1) {
+    return res.status(400).render("error", { message: "Choose at most one study for an Admin account, or none for full platform access.", user: req.session.user });
+  }
+
+  await store.update("users", { id }, {
+    role,
+    // Legacy single-study column -- kept in sync the same way POST /users
+    // writes it, since some paths still read it directly as a fallback.
+    study_id: role === "superadmin" ? null : (studyIds[0] ?? null),
+  });
+  await reconcileScope(id, role, role === "superadmin" ? [] : studyIds);
+
+  logAudit(req.session.user.email, "update_user", "users", id, { email: target.email, role, study_ids: studyIds, previous_role: target.role });
+  res.redirect("/admin/users?updated=user");
+});
+
+// Hard delete: removes the account row and every collection that references
+// it by user_id, then detaches (rather than orphans) anything that only
+// soft-references it, mirroring the study/respondent cascades in
+// routes/superadmin.js. Requires typing DELETE, matching the confirmation
+// this app already uses for other irreversible, cross-collection deletes
+// (see views/admin/data_management.ejs).
+router.post("/users/:id/delete", requireRole("superadmin"), async (req, res) => {
+  if (String(req.body.confirm || "").trim().toUpperCase() !== "DELETE") {
+    return res.status(400).render("error", { message: "Deletion cancelled. Type DELETE to permanently remove a user.", user: req.session.user });
+  }
+
+  const id = Number(req.params.id);
+  const target = await store.findOne("users", { id });
+  if (!target) return res.status(404).render("error", { message: "User not found.", user: req.session.user });
+
+  if (id === req.session.user.id) {
+    return res.status(400).render("error", { message: "You cannot delete your own account.", user: req.session.user });
+  }
+  if (target.role === "superadmin") {
+    const superadminCount = await store.count("users", { role: "superadmin" });
+    if (superadminCount <= 1) {
+      return res.status(400).render("error", { message: "Cannot delete the platform's last superadmin.", user: req.session.user });
+    }
+  }
+
+  async function removeWhere(collection, filter) {
+    try {
+      return await store.remove(collection, filter);
+    } catch (e) {
+      // An older/newer pilot database may not have every optional
+      // collection yet -- do not leave the account undeletable over one.
+      console.warn(`User delete cleanup skipped ${collection}:`, e.message);
+      return { changes: 0 };
+    }
+  }
+
+  await removeWhere("interviewer_assignments", { user_id: id });
+  await removeWhere("client_grants", { user_id: id });
+  await removeWhere("fieldwork_visits", { user_id: id });
+  await removeWhere("mobile_sessions", { user_id: id });
+  // Respondents enrolled by this interviewer stay -- only the now-dangling
+  // reference to who enrolled them is cleared.
+  await store.update("respondents", { interviewer_id: id }, { interviewer_id: null });
+  await store.remove("users", { id });
+
+  logAudit(req.session.user.email, "delete_user", "users", id, { email: target.email, role: target.role });
+  res.redirect("/admin/users?deleted=user");
+});
+
 // ---------- AI summary (spec 4.3, P1) ----------
 router.get("/ai-summary", async (req, res) => {
   const { study, studies } = await getStudyOrFirst(req);
@@ -1295,6 +1438,10 @@ router.get("/ai-summary", async (req, res) => {
   let error = req.query.error || (requested && !selected ? 'That summary is not available for this study.' : null);
   try { validatePeriod(period); } catch (e) { error = e.message; period = { from: '', to: '' }; }
   const report = await loadStudyReport(study.id, period);
+  const questionnaireDashboard = require('../lib/questionnaireDashboard').buildQuestionnaireDashboard(report);
+  const objectiveKpis = (await store.find('kpi_config', { study_id: study.id, enabled: 1 }, { sort: { id: 1 } }))
+    .filter(kpi => require('../lib/studyObjectives').OBJECTIVE_KEYS.has(kpi.objective_key))
+    .map(kpi => ({ ...kpi, ...kpiEngine.computeKpi(kpi, report.entries, { respondentIds: report.respondents.map(r => r.id) }) }));
   let sourceSignature = null;
   try { sourceSignature = await aiSummary.currentSignature(study.id, period); } catch (_) {}
   // Comparing against a hardcoded "azure_openai" here meant every summary
@@ -1312,11 +1459,12 @@ router.get("/ai-summary", async (req, res) => {
   try { banners = await bannerAnalysis(study.id, { ...period, question: req.query.question }); }
   catch (e) { if (!error) error = e.message; banners = await bannerAnalysis(study.id, period); }
   res.render("admin/ai_summary", {
-    study, studies, summaries, selected: selected || null, report,
+    study, studies, summaries, selected: selected || null, report, questionnaireDashboard,
     aiConfigured: aiSummary.isAiModelConfigured(),
     aiProviderLabel: aiSummary.providerName() === "gemini" ? "Gemini" : "Azure AI",
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
     themes, sentiment, banners, bannerLabels: BANNER_SEGMENTS,
+    objectiveGroups: require('../lib/studyObjectives').objectiveGroups(objectiveKpis),
     ...period, error, stale,
   });
 });
