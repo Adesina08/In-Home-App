@@ -1,0 +1,52 @@
+<%
+// Reel settings fields shared by the study defaults, the client reel and each
+// extra reel (lib/reelSettings.js fromForm reads them). Booleans post a hidden
+// "0" before the checkbox so an unticked box is still recorded.
+// Locals: s (normalised settings), options ({ formats, captionFields }),
+// hasLogo, hasMusic (whether the study has uploaded them).
+const captionLabels = { respondent: 'Respondent label', day: 'Day', age: 'Age band', gender: 'Gender', location: 'Location' };
+%>
+<div class="reel-settings">
+  <fieldset><legend>Format</legend>
+    <div class="reel-choices"><% Object.entries(options.formats).forEach(([key, f]) => { %>
+      <label><input type="radio" name="format" value="<%= key %>" <%= s.format === key ? 'checked' : '' %> /> <%= f.label %> <span class="report-muted"><%= f.width %>×<%= f.height %></span></label>
+    <% }) %></div>
+  </fieldset>
+  <fieldset><legend>Branding</legend>
+    <div class="reel-grid">
+      <label>Card background<input type="color" name="brand_background" value="<%= s.brand.background %>" /></label>
+      <label>Title text<input type="color" name="brand_text" value="<%= s.brand.text %>" /></label>
+      <label>Accent (subtitle line)<input type="color" name="brand_accent" value="<%= s.brand.accent %>" /></label>
+    </div>
+    <label class="research-field">Intro title<input name="brand_intro_title" maxlength="120" value="<%= s.brand.intro_title %>" placeholder="Defaults to the study name" /></label>
+    <label class="research-field">Intro subtitle<input name="brand_intro_subtitle" maxlength="120" value="<%= s.brand.intro_subtitle %>" /></label>
+    <label class="research-field">Closing card<input name="brand_outro_text" maxlength="200" value="<%= s.brand.outro_text %>" placeholder="e.g. Prepared by INICIO Insights for <client> (leave blank for none)" /></label>
+    <input type="hidden" name="brand_logo" value="0" /><label class="research-check"><input type="checkbox" name="brand_logo" value="1" <%= s.brand.logo ? 'checked' : '' %> /> Show the logo on title cards<%= hasLogo ? '' : ' (upload one in the study defaults)' %></label>
+    <input type="hidden" name="brand_logo_on_clips" value="0" /><label class="research-check"><input type="checkbox" name="brand_logo_on_clips" value="1" <%= s.brand.logo_on_clips ? 'checked' : '' %> /> Also show a small logo in the corner of clips</label>
+  </fieldset>
+  <fieldset><legend>Background music</legend>
+    <input type="hidden" name="music_enabled" value="0" /><label class="research-check"><input type="checkbox" name="music_enabled" value="1" <%= s.music.enabled ? 'checked' : '' %> /> Play music under the reel<%= hasMusic ? '' : ' (upload a track in the study defaults)' %></label>
+    <label class="research-field">Music volume: <output><%= s.music.volume %></output>%<input type="range" name="music_volume" min="0" max="100" step="5" value="<%= s.music.volume %>" oninput="this.previousElementSibling.value=this.value" /></label>
+    <input type="hidden" name="music_duck" value="0" /><label class="research-check"><input type="checkbox" name="music_duck" value="1" <%= s.music.duck ? 'checked' : '' %> /> Lower the music automatically while respondents speak</label>
+  </fieldset>
+  <fieldset><legend>Captions and subtitles</legend>
+    <input type="hidden" name="captions_subtitles" value="0" /><label class="research-check"><input type="checkbox" name="captions_subtitles" value="1" <%= s.captions.subtitles ? 'checked' : '' %> /> Show what respondents say as subtitles</label>
+    <p class="report-muted">Caption on each clip:</p>
+    <div class="reel-choices"><% options.captionFields.forEach(field => { %>
+      <label><input type="checkbox" name="captions_fields" value="<%= field %>" <%= s.captions.fields.includes(field) ? 'checked' : '' %> /> <%= captionLabels[field] %></label>
+    <% }) %></div>
+    <div class="reel-grid">
+      <label>Caption position<select name="captions_position"><option value="bottom" <%= s.captions.position === 'bottom' ? 'selected' : '' %>>Bottom</option><option value="top" <%= s.captions.position === 'top' ? 'selected' : '' %>>Top</option></select></label>
+      <label>Text size<select name="captions_size"><% ['small','medium','large'].forEach(size => { %><option value="<%= size %>" <%= s.captions.size === size ? 'selected' : '' %>><%= size[0].toUpperCase() + size.slice(1) %></option><% }) %></select></label>
+    </div>
+  </fieldset>
+  <fieldset><legend>Length</legend>
+    <div class="reel-grid">
+      <label>Target total length (seconds)<input type="number" name="length_max_total_seconds" min="15" max="1800" value="<%= s.length.max_total_seconds || '' %>" placeholder="No limit" /></label>
+      <label>Max clips per finding<input type="number" name="length_max_clips_per_finding" min="1" max="20" value="<%= s.length.max_clips_per_finding || '' %>" placeholder="No limit" /></label>
+      <label>Max seconds per clip<input type="number" name="length_max_clip_seconds" min="3" max="300" value="<%= s.length.max_clip_seconds || '' %>" placeholder="No limit" /></label>
+      <label>Title card seconds<input type="number" name="length_title_seconds" min="2" max="15" step="0.5" value="<%= s.length.title_seconds %>" /></label>
+    </div>
+    <p class="report-muted">A clip is never cut inside its supporting moment, only its padding is trimmed. With a total length, each finding's first clip is kept before any second clips.</p>
+  </fieldset>
+</div>

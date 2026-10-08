@@ -4,7 +4,7 @@
 // not be able to break first-time onboarding.
 const express = require("express");
 const store = require("../lib/store");
-const { parseOptions, isQuestionActive } = require("../lib/questionnaire");
+const { parseOptions, isQuestionActive, exclusiveOptionsOf, exclusiveConflict } = require("../lib/questionnaire");
 const { logAudit } = require("../lib/audit");
 const { splitPresurvey, sectionNames } = require("../lib/presurveySections");
 const { canonical: canonicalContact, isEmail } = require("../lib/contact");
@@ -60,6 +60,7 @@ async function presurveyQuestions(studyId) {
   return presurvey.map((q) => ({
     ...q,
     options: parseOptions(q.options_json !== undefined ? q.options_json : q.options),
+    exclusiveOptions: exclusiveOptionsOf(q),
   }));
 }
 
@@ -110,6 +111,18 @@ router.post("/:token/presurvey", async (req, res) => {
   for (const q of questions) {
     let value = req.body[`pq_${q.id}`];
     if (q.type === "multi" && value !== undefined && !Array.isArray(value)) value = [value];
+    const conflict = q.type === "multi" ? exclusiveConflict(value, q.exclusiveOptions) : null;
+    if (conflict) {
+      return res.status(400).render("invite/presurvey", {
+        respondent,
+        study,
+        questions,
+        values: { name, contact, answers: { ...answers, [q.id]: value } },
+        editingContact,
+        error: `“${conflict}” can't be combined with other answers for “${q.text}”.`,
+        user: null,
+      });
+    }
     if (q.type === "numeric" && !isEmptyAnswer(value)) {
       const number = Number(value);
       if (!Number.isFinite(number)) {
@@ -231,7 +244,7 @@ router.post("/:token/verify", async (req, res) => {
   if (!result.ok) return renderVerification(res, respondent, study, { error: result.reason, sent: true, status: 400 });
   await store.update("respondents", { id: respondent.id }, { contact_verified_at: store.nowSql() });
   logAudit(`respondent:${respondent.respondent_code}`, "invite_contact_verified", "respondents", respondent.id, {});
-  return res.redirect(`/invite/${respondent.unique_token}/choose`);
+  return res.redirect(`/invite/${respondent.unique_token}/about-you`);
 });
 
 module.exports = router;

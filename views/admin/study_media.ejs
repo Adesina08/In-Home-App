@@ -1,10 +1,10 @@
 
 <%
-// "Real" means any provider other than the mock default -- azure_vision or
-// gemini_vision for brand detection, azure_speech or gemini_speech for
-// transcription -- not a literal match against one Azure provider name,
-// which previously showed "unavailable"/mock-mode warnings even while a
-// different real provider (e.g. Gemini) was actually running.
+// "Real" means any provider other than the mock default -- openai or
+// gemini_vision for brand detection, openai or gemini_speech for
+// transcription -- not a literal match against one provider name, which
+// previously showed "unavailable"/mock-mode warnings even while a different
+// real provider was actually running.
 const visionOn = !!process.env.BRAND_DETECTION_PROVIDER && process.env.BRAND_DETECTION_PROVIDER !== 'mock';
 const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO_TRANSCRIPTION_PROVIDER !== 'mock';
 %>
@@ -24,7 +24,7 @@ const speechOn = !!process.env.AUDIO_TRANSCRIPTION_PROVIDER && process.env.AUDIO
     <article class="console-media-card" data-table-row data-status="<%= m.media_type %>"><div class="console-media-preview"><% if(!url){ %><div class="console-empty"><%- icon(isAudio?'mic':'photo','w-7 h-7') %><strong>File unavailable</strong><p>The media link is not available.</p></div><% } else if(m.media_type==='photo'){ %><a href="<%= url %>" target="_blank" rel="noopener"><img src="<%= url %>" loading="lazy" alt="Photo evidence from <%= m.respondent_code %>" /></a><% } else if(m.media_type==='video'){ %><video controls preload="metadata" src="<%= url %>"></video><% } else if(isAudio){ %><div class="console-audio-preview"><%- icon('mic','w-7 h-7') %><audio controls preload="none" src="<%= url %>"></audio></div><% } else { %><a href="<%= url %>" target="_blank" rel="noopener">Open file</a><% } %></div>
     <div class="console-media-info"><div class="console-actions" style="justify-content:space-between"><strong><%= m.respondent_code || 'Respondent' %></strong><span class="console-status"><%= m.media_type %></span></div><p><%= m.period_label || 'Period not recorded' %> · <%= m.upload_time || 'Time unavailable' %></p>
     <% if (hasTranscript) { %><div class="console-media-result"><span class="console-status <%= transcriptStatus==='done'?'is-live':transcriptStatus==='error'?'is-danger':'' %>">transcript: <%= transcriptStatus %></span><p><%= m.transcript_text || 'No transcript available.' %></p></div><% } %>
-    <% if (hasBrand) { %><div class="console-media-result"><span class="console-status <%= detectionStatus==='done'?'is-live':detectionStatus==='error'?'is-danger':'' %>">brand: <%= detectionStatus %></span><p><%= m.detected_brand || 'No detected brand available.' %><% if (m.detection_category) { %> · <%= m.detection_category %><% } %><% if (m.detection_confidence != null) { %> · <%= Math.round(Number(m.detection_confidence) * 100) %>% confidence<% } %></p></div><% } %>
+    <% if (hasBrand) { %><div class="console-media-result"><span class="console-status <%= detectionStatus==='done'?'is-live':detectionStatus==='error'?'is-danger':'' %>">brand: <%= detectionStatus %></span><p><%= m.detected_brand ? 'Brand: ' + m.detected_brand : 'No brand detected.' %><% if (m.detected_brand && m.detection_confidence != null) { %> · <%= Math.round(Number(m.detection_confidence) * 100) %>% confidence<% } %></p><% if (m.detection_category) { %><p>Category: <%= canonicalCategory(m.detection_category) %><% if (categoryGroup(m.detection_category, study.custom_categories)) { %> (<%= categoryGroup(m.detection_category, study.custom_categories) %>)<% } %><% if (m.detection_category_confidence != null) { %> · <%= Math.round(Number(m.detection_category_confidence) * 100) %>% confidence<% } %></p><% } %></div><% } %>
     <% if (hasBrand && detectionStatus === 'needs_review' && m.detected_brand) { %><div class="console-actions"><form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="confirm"><button class="console-button">Confirm <%= m.detected_brand %></button></form><form method="POST" action="/admin/media/<%= m.id %>/brand-review"><input type="hidden" name="action" value="reject"><button class="console-button">Reject</button></form></div><% } %>
     <div class="console-actions" style="justify-content:space-between;flex-wrap:wrap"><a class="console-button" href="/admin/studies/<%= study.id %>/records/<%= m.record_id %>">View entry ↗</a><% if (hasTranscript) { %><form method="POST" action="/admin/media/<%= m.id %>/transcribe"><button class="console-button"><%- icon('refresh','w-3 h-3') %>Transcribe</button></form><% } %><% if (hasBrand) { %><form method="POST" action="/admin/media/<%= m.id %>/detect"><button class="console-button"><%- icon('refresh','w-3 h-3') %>Detect brand</button></form><% } %></div></div>
     </article><% }) %></div>

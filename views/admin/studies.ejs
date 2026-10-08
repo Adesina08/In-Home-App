@@ -25,14 +25,20 @@
         </div>
         <div>
           <label class="block text-[12.5px] font-semibold text-slate-600 mb-1.5">Categories</label>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 border border-slate-200 rounded-[11px] p-3 bg-slate-50/60 max-h-48 overflow-auto">
-            <% CATEGORIES.forEach(function (c) { %>
-              <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                <input type="checkbox" name="category" value="<%= c %>" checked class="h-3.5 w-3.5 rounded border-slate-300 accent-signal" />
-                <%= c %>
-              </label>
+          <div class="border border-slate-200 rounded-[11px] p-3 bg-slate-50/60 max-h-64 overflow-auto">
+            <% CATEGORY_GROUPS.forEach(function (g) { %>
+              <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mt-2 first:mt-0 mb-1"><%= g.group %></div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                <% g.categories.forEach(function (c) { %>
+                  <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input type="checkbox" name="category" value="<%= c.name %>" checked class="h-3.5 w-3.5 rounded border-slate-300 accent-signal" />
+                    <%= c.name %>
+                  </label>
+                <% }) %>
+              </div>
             <% }) %>
           </div>
+          <%- include('../partials/custom_categories', { customs: [], compact: true }) %>
         </div>
       </div>
       <div>

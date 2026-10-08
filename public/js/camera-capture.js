@@ -5,7 +5,9 @@
  * prefer the rear/environment camera because they normally show a product.
  * Video questions and the capture-first Video format intentionally prefer the
  * front/user camera so the respondent can speak to camera while logging the
- * consumption occasion.
+ * consumption occasion. Either can be flipped, including mid-recording: video
+ * is recorded from a canvas that the live preview is painted onto, so swapping
+ * the camera underneath never ends the MediaRecorder or splits the file.
  */
 (function () {
   "use strict";
@@ -28,10 +30,19 @@
   var timerInterval = null;
   var recordSeconds = 0;
   var current = null;
+  var facing = "user";
+  var flipping = false;
+
+  // Recording pipeline: the preview is painted onto recordCanvas and that,
+  // plus the microphone, is what MediaRecorder sees. Recording the camera
+  // stream directly would stop the moment its video track is replaced.
+  var recordCanvas = null;
+  var recordStream = null;
+  var drawHandle = null;
 
   var modal, videoPreview, photoPreview, videoPlayback, permissionMsg, timerEl,
     shutterBtn, retakeBtn, useBtn, closeBtn, retryPermBtn, titleEl, canvas,
-    prompterEl, prompterListEl;
+    prompterEl, prompterListEl, flipBtn;
 
   // The whole list stays on screen for the length of the recording. Stepping
   // through prompts one at a time meant the respondent had to keep tapping
@@ -77,8 +88,10 @@
       '    <ol id="camPrompterList" style="max-height:13rem;overflow-y:auto;color:#fff;font-size:14px;font-weight:500;line-height:1.5"></ol>' +
       "  </div>" +
       "</div>" +
-      '<div class="px-6 py-6 flex items-center justify-center gap-5 bg-black">' +
+      '<div class="relative px-6 py-6 flex items-center justify-center gap-5 bg-black">' +
       '  <button type="button" id="camShutterBtn" class="w-16 h-16 rounded-full bg-white ring-4 ring-white/30 active:scale-95 transition"></button>' +
+      // Inline styles: see renderPrompts for why new classes are avoided here.
+      '  <button type="button" id="camFlipBtn" aria-label="Switch camera" style="display:none;position:absolute;right:24px;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:9999px;background:rgba(255,255,255,.16);color:#fff;font-size:22px;line-height:48px;text-align:center">&#8635;</button>' +
       '  <button type="button" id="camRetakeBtn" class="hidden border border-white/40 text-white rounded-lg px-4 py-2.5 text-sm font-medium">Retake</button>' +
       '  <button type="button" id="camUseBtn" class="hidden bg-brand-600 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">Use this</button>' +
       "</div>";
@@ -97,6 +110,7 @@
     titleEl = modal.querySelector("#camCaptureTitle");
     prompterEl = modal.querySelector("#camPrompter");
     prompterListEl = modal.querySelector("#camPrompterList");
+    flipBtn = modal.querySelector("#camFlipBtn");
     canvas = document.createElement("canvas");
 
     closeBtn.addEventListener("click", closeModal);
@@ -104,6 +118,7 @@
     shutterBtn.addEventListener("click", onShutter);
     retakeBtn.addEventListener("click", onRetake);
     useBtn.addEventListener("click", onUse);
+    flipBtn.addEventListener("click", flipCamera);
   }
 
   function resetVisualState() {
@@ -119,6 +134,7 @@
     shutterBtn.style.background = "#fff";
     retakeBtn.classList.add("hidden");
     useBtn.classList.add("hidden");
+    stopDrawing();
     recordedChunks = [];
     recordedBlob = null;
     capturedPhotoBlob = null;
@@ -134,11 +150,27 @@
     }
   }
 
+  function updateTitle() {
+    var side = facing === "user" ? "front" : "back";
+    titleEl.textContent = current.kind === "video" ? "Record with " + side + " camera" : "Take a photo";
+  }
+
+  // Only offered when there is a second camera to switch to. Device labels
+  // and counts are reliable only after permission, hence the call after the
+  // stream opens rather than when the modal is built.
+  function refreshFlipButton() {
+    flipBtn.style.display = "none";
+    if (!navigator.mediaDevices.enumerateDevices) return;
+    navigator.mediaDevices.enumerateDevices().then(function (devices) {
+      var cams = devices.filter(function (d) { return d.kind === "videoinput"; });
+      if (cams.length > 1 && current) flipBtn.style.display = "block";
+    }).catch(function () {});
+  }
+
   function startStream() {
     permissionMsg.classList.add("hidden");
-    var preferredFacingMode = current && current.kind === "video" ? "user" : "environment";
     var constraints = {
-      video: { facingMode: { ideal: preferredFacingMode } },
+      video: { facingMode: { ideal: facing } },
       audio: current.kind === "video",
     };
     stopStream();
@@ -147,9 +179,69 @@
       .then(function (s) {
         stream = s;
         videoPreview.srcObject = stream;
+        refreshFlipButton();
       })
       .catch(function () {
         permissionMsg.classList.remove("hidden");
+      });
+  }
+
+  function trackDeviceId(track) {
+    return track && track.getSettings ? track.getSettings().deviceId : undefined;
+  }
+
+  function openDevice(deviceId) {
+    return navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } })
+      .then(function (s) { return s.getVideoTracks()[0]; });
+  }
+
+  // exact first: several Android browsers treat ideal as a suggestion. If
+  // facingMode still lands on the camera just released (webcams and some
+  // Android browsers report no facing at all), step to the next device.
+  function openVideoTrack(mode, avoidDeviceId) {
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: mode } } })
+      .catch(function () { return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: mode } } }); })
+      .then(function (s) {
+        var track = s.getVideoTracks()[0];
+        if (!avoidDeviceId || trackDeviceId(track) !== avoidDeviceId) return track;
+        track.stop();
+        return navigator.mediaDevices.enumerateDevices().then(function (devices) {
+          var cams = devices.filter(function (d) { return d.kind === "videoinput" && d.deviceId; });
+          var at = cams.findIndex(function (d) { return d.deviceId === avoidDeviceId; });
+          var other = cams[(at + 1) % cams.length];
+          return openDevice(other ? other.deviceId : avoidDeviceId);
+        });
+      });
+  }
+
+  // Swaps only the video track; the microphone track (and, while recording,
+  // the MediaRecorder) carries on untouched. The old camera is released
+  // first because most phones cannot hold both open at once. During the gap
+  // the recording canvas simply holds its last frame.
+  function flipCamera() {
+    if (flipping || !stream) return;
+    flipping = true;
+    flipBtn.style.opacity = ".45";
+    var previous = facing;
+    var next = facing === "user" ? "environment" : "user";
+    var audioTracks = stream.getAudioTracks();
+    var previousId = trackDeviceId(stream.getVideoTracks()[0]);
+    stream.getVideoTracks().forEach(function (t) { t.stop(); });
+    openVideoTrack(next, previousId)
+      .then(function (track) { facing = next; return track; })
+      .catch(function () { return previousId ? openDevice(previousId) : openVideoTrack(previous); })
+      .then(function (track) {
+        stream = new MediaStream([track].concat(audioTracks));
+        videoPreview.srcObject = stream;
+        if (current) updateTitle();
+      })
+      .catch(function () {
+        if (recording) stopRecording();
+        permissionMsg.classList.remove("hidden");
+      })
+      .then(function () {
+        flipping = false;
+        flipBtn.style.opacity = "";
       });
   }
 
@@ -167,7 +259,8 @@
       if (prompts.length) { renderPrompts(); prompterEl.classList.remove("hidden"); }
       else prompterEl.classList.add("hidden");
     }
-    titleEl.textContent = kind === "video" ? "Record with front camera" : "Take a photo";
+    facing = kind === "video" ? "user" : "environment";
+    updateTitle();
     resetVisualState();
     modal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
@@ -176,6 +269,7 @@
 
   function closeModal() {
     if (recording && mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    stopDrawing();
     stopStream();
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     modal.classList.add("hidden");
@@ -215,16 +309,58 @@
       videoPreview.classList.add("hidden");
       photoPreview.classList.remove("hidden");
       shutterBtn.classList.add("hidden");
+      flipBtn.style.display = "none";
       retakeBtn.classList.remove("hidden");
       useBtn.classList.remove("hidden");
     }, "image/jpeg", 0.87);
   }
 
+  // Sized once, from the camera in use when recording starts. A camera
+  // flipped to later is letterboxed into the same frame so the file never
+  // changes resolution part-way through.
+  function startDrawing() {
+    var w = videoPreview.videoWidth || 720;
+    var h = videoPreview.videoHeight || 1280;
+    var scale = Math.min(1, 1280 / Math.max(w, h));
+    recordCanvas = recordCanvas || document.createElement("canvas");
+    recordCanvas.width = Math.round(w * scale);
+    recordCanvas.height = Math.round(h * scale);
+    var ctx = recordCanvas.getContext("2d");
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, recordCanvas.width, recordCanvas.height);
+    function draw() {
+      var vw = videoPreview.videoWidth, vh = videoPreview.videoHeight;
+      if (vw && vh && videoPreview.readyState >= 2) {
+        var fit = Math.min(recordCanvas.width / vw, recordCanvas.height / vh);
+        var dw = vw * fit, dh = vh * fit;
+        ctx.fillRect(0, 0, recordCanvas.width, recordCanvas.height);
+        ctx.drawImage(videoPreview, (recordCanvas.width - dw) / 2, (recordCanvas.height - dh) / 2, dw, dh);
+      }
+      drawHandle = requestAnimationFrame(draw);
+    }
+    draw();
+    recordStream = recordCanvas.captureStream(30);
+    stream.getAudioTracks().forEach(function (t) { recordStream.addTrack(t); });
+    return recordStream;
+  }
+
+  function stopDrawing() {
+    if (drawHandle) { cancelAnimationFrame(drawHandle); drawHandle = null; }
+    if (recordStream) {
+      // Only the canvas track belongs to us; the audio track is the camera
+      // stream's and is stopped with it.
+      recordStream.getVideoTracks().forEach(function (t) { t.stop(); });
+      recordStream = null;
+    }
+  }
+
   function startRecording() {
     var mimeType = pickVideoMimeType();
+    var source = recordCanvasSupported() ? startDrawing() : stream;
     try {
-      mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+      mediaRecorder = mimeType ? new MediaRecorder(source, { mimeType: mimeType }) : new MediaRecorder(source);
     } catch (e) {
+      stopDrawing();
       permissionMsg.querySelector("span").textContent = "Video recording isn't supported on this device.";
       permissionMsg.classList.remove("hidden");
       return;
@@ -232,6 +368,7 @@
     recordedChunks = [];
     mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = function () {
+      stopDrawing();
       recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
       videoPlayback.src = URL.createObjectURL(recordedBlob);
       videoPreview.classList.add("hidden");
@@ -241,6 +378,7 @@
     };
     recording = true;
     recordSeconds = 0;
+    if (!recordCanvasSupported()) flipBtn.style.display = "none";
     mediaRecorder.start();
     shutterBtn.style.background = "#dc2626";
     timerEl.classList.remove("hidden");
@@ -252,12 +390,19 @@
     }, 1000);
   }
 
+  // Without canvas capture (very old browsers) recording falls back to the
+  // camera stream itself, and the flip button is hidden while recording.
+  function recordCanvasSupported() {
+    return typeof HTMLCanvasElement !== "undefined" && !!HTMLCanvasElement.prototype.captureStream;
+  }
+
   function stopRecording() {
     if (!recording) return;
     recording = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     timerEl.classList.add("hidden");
     shutterBtn.classList.add("hidden");
+    flipBtn.style.display = "none";
     if (prompterEl) prompterEl.classList.add("hidden");
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
   }
@@ -265,6 +410,8 @@
   function onRetake() {
     resetVisualState();
     videoPreview.srcObject = stream;
+    if (prompterEl && prompts.length) prompterEl.classList.remove("hidden");
+    refreshFlipButton();
   }
 
   function onUse() {

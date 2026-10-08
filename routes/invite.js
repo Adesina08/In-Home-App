@@ -7,6 +7,7 @@
 const express = require("express");
 const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
+const profiles = require("../lib/respondentProfiles");
 const { logAudit } = require("../lib/audit");
 const otp = require("../lib/otp");
 const messaging = require("../lib/whatsapp");
@@ -198,6 +199,9 @@ router.post("/:token/account", async (req, res) => {
       account_created_at: respondent.account_created_at || store.nowSql(),
       ...(["invited", "screened"].includes(respondent.activation_status) ? { activation_status: "activated", activated_at: store.nowSql() } : {}),
     });
+    // Attach the one-time profile answered during onboarding to the account,
+    // which is what the mobile app reads; otherwise the app asks again.
+    await profiles.linkVerifiedAccount({ ...respondent, account_id: account.id }, account);
     logAudit(`respondent:${respondent.respondent_code}`, account.password_hash ? "inicio_diary_account_reused" : "inicio_diary_account_created", "respondent_accounts", account.id, {
       study_id: study.id,
       channel: respondent.chosen_mode,

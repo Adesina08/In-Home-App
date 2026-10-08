@@ -21,8 +21,10 @@ type VideoAnalysis = {
   detectedBrand?: string | null;
   detectedCategory?: string | null;
   detectionConfidence?: number | null;
+  categoryConfidence?: number | null;
 };
 const LIMIT = 90;
+const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 function Playback({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri);
@@ -43,9 +45,10 @@ function AnalysisCard({ analysis, styles }: { analysis: VideoAnalysis; styles: R
     {analysis.transcriptStatus === 'done' && analysis.scoreStatus !== 'done' ? <Text style={styles.copy}>AI score unavailable. This does not affect the saved transcript.</Text> : null}
     <Text style={[styles.analysisTitle, { marginTop: 8 }]}>Brand & category detection</Text>
     {analysis.detectionStatus === 'processing' ? <View style={styles.analysisBusy}><ActivityIndicator size="small" color="#9DBBFF" /><Text style={styles.copy}>Looking for a brand…</Text></View> : null}
-    {(analysis.detectionStatus === 'done' || analysis.detectionStatus === 'needs_review') && analysis.detectedBrand ? <View style={styles.analysisPillRow}><View style={styles.analysisPill}><Text style={styles.analysisPillText}>{analysis.detectedBrand}</Text></View><View style={{ flex: 1 }}><Text style={styles.analysisSubtitle}>{analysis.detectionStatus === 'done' ? 'Brand detected' : 'Possible brand match'}{analysis.detectedCategory ? ` · ${analysis.detectedCategory}` : ''}</Text><Text style={styles.copy}>{analysis.detectionConfidence != null ? `${Math.round(analysis.detectionConfidence * 100)}% confidence` : 'Pending confirmation'}</Text></View></View> : null}
+    {(analysis.detectionStatus === 'done' || analysis.detectionStatus === 'needs_review') && analysis.detectedBrand ? <View style={styles.analysisPillRow}><View style={styles.analysisPill}><Text style={styles.analysisPillText}>{analysis.detectedBrand}</Text></View><View style={{ flex: 1 }}><Text style={styles.analysisSubtitle}>{analysis.detectionStatus === 'done' ? 'Brand detected' : 'Possible brand match'}</Text><Text style={styles.copy}>{analysis.detectionConfidence != null ? `${Math.round(analysis.detectionConfidence * 100)}% confidence` : 'Pending confirmation'}</Text></View></View> : null}
     {analysis.detectionStatus === 'pending' ? <Text style={styles.copy}>Offline preview only. Brand detection will run when this entry syncs.</Text> : null}
     {analysis.detectionStatus === 'unavailable' ? <Text style={styles.copy}>No brand was identified. The video is still saved.</Text> : null}
+    {analysis.detectedCategory && analysis.detectionStatus !== 'processing' ? <Text style={styles.analysisBody}>Category: {analysis.detectedCategory}{analysis.categoryConfidence != null ? ` · ${Math.round(analysis.categoryConfidence * 100)}% confidence` : ''}</Text> : null}
     {analysis.detectionStatus === 'error' ? <Text style={styles.copy}>Brand detection failed. Record again or submit it for retry.</Text> : null}
   </View>;
 }
@@ -67,10 +70,6 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
   const [draft, setDraft] = useState<VideoDraft | null>(null);
   const [analysis, setAnalysis] = useState<VideoAnalysis | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [index, setIndex] = useState(0);
-  const [auto, setAuto] = useState(true);
-  const [pace, setPace] = useState(4);
-  const [showPromptSettings, setShowPromptSettings] = useState(false);
   const [error, setError] = useState('');
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const draftKey = `inicio.video-draft.v1.${respondentId}`;
@@ -129,15 +128,10 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
     const timer = setInterval(() => setElapsed(Math.min(LIMIT, Math.floor((Date.now() - started.current) / 1000))), 250);
     return () => clearInterval(timer);
   }, [recording]);
-  useEffect(() => {
-    if (!recording || !auto) return;
-    const timer = setInterval(() => setIndex(value => Math.min(value + 1, script.prompts.length - 1)), pace * 1000);
-    return () => clearInterval(timer);
-  }, [recording, auto, pace, script.prompts.length, index]);
 
   async function record() {
     if (!ready || recordingRef.current || saving || !camera.current) return;
-    setError(''); setIndex(0); setElapsed(0); started.current = Date.now();
+    setError(''); setElapsed(0); started.current = Date.now();
     const captureTime = new Date(started.current).toISOString();
     recordingRef.current = true; setRecording(true);
     try {
@@ -167,11 +161,42 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
   function retake() {
     Alert.alert('Replace this recording?', 'Your saved recording will be deleted so you can record again.', [{ text: 'Keep recording', style: 'cancel' }, { text: 'Record again', style: 'destructive', onPress: async () => {
       if (!draft) return;
-      try { await FileSystem.deleteAsync(draft.uri, { idempotent: true }); await AsyncStorage.removeItem(draftKey); setDraft(null); setAnalysis(null); setReady(false); setIndex(0); setElapsed(0); }
+      try { await FileSystem.deleteAsync(draft.uri, { idempotent: true }); await AsyncStorage.removeItem(draftKey); setDraft(null); setAnalysis(null); setReady(false); setElapsed(0); }
       catch { setError('Could not remove the saved recording. Please try again.'); }
     } }]);
   }
   const granted = cameraPermission?.granted && micPermission?.granted;
+  // Live camera: the same full-screen recorder respondents get on the web
+  // (public/js/camera-capture.js), so both platforms look and behave alike.
+  if (!loading && !draft && granted && Platform.OS !== 'web') {
+    const canShoot = ready && foreground && !saving;
+    return <View style={styles.recorder}>
+      <View style={styles.recorderTop}>
+        <Text style={styles.recorderTitle}>Record with {facing === 'front' ? 'front' : 'back'} camera</Text>
+        <Pressable accessibilityRole="button" onPress={onBack} disabled={recording || saving} hitSlop={10}><Text style={[styles.recorderCancel, (recording || saving) && { opacity: .4 }]}>Cancel</Text></Pressable>
+      </View>
+      <View style={styles.recorderStage}>
+        {foreground ? <CameraView ref={camera} style={styles.camera} facing={facing} mode="video" videoQuality="720p" videoBitrate={2500000} onCameraReady={() => setReady(true)} onMountError={e => { setReady(false); setError(e.message); }} /> : null}
+        {recording ? <View style={styles.timer}><Text style={styles.timerText}>{formatClock(elapsed)}</Text></View> : null}
+        {error ? <Text accessibilityRole="alert" style={styles.recorderError}>{error}</Text> : null}
+        {script.prompts.length ? <View style={styles.prompter}>
+          <Text style={styles.prompterLabel}>TALK THROUGH THESE</Text>
+          <ScrollView style={styles.prompterList}>
+            {script.prompts.map((item, i) => <View key={item.id} style={styles.prompterItem}>
+              <Text style={styles.prompterNumber}>{i + 1}.</Text>
+              <Text style={styles.prompterText}>{item.text}</Text>
+            </View>)}
+          </ScrollView>
+          {script.truncated ? <Text style={styles.prompterNote}>Cover what you can in {LIMIT} seconds; the team reviews the rest.</Text> : null}
+        </View> : null}
+      </View>
+      <View style={styles.recorderBar}>
+        {saving ? <ActivityIndicator color="#FFFFFF" style={styles.shutter} /> : <Pressable accessibilityRole="button" accessibilityLabel={recording ? 'Stop recording' : 'Start recording'} accessibilityState={{ disabled: !canShoot }} disabled={!canShoot} onPress={recording ? () => camera.current?.stopRecording() : record} style={[styles.shutter, recording && styles.shutterRecording, !canShoot && { opacity: .45 }]} />}
+        {/* expo-camera ends the recording when the camera changes, so flipping is pre-recording only. */}
+        {!recording && !saving ? <Pressable accessibilityRole="button" accessibilityLabel="Switch camera" onPress={() => { setReady(false); setFacing(value => value === 'front' ? 'back' : 'front'); }} style={styles.flipRound}><Text style={styles.flipRoundText}>↻</Text></Pressable> : null}
+      </View>
+    </View>;
+  }
   return <View style={styles.page}>
     <ScreenDoodleField color={mode==='dark'?'#60A5FA':'#1D4ED8'} withBottom /><View style={styles.header}><Pressable accessibilityRole="button" onPress={onBack} disabled={recording || saving}><Text style={[styles.back, (recording || saving) && { opacity: .4 }]}>‹ Change method</Text></Pressable><Text style={styles.eyebrow}>VIDEO DIARY</Text></View>
     {loading ? <ActivityIndicator color="#9DBBFF" /> : <ScrollView contentContainerStyle={styles.content}>
@@ -188,32 +213,8 @@ export function VideoDiaryScreen({ respondentId, script, onBack, onSubmit, mode 
         <Text style={styles.promptText}>Camera and microphone access</Text><Text style={styles.copy}>Both are needed to record your video diary with sound.</Text>
         <Button title="Enable camera & microphone" onPress={async () => { try { await requestCamera(); await requestMic(); } catch (e: any) { setError(e.message); } }} />
         {cameraPermission?.canAskAgain === false || micPermission?.canAskAgain === false ? <Button title="Open device settings" onPress={() => { Linking.openSettings(); }} secondary /> : null}
-      </View> : <>
-        <View style={styles.viewfinder}>
-          {foreground ? <CameraView ref={camera} style={styles.camera} facing={facing} mode="video" videoQuality="720p" videoBitrate={2500000} onCameraReady={() => setReady(true)} onMountError={e => { setReady(false); setError(e.message); }} /> : null}
-          <View style={styles.overlay}>
-            <View style={styles.promptHeader}><Text style={styles.eyebrow}>PROMPT {index + 1} / {script.prompts.length}</Text><Pressable accessibilityRole="button" accessibilityLabel="Flip camera" disabled={recording} onPress={() => { setReady(false); setFacing(value => value === 'front' ? 'back' : 'front'); }} style={[styles.flip, recording && { opacity: .4 }]}><Text style={styles.flipText}>↻ Flip</Text></Pressable><Text style={styles.clock}>{recording ? '● REC' : 'READY'} · {elapsed}s / {LIMIT}s</Text></View>
-            <ScrollView style={styles.promptScroll}>
-              {script.prompts.map((item, i) => <Pressable key={item.id} accessibilityRole="button" onPress={() => setIndex(i)} style={styles.promptItem}>
-                <Text style={i === index ? styles.promptItemActive : styles.promptItemText}>{i + 1}. {item.text}</Text>
-                {i === index && item.hint ? <Text style={styles.hint}>{item.hint}</Text> : null}
-              </Pressable>)}
-            </ScrollView>
-          </View>
-        </View>
-        <View style={styles.controls}>
-          <Pressable accessibilityRole="button" onPress={() => setShowPromptSettings(value => !value)}><Text style={styles.back}>{showPromptSettings ? 'Hide auto-advance settings' : 'Auto-advance settings'}</Text></Pressable>
-          {showPromptSettings ? <>
-            <Pressable accessibilityRole="button" onPress={() => setAuto(value => !value)}><Text style={styles.back}>{auto ? 'Pause auto prompts' : 'Resume auto prompts'}</Text></Pressable>
-            <View style={styles.pace}><Pressable accessibilityRole="button" accessibilityLabel="Faster prompts" onPress={() => setPace(p => Math.max(3, p - 1))}><Text style={styles.back}>−</Text></Pressable><Text style={styles.copy}>{pace}s / prompt</Text><Pressable accessibilityRole="button" accessibilityLabel="Slower prompts" onPress={() => setPace(p => Math.min(90, p + 1))}><Text style={styles.back}>+</Text></Pressable></View>
-            <Text style={styles.copy}>Pausing prompts keeps the camera recording. You can move between prompts yourself.</Text>
-          </> : null}
-        </View>
-        {script.truncated ? <Text style={styles.copy}>Some study questions exceed this recording’s time limit. Cover the prompts shown; the team will review your answers.</Text> : null}
-
-      </>}
+      </View> : null}
     </ScrollView>}
-    {!loading&&!draft&&granted&&Platform.OS!=='web'?<View style={styles.footer}><Button title={saving ? 'Saving recording…' : recording ? 'Stop & review' : 'Start recording'} disabled={saving || !ready || !foreground} onPress={recording ? () => camera.current?.stopRecording() : record} /></View>:null}
   </View>;
 }
 const styles = videoStyles('light', 300);
@@ -221,17 +222,24 @@ function videoStyles(mode: 'light' | 'dark', cameraHeight: number) {
 const dark=mode==='dark';
 return StyleSheet.create({
   page: { flex: 1, backgroundColor: dark?'#0A1628':'#FAF9F7' }, header: { padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  footer: {paddingHorizontal:20,paddingVertical:12,borderTopWidth:1,borderColor:dark?'#304466':'#E2E8F0',backgroundColor:dark?'#0A1628':'#FAF9F7'},
   content: { paddingHorizontal: 20, paddingBottom: 32, gap: 14 }, title: { color: dark?'#F8FAFC':'#0F172A', fontSize: 25, fontWeight: '800' }, copy: { color: dark?'#B7C5D9':'#64748B', fontSize: 13, lineHeight: 20 },
   back: { color: dark?'#B0C8FF':'#1D4ED8', fontSize: 14, fontWeight: '700', paddingVertical: 10, paddingHorizontal: 4 }, eyebrow: { color: dark?'#B0C8FF':'#1D4ED8', fontSize: 10, letterSpacing: 1.1, fontWeight: '800' },
   viewfinder: { height: cameraHeight, borderRadius: 22, overflow: 'hidden', backgroundColor: '#14233B', borderColor: '#304466', borderWidth: 1 }, camera: { width: '100%', height: '100%' },
-  overlay: { position: 'absolute', top: 12, left: 12, right: 12, padding: 14, borderRadius: 16, backgroundColor: dark?'rgba(8,18,34,.44)':'rgba(255,255,255,.46)' }, promptHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
-  clock: { color: dark?'#FFFFFF':'#334155', fontSize: 10, fontWeight: '800' }, promptScroll: { maxHeight: Math.max(120, Math.min(230, cameraHeight - 70)), marginTop: 10 },
-  flip: { backgroundColor: 'rgba(8,18,34,.5)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }, flipText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
   promptText: { color: dark?'#FFFFFF':'#0F172A', fontSize: 21, lineHeight: 28, fontWeight: '700' },
-  promptItem: { paddingVertical: 6 }, promptItemActive: { color: dark?'#FFFFFF':'#0F172A', fontSize: 19, lineHeight: 25, fontWeight: '700' }, promptItemText: { color: dark?'#C3D2E6':'#64748B', fontSize: 14, lineHeight: 20, fontWeight: '600' },
-  hint: { color: dark?'#D3DFF0':'#64748B', fontSize: 13, lineHeight: 19, marginTop: 4 },
-  controls: { gap: 4 }, pace: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  recorder: { flex: 1, backgroundColor: '#000000' },
+  recorderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
+  recorderTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' }, recorderCancel: { color: 'rgba(255,255,255,.8)', fontSize: 14, paddingHorizontal: 8, paddingVertical: 4 },
+  recorderStage: { flex: 1, backgroundColor: '#000000', overflow: 'hidden' },
+  timer: { position: 'absolute', top: 12, alignSelf: 'center', backgroundColor: '#DC2626', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 }, timerText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  recorderError: { position: 'absolute', top: 52, left: 16, right: 16, color: '#FFFFFF', backgroundColor: 'rgba(180,35,24,.85)', borderRadius: 10, padding: 10, fontSize: 13, lineHeight: 19 },
+  prompter: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 16, backgroundColor: 'rgba(0,0,0,.72)' },
+  prompterLabel: { color: 'rgba(255,255,255,.65)', fontSize: 11, fontWeight: '600', letterSpacing: .7, marginBottom: 6 },
+  prompterList: { maxHeight: 208 }, prompterItem: { flexDirection: 'row', gap: 8, paddingVertical: 3 },
+  prompterNumber: { color: 'rgba(255,255,255,.55)', fontSize: 14, lineHeight: 21, fontVariant: ['tabular-nums'] }, prompterText: { flex: 1, color: '#FFFFFF', fontSize: 14, lineHeight: 21, fontWeight: '500' },
+  prompterNote: { color: 'rgba(255,255,255,.65)', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  recorderBar: { height: 112, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000' },
+  shutter: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: 'rgba(255,255,255,.3)' }, shutterRecording: { backgroundColor: '#DC2626' },
+  flipRound: { position: 'absolute', right: 24, width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,.16)', alignItems: 'center', justifyContent: 'center' }, flipRoundText: { color: '#FFFFFF', fontSize: 22 },
   button: { backgroundColor: '#375BC7', minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 14 }, secondary: { backgroundColor: '#334B70', borderColor: '#496188', borderWidth: 1 }, buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   permission: { padding: 22, borderRadius: 20, backgroundColor: dark?'#182A44':'#FFFFFF', gap: 18 }, error: { color: dark?'#FFB5B5':'#B42318', fontSize: 13, lineHeight: 20 },
   analysisCard: { padding: 16, borderRadius: 16, backgroundColor: dark?'#132544':'#F1F5F9', borderColor: dark?'#304466':'#E2E8F0', borderWidth: 1, gap: 8 },

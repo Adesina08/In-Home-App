@@ -7,6 +7,7 @@
 const express = require("express");
 const store = require("../lib/store");
 const accounts = require("../lib/respondentAccounts");
+const profiles = require("../lib/respondentProfiles");
 const { logAudit } = require("../lib/audit");
 const whatsappLinks = require("../lib/whatsappLinks");
 
@@ -214,6 +215,9 @@ router.post("/:token/account-app", async (req, res, next) => {
       ...(["invited", "screened"].includes(respondent.activation_status) ? { activation_status: "activated", activated_at: store.nowSql() } : {}),
     });
 
+    // Attach the one-time profile answered during onboarding to the account,
+    // which is what the mobile app reads; otherwise the app asks again.
+    await profiles.linkVerifiedAccount({ ...respondent, account_id: account.id }, account);
     logAudit(
       `respondent:${respondent.respondent_code}`,
       hadPassword ? "inicio_diary_account_reused" : "inicio_diary_account_created",

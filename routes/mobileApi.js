@@ -8,11 +8,11 @@ const messaging = require("../lib/whatsapp");
 const mobileAuth = require("../lib/mobileAuth");
 const { loadQuestionnaire } = require("../lib/questionnaire");
 const { validateSubmission } = require("../lib/answerValidation");
-const { findTerminateMatch } = require("../lib/skipLogic");
+const { findTerminateMatch, ruleConditions, derivedValues } = require("../lib/skipLogic");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { persistUpload } = require("../lib/mediaStorage");
 const { getProvider: getBrandDetectionProvider, identifyBrandInFile } = require("../lib/brandDetection");
-const { parseCategories } = require("../lib/categories");
+const { detectionCategories } = require("../lib/categories");
 const { analyseLocalMedia, analyseStoredMedia } = require("../lib/mediaTranscriptAnalysis");
 const { logAudit } = require("../lib/audit");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
@@ -245,8 +245,8 @@ router.get("/respondents/:id/questionnaire", requireMobileAuth, async (req, res)
     study: { id: study.id, name: study.name, version: study.version || 1, backEntryHours: study.back_entry_hours ?? 24, diaryMode:study.diary_mode, practiceRequired:respondent.activation_status === "training" },
     respondent: publicRespondent(respondent),
     occasionNumber:(await store.count("diary_records",{respondent_id:respondent.id,status:"submitted",is_practice:0}))+1,
-    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], otherSpecifyOptions:q.otherSpecifyOptions||[], minValue: q.min_value, maxValue: q.max_value, stepValue: q.step_value || null, maxSelections: q.max_selections || null })),
-    rules: rules.map((r) => ({ id: r.id, targetQuestionId: r.target_question_id, conditionQuestionId: r.condition_question_id, operator: r.operator, value: r.value, action: r.action, terminateScope: r.terminate_scope || null })),
+    questions: questions.map((q) => ({ rotateOptions:q.rotate_options,everyNthOccasion:q.every_nth_occasion,fromHourUtc:q.from_hour_utc,toHourUtc:q.to_hour_utc,id: q.id, code: q.code, section: q.section || null, orderIndex: q.order_index, type: q.type, text: q.text, required: !!q.required, options: q.options || [], otherSpecifyOptions:q.otherSpecifyOptions||[], optionScores:q.option_scores_json||null, exclusiveOptions:q.exclusiveOptions||[], minValue: q.min_value, maxValue: q.max_value, stepValue: q.step_value || null, maxSelections: q.max_selections || null })),
+    rules: rules.map((r) => ({ id: r.id, targetQuestionId: r.target_question_id, targetSection: r.target_section || null, conditionQuestionId: r.condition_question_id, operator: r.operator, value: r.value, conditions: ruleConditions(r), match: r.match === "any" ? "any" : "all", sourceQuestionId: r.source_question_id ?? null, skipToEnd: r.skip_to_end ? 1 : 0, isDefault: r.is_default ? 1 : 0, variableName: r.variable_name || null, variableValue: r.variable_value ?? null, action: r.action, terminateScope: r.terminate_scope || null })),
   });
 });
 
@@ -282,19 +282,20 @@ router.post("/respondents/:id/diary/media-analysis", requireMobileAuth, upload.s
     ? { transcriptStatus: "unavailable", transcriptText: null, scoreStatus: "unavailable", score: null, scoreRationale: null }
     : await analyseLocalMedia({ filePath: req.file.path, mediaType: question.type, question });
 
-  let detectionStatus = "unavailable", detectedBrand = null, detectedCategory = null, detectionConfidence = null;
+  let detectionStatus = "unavailable", detectedBrand = null, detectedCategory = null, detectionConfidence = null, categoryConfidence = null;
   if (question.type !== "audio") {
     const study = await store.findOne("studies", { id: respondent.study_id });
     const brands = await require("../lib/productCandidates").forStudy(study);
-    const categories = parseCategories(study.category);
+    const categories = detectionCategories(study);
     const outcome = await identifyBrandInFile(req.file.path, question.type, req.file.mimetype || null, brands, categories);
     detectionStatus = outcome.status;
     detectedBrand = outcome.detectedBrand;
     detectedCategory = outcome.detectedCategory;
     detectionConfidence = outcome.confidence;
+    categoryConfidence = outcome.categoryConfidence;
   }
 
-  res.json({ questionId: question.id, ...transcriptResult, detectionStatus, detectedBrand, detectedCategory, detectionConfidence });
+  res.json({ questionId: question.id, ...transcriptResult, detectionStatus, detectedBrand, detectedCategory, detectionConfidence, categoryConfidence });
 });
 
 // Video mode preview: the same instant transcript + brand/category read as
@@ -310,12 +311,12 @@ router.post("/respondents/:id/diary/video-preview", requireMobileAuth, upload.si
 
   const study = await store.findOne("studies", { id: respondent.study_id });
   const brands = await require("../lib/productCandidates").forStudy(study);
-  const categories = parseCategories(study.category);
+  const categories = detectionCategories(study);
 
   const transcriptResult = await analyseLocalMedia({ filePath: req.file.path, mediaType: "video", question: null });
   const outcome = await identifyBrandInFile(req.file.path, "video", req.file.mimetype || null, brands, categories);
 
-  res.json({ ...transcriptResult, detectionStatus: outcome.status, detectedBrand: outcome.detectedBrand, detectedCategory: outcome.detectedCategory, detectionConfidence: outcome.confidence });
+  res.json({ ...transcriptResult, detectionStatus: outcome.status, detectedBrand: outcome.detectedBrand, detectedCategory: outcome.detectedCategory, detectionConfidence: outcome.confidence, categoryConfidence: outcome.categoryConfidence });
 });
 
 // Video mode: the respondent's part ends here. The video is saved as evidence
@@ -330,7 +331,7 @@ router.post("/respondents/:id/diary/analyze-video", requireMobileAuth, upload.si
   const study = await store.findOne("studies", { id: respondent.study_id });
   const { questions } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const brands = await require("../lib/productCandidates").forStudy(study);
-  const categories = parseCategories(study.category);
+  const categories = detectionCategories(study);
   const isPractice = respondent.activation_status === "training" || req.body.practice === "1" ? 1 : 0;
 
   const now = store.nowSql();
@@ -406,7 +407,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
     const v = body[`q_${q.id}`];
     if (v !== undefined && v !== "") skipAnswers[q.id] = Array.isArray(v) ? v.join("|") : String(v);
   });
-  const terminateMatch = isSubmit ? findTerminateMatch(rules, skipAnswers) : null;
+  const terminateMatch = isSubmit ? findTerminateMatch(rules, skipAnswers, questions) : null;
   const isTerminated = !!terminateMatch;
 
   if (isSubmit && !isTerminated) {
@@ -423,6 +424,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
     participation_kind:req.body.participation_kind === "period_summary" ? "period_summary" : "occasion",
     channel: "app", status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"),
     is_practice: isPractice, entry_mode: entryMode, terminate_note: terminateNote,
+    ...derivedValues(questions, rules, skipAnswers),
   });
 
   if(recordId===null)return;
@@ -436,7 +438,7 @@ router.post("/respondents/:id/diary", requireMobileAuth, upload.any(), submissio
   let brandProvider = null;
   try { brandProvider = getBrandDetectionProvider(); } catch (e) { console.error("Mobile brand detection unavailable:", e.message); }
   const brands = await require("../lib/productCandidates").forStudy(study);
-  const categories = parseCategories(study.category);
+  const categories = detectionCategories(study);
   const mediaAnalysisJobs = [];
   // Brand detection on a voice note reads its transcript, which only exists
   // once analyseStoredMedia (pushed to mediaAnalysisJobs below) finishes --

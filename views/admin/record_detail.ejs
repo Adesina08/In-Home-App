@@ -58,6 +58,14 @@
     </div>
   <% } %>
 
+  <% const recordVariables = (() => { try { return JSON.parse(record.variables_json || '{}') || {}; } catch (_) { return {}; } })(); %>
+  <% if (record.score != null || Object.keys(recordVariables).length) { %>
+    <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+      <% if (record.score != null) { %><span class="rounded-full bg-brand-50 text-brand-800 font-semibold px-3 py-1">Score <%= record.score %></span><% } %>
+      <% Object.entries(recordVariables).forEach(([name, value]) => { %><span class="rounded-full bg-slate-100 text-slate-700 px-3 py-1"><span class="font-mono"><%= name %></span> = <%= value %></span><% }) %>
+    </div>
+  <% } %>
+
   <% if (record.terminate_note) { %>
     <div class="mt-4 flex items-start gap-2 bg-slate-100 border border-slate-200 text-slate-600 text-sm rounded-xl p-3">
       <%- icon('stop', 'w-4 h-4 mt-0.5 shrink-0') %>
@@ -114,15 +122,23 @@
             <div class="mt-2.5 text-xs">
               <span class="text-slate-400">Brand detection:</span>
               <% if (m.detection_status === 'done' && m.detected_brand) { %>
-                <span class="font-semibold text-emerald-700"><%= m.detected_brand %><% if (m.detection_category) { %> · <%= m.detection_category %><% } %><% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>% logo confidence)<% } %></span>
+                <span class="font-semibold text-emerald-700"><%= m.detected_brand %><% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>% confidence)<% } %></span>
               <% } else if (m.detection_status === 'needs_review' && m.detected_brand) { %>
-                <span class="font-semibold text-amber-700"><%= m.detected_brand %><% if (m.detection_category) { %> · <%= m.detection_category %><% } %> — needs review<% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>)<% } %></span>
+                <span class="font-semibold text-amber-700"><%= m.detected_brand %> — needs review<% if (m.detection_confidence != null) { %> (<%= Math.round(Number(m.detection_confidence) * 100) %>% confidence)<% } %></span>
+              <% } else if (m.detection_status === 'unavailable' && m.detection_category) { %>
+                <span class="text-slate-500">no brand visible</span>
               <% } else if (m.detection_status === 'done') { %>
                 <span class="text-slate-500">ran, no brand matched</span>
               <% } else { %>
                 <span class="text-slate-500"><%= m.detection_status === 'unavailable' ? 'unavailable (no provider configured)' : m.detection_status %></span>
               <% } %>
             </div>
+            <% if (m.detection_category) { %>
+              <div class="mt-1 text-xs">
+                <span class="text-slate-400">Category:</span>
+                <span class="font-semibold text-slate-700"><%= canonicalCategory(m.detection_category) %><% if (categoryGroup(m.detection_category, study.custom_categories)) { %> · <%= categoryGroup(m.detection_category, study.custom_categories) %><% } %><% if (m.detection_category_confidence != null) { %> (<%= Math.round(Number(m.detection_category_confidence) * 100) %>% confidence)<% } %></span>
+              </div>
+            <% } %>
           <% } %>
 
           <% if (m.media_type === 'audio' || m.media_type === 'video') { %>

@@ -57,16 +57,22 @@
       </div>
       <div class="mt-4">
         <label class="block text-sm font-medium text-slate-600 mb-1.5">Categories</label>
-        <p class="text-xs text-slate-400 mb-2.5">Tick every category this study covers — a household diary often spans more than one. Automatic brand detection classifies each detected product into one of the categories ticked here, so untick any that don't apply to keep that classification accurate.</p>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 border border-slate-200 rounded-xl p-3.5 bg-slate-50/60">
-          <% CATEGORIES.forEach(c => { %>
-            <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-              <input type="checkbox" name="category" value="<%= c %>" <%= selectedCategories.includes(c) ? 'checked' : '' %>
-                     class="h-4 w-4 rounded border-slate-300 accent-signal" />
-              <%= c %>
-            </label>
+        <p class="text-xs text-slate-400 mb-2.5">Tick every category this study covers — a household diary often spans more than one. Automatic detection classifies every photo and video into one of the categories ticked here, branded or not (a home-cooked plate of rice lands in Rice), so untick any that don't apply to keep that classification accurate.</p>
+        <div class="border border-slate-200 rounded-xl p-3.5 bg-slate-50/60">
+          <% CATEGORY_GROUPS.forEach(g => { %>
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-400 mt-3 first:mt-0 mb-1.5"><%= g.group %></div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+              <% g.categories.forEach(c => { %>
+                <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input type="checkbox" name="category" value="<%= c.name %>" <%= selectedCategories.includes(c.name) ? 'checked' : '' %>
+                         class="h-4 w-4 rounded border-slate-300 accent-signal" />
+                  <%= c.name %>
+                </label>
+              <% }) %>
+            </div>
           <% }) %>
         </div>
+        <%- include('../partials/custom_categories', { customs: study.custom_categories || [], compact: false }) %>
       </div>
     </div>
 

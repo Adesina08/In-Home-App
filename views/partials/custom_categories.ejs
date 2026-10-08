@@ -1,0 +1,42 @@
+<%#
+  "Add a category" rows under the built-in category checklist. Used by the
+  new-study form and study settings. Locals: customs ([{ name, group,
+  description }]), compact (smaller type for the create-study panel).
+%>
+<% const rows = typeof customs !== 'undefined' && Array.isArray(customs) ? customs : []; %>
+<% const small = typeof compact !== 'undefined' && compact; %>
+<% const row = (c) => { %>
+  <div class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1.4fr)_auto] gap-2 items-start" data-custom-row>
+    <input type="text" name="custom_category_name" value="<%= c.name %>" maxlength="60" placeholder="Category name, e.g. Zobo" aria-label="Custom category name" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 <%= small ? 'text-xs' : 'text-sm' %> bg-white" />
+    <select name="custom_category_group" aria-label="Group" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 <%= small ? 'text-xs' : 'text-sm' %> bg-white">
+      <% CUSTOM_GROUPS.forEach(g => { %><option value="<%= g %>" <%= (c.group || 'Other') === g ? 'selected' : '' %>><%= g %></option><% }) %>
+    </select>
+    <input type="text" name="custom_category_description" value="<%= c.description %>" maxlength="160" placeholder="What belongs here (helps the AI), e.g. hibiscus drink" aria-label="What belongs in this category" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 <%= small ? 'text-xs' : 'text-sm' %> bg-white" />
+    <button type="button" data-custom-remove aria-label="Remove this category" class="text-slate-400 hover:text-red-600 px-2 py-1.5 <%= small ? 'text-xs' : 'text-sm' %>">✕</button>
+  </div>
+<% } %>
+<div class="mt-3" data-custom-categories>
+  <div class="<%= small ? 'text-[12.5px]' : 'text-sm' %> font-semibold text-slate-600">Not on the list? Add your own</div>
+  <p class="text-xs text-slate-400 mt-0.5 mb-2">Custom categories are used by automatic detection and reports exactly like the ones above. A name that is already on the list is ticked there instead of being added twice.</p>
+  <div class="space-y-2" data-custom-rows><% rows.forEach(c => row(c)) %></div>
+  <template data-custom-template><% row({ name: '', group: 'Other', description: '' }) %></template>
+  <button type="button" data-custom-add class="mt-2 <%= small ? 'text-xs' : 'text-sm' %> font-semibold text-signal hover:underline">+ Add a category</button>
+</div>
+<script>
+  (function () {
+    if (window.__customCategoriesBound) return;
+    window.__customCategoriesBound = true;
+    document.addEventListener("click", function (e) {
+      var add = e.target.closest("[data-custom-add]");
+      if (add) {
+        var box = add.closest("[data-custom-categories]");
+        var rows = box.querySelector("[data-custom-rows]");
+        rows.appendChild(box.querySelector("[data-custom-template]").content.cloneNode(true));
+        rows.lastElementChild.querySelector("input").focus();
+        return;
+      }
+      var remove = e.target.closest("[data-custom-remove]");
+      if (remove) remove.closest("[data-custom-row]").remove();
+    });
+  })();
+</script>

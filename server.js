@@ -11,7 +11,7 @@ const store = require("./lib/store");
 const { requireLogin } = require("./lib/auth");
 const { icon } = require("./lib/icons");
 const { renderPipeHtml } = require("./lib/piping");
-const { CATEGORIES, formatCategories } = require("./lib/categories");
+const { CATEGORIES, CATEGORY_GROUPS, CUSTOM_GROUPS, formatCategories, canonicalCategory, categoryGroup } = require("./lib/categories");
 const { STUDY_TABS, studyTabHref, studyTabNeighbours } = require("./lib/studyTabs");
 const { getMediaUrl } = require("./lib/mediaStorage");
 const { ensureDemoSuperadmin } = require("./lib/demoSuperadmin");
@@ -22,6 +22,8 @@ const PORT = process.env.PORT || 3000;
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
+// Research reviews may contain findings and selected moments from an entire study.
+app.use("/admin/video-summary/review", express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -74,6 +76,10 @@ app.locals.icon = icon;
 app.locals.renderPipeHtml = renderPipeHtml;
 app.locals.CATEGORIES = CATEGORIES;
 app.locals.formatCategories = formatCategories;
+app.locals.CATEGORY_GROUPS = CATEGORY_GROUPS;
+app.locals.CUSTOM_GROUPS = CUSTOM_GROUPS;
+app.locals.canonicalCategory = canonicalCategory;
+app.locals.categoryGroup = categoryGroup;
 app.locals.STUDY_TABS = STUDY_TABS;
 app.locals.studyTabHref = studyTabHref;
 app.locals.studyTabNeighbours = studyTabNeighbours;
@@ -143,6 +149,9 @@ app.use("/join", require("./routes/join"));
 // The first invitation step is isolated from the full diary questionnaire so
 // unrelated diary configuration cannot take down public onboarding.
 app.use("/invite", require("./routes/invitePresurvey"));
+// Invitations collect the one-time INICIO profile after contact verification,
+// before the participation-method choice.
+app.use("/invite", require("./routes/inviteProfile"));
 // Completed Mobile App invitations are intercepted here so a browser never
 // renders the installed-app login page. Unfinished invitations fall through
 // to the normal setup state machine below.

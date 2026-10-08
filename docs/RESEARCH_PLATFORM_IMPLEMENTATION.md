@@ -15,7 +15,7 @@ Implemented in the local checkout:
 - [x] Automated regression tests, desktop/mobile browser checks and mobile type checking
 - [x] Unified Fieldwork & Analysis dashboard with charts, response trends, crosstabs and operations controls
 - [x] Superadmin-only staff/client provisioning through Resend with expiring temporary credentials
-- [x] Azure OpenAI summaries with automatic stale-data refresh and manual version generation
+- [x] OpenAI summaries with automatic stale-data refresh and manual version generation
 - [x] Unified questionnaire builder with downloadable XLSX template, inline skip/termination rules, working Other-specify fields and embedded desktop/mobile preview
 - [x] Country/state study scope, multi-channel reminders, redesigned consent and client KPI configuration
 - [x] Superadmin bulk respondent deletion with linked data and physical-media cleanup

@@ -26,7 +26,7 @@
         <% if (Array.isArray(sample)) sample.forEach(a => { %><blockquote style="margin-top:14px;font-size:13px"><strong><%= a.question %></strong><p><%= a.answer %></p></blockquote><% }) %>
       </details>
     <% } else { %><div class="report-empty">No saved summary for this period yet. Generate one from the study’s figures and up to <%= openTextSampleSize %> eligible written and transcribed responses.</div><% } %>
-    <% if (!aiConfigured) { %><p class="report-muted" style="margin-top:16px">Connect Azure OpenAI or Gemini (AI_SUMMARY_PROVIDER) to generate summaries. The latest successful summary remains visible if the provider is unavailable.</p><% } %>
+    <% if (!aiConfigured) { %><p class="report-muted" style="margin-top:16px">Configure OpenAI (OPENAI_API_KEY) or Gemini (AI_SUMMARY_PROVIDER=gemini) to generate summaries. The latest successful summary remains visible if the provider is unavailable.</p><% } %>
   </section>
   <%- include('../partials/questionnaire_dashboard', { questionnaireDashboard }) %>
   <%- include('../partials/report_dashboard_charts', { report }) %>

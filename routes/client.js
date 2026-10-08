@@ -24,6 +24,10 @@ async function loadPage(req, res, next) {
   const summaries=await store.find('ai_summaries',{study_id:study.id,review_status:'approved',period_start:period.from||null,period_end:period.to||null},{sort:{generated_at:-1,id:-1}});
   const summary=summaries[0];
   const insight=summary&&!report.suppressed?{...summary,narrative:summary.client_narrative||summary.narrative}:null;
+  // Quotes are respondent speech, so a client sees one only with a media grant and that person's media consent.
+  const videoSummary=require('../lib/videoSummary');
+  const quoteConsent=new Set(user.role!=='client'||grant.media?raw.respondents.filter(r=>user.role!=='client'||r.media_consent===true).map(r=>r.id):[]);
+  const videoInsight=report.suppressed?null:videoSummary.clientView(await videoSummary.latestApproved(study.id,period),quoteConsent);
   const a=report.analytics;
   const fmt=n=>n===null||n===undefined?'—':`${n}%`;
   const builtIn={completion_rate:fmt(a.compliance.rate),compliance_rate:fmt(a.compliance.rate),active_respondents:report.suppressed?'—':raw.respondents.length,qc_flag_rate:report.suppressed?'—':fmt(require('../lib/researchMetrics').percent(raw.flagged,raw.submitted)),brand_incidence:'See brand table',avg_occasions_per_week:a.avg_occasions_per_week??'—'};
@@ -39,7 +43,7 @@ async function loadPage(req, res, next) {
   }
   const questionnaireDashboard=require('../lib/questionnaireDashboard').buildQuestionnaireDashboard(raw,{minimumBase:user.role==='client'?report.minimumBase:1,suppressed:!!report.suppressed,allowText:user.role!=='client'||!!grant.text,allowMedia:user.role!=='client'||!!grant.media,media:dashboardMedia});
   const { objectiveGroups, OBJECTIVE_KEYS } = require('../lib/studyObjectives');
-  res.locals.clientData={study,studies,report,questionnaireDashboard,kpis:kpiValues.filter(kpi=>!OBJECTIVE_KEYS.has(kpi.objective_key)),objectiveGroups:objectiveGroups(kpiValues),insight,grant,completionRate:a.compliance.rate,active:report.suppressed?'—':raw.respondents.length,totalRespondents:report.suppressed?'—':raw.respondents.length,...period};
+  res.locals.clientData={study,studies,report,questionnaireDashboard,kpis:kpiValues.filter(kpi=>!OBJECTIVE_KEYS.has(kpi.objective_key)),objectiveGroups:objectiveGroups(kpiValues),insight,videoInsight,grant,completionRate:a.compliance.rate,active:report.suppressed?'—':raw.respondents.length,totalRespondents:report.suppressed?'—':raw.respondents.length,...period};
   next();
 }
 router.get(['/', '/insights'], loadPage, (req, res) => res.render('client/dashboard', { ...res.locals.clientData, insights: req.path === '/insights' }));
@@ -55,6 +59,21 @@ router.get('/analysis',loadPage,async(req,res)=>{
   const comparison=!base.report.suppressed&&data.comparison?{...data.comparison,brands:data.comparison.brands.filter(b=>b.consumers>=min&&b.previousConsumers>=min)}:null;
   const themes=base.report.suppressed?[]:data.themes.filter(t=>t.consumers>=min);
   res.render('client/analysis',{...base,segment:data.segment,segments:require('../lib/researchInsights').SEGMENTS,tabs,comparison,themes,suppress,ask:req.query.ask||'',queryLabel:interpreter.label});
+});
+// The reel shows respondents' faces and voices: a client gets it only for an
+// approved summary, with a media grant, above the minimum base, and while
+// everyone in it still consents to their media being shared.
+router.get('/video-summary/:id/reel',loadPage,async(req,res)=>{
+  const {study,grant,report}=res.locals.clientData;
+  const videoSummary=require('../lib/videoSummary');
+  const row=await store.findOne('video_summaries',{id:Number(req.params.id),study_id:study.id,review_status:'approved'});
+  if(!row||!grant.media||report.suppressed)return res.sendStatus(404);
+  if(req.session.user.role==='client'){
+    const owners=videoSummary.reelRespondentIds(row);
+    const people=await store.find('respondents',{id:{$in:owners}});
+    if(people.length!==owners.length||people.some(r=>r.media_consent!==true||r.consent_status!=='given'||r.withdrawn_at||r.erased_at))return res.sendStatus(404);
+  }
+  videoSummary.sendReel(res,row);
 });
 router.get('/reports',loadPage,async(req,res)=>{
   const base=res.locals.clientData,min=Math.max(2,Number(base.study.minimum_base_size)||5);

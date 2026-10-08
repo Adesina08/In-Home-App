@@ -43,7 +43,7 @@
                     <% const selected = Array.isArray(current) ? current.map(String) : (current ? [String(current)] : []); %>
                     <% (q.options || []).forEach((opt) => { %>
                       <label class="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 cursor-pointer">
-                        <input type="checkbox" name="pq_<%= q.id %>" value="<%= opt %>" <%= selected.includes(String(opt)) ? 'checked' : '' %> />
+                        <input type="checkbox" name="pq_<%= q.id %>" value="<%= opt %>" <%= selected.includes(String(opt)) ? 'checked' : '' %> <%= (q.exclusiveOptions || []).includes(opt) ? 'data-exclusive=1' : '' %> />
                         <span class="text-sm text-slate-700"><%= opt %></span>
                       </label>
                     <% }) %>
@@ -65,5 +65,18 @@
     </form>
   </div>
 </div>
+
+<script>
+  // Exclusive options ("None of these"): ticking one clears the rest of the
+  // question; ticking a regular option clears any exclusive one.
+  document.addEventListener('change', function (e) {
+    var box = e.target;
+    if (!box || box.type !== 'checkbox' || !box.checked || !/^pq_/.test(box.name)) return;
+    var exclusive = box.dataset.exclusive === '1';
+    document.querySelectorAll('input[type="checkbox"][name="' + box.name + '"]:checked').forEach(function (other) {
+      if (other !== box && (exclusive || other.dataset.exclusive === '1')) other.checked = false;
+    });
+  });
+</script>
 
 <%- include('../partials/onboarding_footer') %>

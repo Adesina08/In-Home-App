@@ -2,7 +2,7 @@
 
 This app is a **working functional prototype**: every P0 flow in the MVP spec runs end to end (onboarding, diary engine, QC, reminders, dashboards, export), the Developer/Config console means none of the business inputs are hardcoded, a questionnaire can be uploaded from a spreadsheet or document and previewed before it's committed, the respondent diary offers three entry methods (Standard Form, AI-assisted Video, and Voice Note), and the whole app — including the respondent diary — is an installable mobile PWA with one consistent visual design system.
 
-**As of this revision, Azure AI Vision for brand detection and video field pre-fill, Azure AI Speech for voice-note transcription, Azure OpenAI for study summaries, Resend for staff credential email, and pluggable media storage have real integrations.** They remain inactive until the corresponding credentials are supplied. What's still pending is everything that needs an account, a domain, or an organizational decision this checkout cannot provide: provider credentials, a real domain and TLS, staff SSO, a managed production database, a secrets vault, backups, an approved retention policy, and monitoring.
+**As of this revision, OpenAI (gpt-5.4-mini) for brand detection, video field pre-fill, study summaries and answer scoring, OpenAI speech-to-text (gpt-4o-mini-transcribe) for transcription, Resend for staff credential email, and pluggable media storage have real integrations.** They remain inactive until the corresponding credentials are supplied. What's still pending is everything that needs an account, a domain, or an organizational decision this checkout cannot provide: provider credentials, a real domain and TLS, staff SSO, a managed production database, a secrets vault, backups, an approved retention policy, and monitoring.
 
 A companion document, the **Azure Deployment Runbook**, walks through provisioning every Azure resource this app can use (App Service hosting, AI Vision, AI Speech, Blob Storage, Key Vault) end to end with exact Portal steps and CLI commands, sized to fit an Azure free-account $200/30-day credit. This document (PRODUCTION_READINESS.md) stays focused on *what* needs doing and *where in the code* it plugs in; the runbook is the *how* for the Azure-specific pieces.
 
@@ -151,29 +151,23 @@ The app writes an `audit_log` table (who did what, when) but has no external mon
 2. Add uptime/error alerting (Sentry for exceptions, a simple uptime check hitting `/login`).
 3. The reminder engine now also runs automatically on an interval (`lib/scheduler.js`, default every 15 minutes — set `REMINDER_ENGINE_INTERVAL_MINUTES` to change it, or `REMINDER_ENGINE_AUTORUN=false` to disable and go back to manual-only) in addition to the "Run Reminder Engine" button, which still works for an on-demand run. This is a single-process `setInterval`, which is fine for one App Service instance; if you ever scale to multiple instances, move it to a real external scheduler/queue worker so it isn't triggered redundantly by every instance, with alerting if a run fails or doesn't happen.
 
-## B9 — Brand detection on photo/video evidence (Azure AI Vision) — implemented, needs a real resource
+## B9 — Brand detection on photo/video evidence (OpenAI) — implemented, needs an API key
 
-**Where it plugs in:** `lib/brandDetection.js` defines a provider interface — a `MockBrandDetectionProvider` (default; every photo/video is queued but marked `unavailable`, visible on Admin → Study → Media Review) and an `AzureVisionProvider` that **actually calls Azure AI Vision** once you supply credentials.
+All AI features use one OpenAI API key (`OPENAI_API_KEY`). Azure OpenAI, Azure AI Speech and Azure AI Vision were retired; leftover `azure_*` provider values are read as `openai`.
 
-**What the real provider does:** for a photo, it calls Azure Image Analysis v3.2's dedicated `Brands` feature for logo name, confidence, and bounding box, alongside v4 `tags` + `read`/OCR as a fallback. For a video, it samples up to 5 frames across the whole recording (via the bundled `ffmpeg-static` binary — no system ffmpeg install needed) and analyzes each. Only an exact normalized configured-brand match above `BRAND_LOGO_MIN_CONFIDENCE` (default `0.70`) and clear of a competing brand by `BRAND_LOGO_MIN_MARGIN` (default `0.10`) is accepted automatically. Low-confidence, OCR-only, and ambiguous candidates are marked `needs_review` instead of being treated as final.
+**Where it plugs in:** `lib/brandDetection.js` defines a provider interface — a `MockBrandDetectionProvider` (default when unset; every photo/video is queued but marked `unavailable`, visible on Admin → Study → Media Review) and an LLM provider that sends the image to OpenAI `gpt-5.4-mini` (or Gemini with `BRAND_DETECTION_PROVIDER=gemini_vision`).
 
-**What you need to do:**
-1. Create an Azure AI Vision resource (the Azure Deployment Runbook has exact steps) and get its endpoint + key.
-2. Set in `.env`: `BRAND_DETECTION_PROVIDER=azure_vision`, `AZURE_VISION_ENDPOINT`, `AZURE_VISION_KEY`.
-3. That's it — no code changes needed. Until you do this, `BRAND_DETECTION_PROVIDER=mock` keeps detection `unavailable` for every item, exactly as before.
+**What the real provider does:** for a photo, the model reads the brand printed on the pack and classifies it into one of the study's categories, returning a confidence. For a video, up to 3 frames are sampled (bundled `ffmpeg-static`, no system install) and the most confident read wins. For a voice note, the same read runs on the transcript. It is open-vocabulary, so market-specific brands work; the study's configured brands are only a naming hint. Reads below `BRAND_LOGO_MIN_CONFIDENCE` (default `0.70`) are marked `needs_review`.
 
-**Honest limits, not fixed by more configuration:** Azure's built-in Brands model recognizes thousands of popular global logos, but it cannot recognize a study-specific or local logo that is absent from Microsoft's catalogue. Those brands require a labelled image set and a custom-trained detector, plus holdout-set accuracy measurement. Human review remains required for `needs_review` results. Azure Image Analysis and Custom Vision are scheduled for retirement on 25 September 2028, so any new custom model should be planned on Azure Machine Learning AutoML rather than depending on a new long-lived Custom Vision deployment.
+**What you need to do:** set `OPENAI_API_KEY` and `BRAND_DETECTION_PROVIDER=openai`. `OPENAI_MODEL` (default `gpt-5.4-mini`) or `OPENAI_VISION_MODEL` overrides the model.
 
-**Video mode reuses this same resource.** The respondent diary offers three ways to log an entry — Standard Form, Video (AI-assisted), and Voice Note. In Video mode the respondent records one video up front and `lib/videoFieldExtraction.js` (same pattern: `MockVideoFieldExtractionProvider` default, `AzureVideoFieldExtractionProvider` real) pre-fills whatever single/multi-select diary questions it can confidently match against the video's sampled frames — leaving everything else, including anything numeric like a servings count (no honest signal for that from generic tagging), for the respondent to answer. Set `VIDEO_FIELD_EXTRACTION_PROVIDER=azure_vision` — it reads the same `AZURE_VISION_ENDPOINT` / `AZURE_VISION_KEY`, no separate resource needed.
+**Honest limits:** model reads can be wrong, especially on blurred or partly hidden packs; `needs_review` results still need a human. The model gives no bounding boxes.
 
-## B10 — Voice note transcription (Azure AI Speech) — implemented, needs a real resource
+**Video mode** (`lib/videoFieldExtraction.js`): with `VIDEO_FIELD_EXTRACTION_PROVIDER=openai`, the respondent's video is sampled into up to 5 frames and its audio transcribed; both go to `gpt-5.4-mini` with each single/multi question and its own options. An answer is kept only if it is exactly one of those options; numeric and free-text questions are never guessed. Every pre-filled answer is stored unverified with a QC flag for a researcher to confirm.
 
-**Where it plugs in:** `lib/audioTranscription.js` — a `MockAudioTranscriptionProvider` (default; every voice note marked `unavailable`) and an `AzureSpeechProvider` that **actually calls Azure AI Speech's Fast Transcription REST API** (a synchronous "send audio, get text back" call — no polling needed, ideal for a short voice note) once you supply credentials. In Voice Note mode the respondent answers the diary questions manually as usual, then records a short spoken summary at the end; the recording is always attached as a QC-reviewable audio note, and this is what additionally transcribes it to text.
+## B10 — Voice note transcription (OpenAI) — implemented, needs an API key
 
-**What you need to do:**
-1. Create an Azure AI Speech resource (Azure Deployment Runbook has exact steps) and get its key + endpoint.
-2. Set in `.env`: `AUDIO_TRANSCRIPTION_PROVIDER=azure_speech`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT` (copy the exact value from the resource's "Keys and Endpoint" Portal page — most reliable; `AZURE_SPEECH_REGION` works as a fallback if you only have the region).
-3. That's it — no code changes needed. Until you do this, `AUDIO_TRANSCRIPTION_PROVIDER=mock` keeps transcription `unavailable` for every voice note; the recording itself is always saved and playable from Media Review either way, since it's an independent QC artifact regardless of transcription.
+**Where it plugs in:** `lib/audioTranscription.js` (end-of-diary Voice Note, WhatsApp voice notes) and `lib/localAudioTranscription.js` (standard-mode audio/video answers and video mode). `AUDIO_TRANSCRIPTION_PROVIDER=openai` sends the audio to OpenAI's transcription API. `gpt-5.4-mini` has no audio input, so speech-to-text uses OpenAI's dedicated transcription model, `gpt-4o-mini-transcribe` by default (`OPENAI_TRANSCRIBE_MODEL` to change it, `OPENAI_TRANSCRIBE_LANGUAGE` for an optional language hint). Uploads are limited to 25 MB; video answers send a 16 kHz mono extract capped at two minutes. `gemini_speech` remains an alternative, and `mock` keeps transcription `unavailable` — the recording itself is always saved and playable from Media Review either way.
 
 ## B11 — Diary reminder push notifications (Web Push) — implemented and configured
 
@@ -188,11 +182,11 @@ The app writes an `audit_log` table (who did what, when) but has no external mon
 - iOS Safari only supports web push for a PWA actually added to the home screen (iOS 16.4+), not for a regular Safari tab — respondents on iPhone need to use "Add to Home Screen" (the QR code flow already in Admin → Respondents does this) for reminders to reach them.
 - The due/missed timing is relative to each respondent's own last entry (Admin → Study Config → Reminder Schedule: "due after X hours" / "missed after Y hours"), not a fixed clock time — e.g. "due after 24 hours" fires whenever it's actually been 24 hours since their last entry, whatever time of day that is. If you'd rather notify everyone at fixed times of day (e.g. always 9am and 8pm) instead, that's a different, fairly small follow-up change to `lib/reminders.js` and the study settings, not implemented here.
 
-## B12 — Azure OpenAI study summaries — implemented, needs a deployment
+## B12 — OpenAI study summaries and answer scoring — implemented, needs an API key
 
-`lib/aiSummary.js` sends the current study metrics and open-text evidence to the configured Azure OpenAI deployment. The AI Summary screen automatically requests a new version when its source signature becomes stale; **Generate updated summary** always requests a fresh version. A failed request never replaces the latest successful summary, and the application does not fabricate a rules-based fallback.
+`lib/aiSummary.js` sends the current study metrics and open-text evidence to OpenAI (`gpt-5.4-mini`, Responses API with `store: false`). The AI Summary screen automatically requests a new version when its source signature becomes stale; **Generate updated summary** always requests a fresh version. A failed request never replaces the latest successful summary, and the application does not fabricate a rules-based fallback. `lib/transcriptScoring.js` scores spoken answers with the same model.
 
-Configure `AI_SUMMARY_PROVIDER=azure_openai`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT`, and `AZURE_OPENAI_API_VERSION`. The deployment must support the chat completions endpoint used by the configured API version.
+Configure `OPENAI_API_KEY`, `AI_SUMMARY_PROVIDER=openai` and `TRANSCRIPT_SCORING_PROVIDER=openai` (both are also the defaults). `OPENAI_SUMMARY_MODEL` optionally overrides the model for summaries. Gemini (`gemini`) remains an alternative for both. Summaries saved under the retired Azure OpenAI provider are regenerated the next time their page is opened.
 
 ---
 
@@ -221,12 +215,12 @@ These cannot be done in this sandbox — they need the real deployment from tier
 | QC rule thresholds | Set per-study via Admin → Study Config → Settings & Thresholds (no code change needed) |
 | Questionnaire, inline skip/termination logic, brand options, consent, KPIs | All configurable via Admin → Study Config — no code change needed |
 | Questionnaire spreadsheet/document import | `lib/questionnaireParser.js`, `routes/admin.js` (`/questionnaire/upload`, `/questionnaire/preview/:id`) |
-| Brand detection provider | `lib/brandDetection.js`, `lib/azureVisionClient.js`, `.env` (B9) |
+| Brand detection provider | `lib/brandDetection.js`, `lib/openaiClient.js`, `.env` (B9) |
 | Video-mode field-extraction provider | `lib/videoFieldExtraction.js`, `.env` (B9) |
 | Voice-note transcription provider | `lib/audioTranscription.js`, `.env` (B10) |
 | Outbound SMS/WhatsApp provider | `lib/whatsapp.js`, `.env` (B1) |
 | Staff/client credential email | `lib/staffEmail.js`, `.env` (B1) |
-| Azure OpenAI summaries | `lib/aiSummary.js`, `.env` (B12) |
+| OpenAI summaries and scoring | `lib/aiSummary.js`, `lib/transcriptScoring.js`, `.env` (B12) |
 | Wording of respondent messages | `lib/messageTemplates.js` |
 | Video-frame sampling (for the two providers above) | `lib/ffmpegFrames.js` (bundled `ffmpeg-static` binary, no system install needed) |
 | Media storage (local disk or Azure Blob) | `lib/mediaStorage.js`, `.env` (`STORAGE_PROVIDER`, B4) |

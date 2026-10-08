@@ -1,0 +1,175 @@
+<%- include('../partials/header', { title: 'Video Summary — INICIO', user, currentPath: '/admin/video-summary', studyPicker: { studies, current: study.id, action: '/admin/video-summary?study=' } }) %>
+<link rel="stylesheet" href="/public/reports.css" />
+<link rel="stylesheet" href="/public/video-summary.css" />
+<% const time = seconds => { const n = Math.max(0, Number(seconds) || 0); return `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`; }; %>
+<div class="report-page">
+  <div class="report-heading"><div><div class="report-kicker"><%= study.name %></div><h1>Video Summary</h1><p class="report-lead">Research findings and a highlight video, linked to the moments that support them.</p></div><span class="report-badge"><%= aiConfigured ? aiProviderLabel + ' summaries · video analysis configured' : 'AI setup required' %></span></div>
+  <% if (error) { %><div class="report-notice error" role="alert"><%= error %></div><% } %>
+  <% if (approved) { %><div class="report-notice" role="status">Approved. Clients can now see this summary and highlight video.</div><% } %>
+  <form class="report-toolbar" method="GET" action="/admin/video-summary">
+    <input type="hidden" name="study" value="<%= study.id %>" />
+    <label>From<input type="date" name="from" value="<%= from %>" /></label><label>To<input type="date" name="to" value="<%= to %>" /></label>
+    <button class="report-button secondary" type="submit">Apply period</button><a class="report-button secondary" href="/admin/video-summary?study=<%= study.id %>">All dates</a>
+  </form>
+  <dl class="report-stats"><% [['Eligible videos',evidence.stats.videos,'All eligible videos in this period'],['Respondents',evidence.stats.respondents,'People who contributed videos'],['Shareable videos',evidence.stats.shareable || 0,'Consent to appear in the reel'],['Brands seen',evidence.brands.length,'Previously confirmed detections']].forEach(([label,value,note]) => { %><div class="report-stat"><dt><%= label %></dt><dd><%= value %></dd><dd class="report-stat-note"><%= note %></dd></div><% }) %></dl>
+  <section class="report-panel">
+    <div class="report-panel-head"><div><h2>Video summary</h2><p><%= from || 'Beginning of study' %> → <%= to || 'Latest available data' %></p></div>
+      <form method="POST" action="/admin/video-summary/generate"><input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" /><button type="submit" class="report-button" <%= !aiConfigured || !evidence.stats.videos || generationStatus === 'processing' ? 'disabled' : '' %>><%= selected ? 'Generate updated summary' : 'Generate video summary' %></button></form>
+    </div>
+    <% if (selected && generationStatus === 'processing') { %>
+      <div class="report-empty" role="status">Analysing videos: <%= selected.processed_count || 0 %> of <%= selected.video_count %> processed. Findings and the highlight video will follow. You can leave this page and return.</div>
+      <meta http-equiv="refresh" content="15" />
+    <% } else if (selected && ['failed','interrupted'].includes(generationStatus)) { %>
+      <div class="report-notice error" role="alert"><%= selected.generation_error || 'Generation was interrupted. Generate again to continue using completed video analysis.' %></div>
+      <% if (selected.coverage) { const c = selected.coverage; %><p>Video coverage retained: <%= c.analysed %> of <%= c.eligible %> fully processed; <%= c.partial %> partial, <%= c.failed %> failed, <%= c.unavailable %> unavailable. Generate again to retry the summary.</p><% } %>
+    <% } else if (selected) { %>
+      <span class="report-badge"><%= selected.review_status === 'approved' ? 'Approved for clients' : selected.review_status === 'withdrawal_review' ? 'Needs review: a respondent withdrew' : 'Draft · review before sharing' %></span>
+      <% if (stale) { %><p class="report-notice">The source evidence or consent has changed. Generate an updated summary before approving.</p><% } %>
+      <% if (!selected.coverage) { %><p class="report-notice">This older summary has no timestamped evidence. Generate an updated summary to review and share it.</p><% } else { const c = selected.coverage; %>
+        <div class="report-notice"><strong>Analysis coverage:</strong> <%= c.analysed %> of <%= c.eligible %> videos fully processed · <%= c.partial %> partial · <%= c.failed %> failed · <%= c.unavailable %> unavailable.<br />Relevant evidence was found in <%= c.with_evidence %> videos from <%= c.respondents %> respondents. Findings describe this evidence; missing analysis is not a negative response.</div>
+      <% } %>
+      <% if (reelStatus === 'ready') { %>
+        <video class="research-reel" controls playsinline preload="metadata" src="/admin/video-summary/<%= selected.id %>/reel" aria-label="Video summary highlight reel"></video>
+        <p class="report-muted">Client highlight reel · <%= time(selected.reel_seconds) %> · <%= reelOptions.formats[mainReel.settings.format].label %> · check speech, captions and context before approval. <a href="/admin/video-summary/<%= selected.id %>/reel?download=1">Download</a></p>
+      <% } else if (['pending','building'].includes(reelStatus)) { %>
+        <div class="report-empty" role="status">Building the highlight video from the selected moments…</div>
+        <meta http-equiv="refresh" content="15" />
+      <% } else if (reelStatus === 'failed') { %><div class="report-notice error">The highlight video could not be built. <%= selected.reel_error || '' %></div>
+      <% } else { %><p class="report-muted">No reel: no supporting moments with media-sharing consent have been selected.</p><% } %>
+      <% if (selected.coverage && ['ready','failed','no_clips'].includes(reelStatus)) { %><form method="POST" action="/admin/video-summary/rebuild-reel"><input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="id" value="<%= selected.id %>" /><button class="report-button secondary" type="submit">Rebuild reel as draft</button></form><% } %>
+      <% if (selected.coverage) { %>
+        <details class="research-review"><summary>Customise the client reel <span class="report-muted">· <%= mainReel.inherited ? 'using the study defaults' : 'custom settings' %></span></summary>
+          <p class="report-muted">This is the reel clients see once the summary is approved. Saving rebuilds it and returns the summary to draft for re-approval.</p>
+          <form method="POST" action="/admin/video-summary/main-reel-settings">
+            <input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="id" value="<%= selected.id %>" />
+            <%- include('../partials/reel_settings_fields', { s: mainReel.settings, options: reelOptions, hasLogo: !!reelDefaults.logoPath, hasMusic: !!reelDefaults.musicPath }) %>
+            <div class="reel-actions">
+              <button class="report-button" type="submit" <%= ['pending','building'].includes(reelStatus) ? 'disabled' : '' %>>Save and rebuild client reel</button>
+              <% if (!mainReel.inherited) { %><button class="report-button secondary" type="submit" name="use_defaults" value="1" formnovalidate <%= ['pending','building'].includes(reelStatus) ? 'disabled' : '' %>>Go back to study defaults</button><% } %>
+            </div>
+          </form>
+        </details>
+
+        <details class="research-review" <%= extraReels.length ? 'open' : '' %>><summary>More reels (<%= extraReels.length %>)</summary>
+          <p class="report-muted">Extra cuts of the same reviewed findings, e.g. a 60-second client cut or a vertical version for WhatsApp. They are for staff: watch or download them here. Clients only see the client reel above, after approval. Only videos with media-sharing consent are used.</p>
+          <% extraReels.forEach(reel => { const outdated = reel.status === 'ready' && reel.review_revision != null && reel.review_revision !== selected.review_revision; %>
+            <article class="research-finding reel-card">
+              <h3><%= reel.name %></h3>
+              <p class="report-muted"><%= reelOptions.formats[reel.settings.settings.format].label %> · <%= reel.settings.inherited ? 'study defaults' : 'custom settings' %><% if (reel.status === 'ready') { %> · <%= time(reel.seconds) %><% } %></p>
+              <% if (reel.status === 'ready') { %>
+                <% if (outdated) { %><p class="report-notice">Built from an earlier review of the findings. Rebuild it to match the current findings.</p><% } %>
+                <video class="research-reel" controls playsinline preload="metadata" src="/admin/video-summary/reels/<%= reel.id %>/file" aria-label="<%= reel.name %>"></video>
+                <p><a href="/admin/video-summary/reels/<%= reel.id %>/file?download=1">Download</a></p>
+              <% } else if (['pending','building'].includes(reel.status)) { %><div class="report-empty" role="status">Building…</div><meta http-equiv="refresh" content="15" />
+              <% } else if (reel.status === 'no_clips') { %><p class="report-muted">No clips: no supporting moments with media-sharing consent are selected.</p>
+              <% } else { %><div class="report-notice error">This reel could not be built. <%= reel.error || '' %></div><% } %>
+              <div class="reel-actions">
+                <form method="POST" action="/admin/video-summary/reels/<%= reel.id %>/use-as-client"><button class="report-button secondary" type="submit" <%= ['pending','building'].includes(reelStatus) ? 'disabled' : '' %>>Use these settings for the client reel</button></form>
+                <form method="POST" action="/admin/video-summary/reels/<%= reel.id %>/delete" onsubmit="return confirm('Delete the reel “<%= reel.name.replace(/[\\'"]/g, '') %>”?')"><button class="report-button secondary" type="submit">Delete</button></form>
+              </div>
+              <details><summary>Change settings and rebuild</summary>
+                <form method="POST" action="/admin/video-summary/reels/<%= reel.id %>/settings">
+                  <%- include('../partials/reel_settings_fields', { s: reel.settings.settings, options: reelOptions, hasLogo: !!reelDefaults.logoPath, hasMusic: !!reelDefaults.musicPath }) %>
+                  <div class="reel-actions"><button class="report-button" type="submit" <%= ['pending','building'].includes(reel.status) ? 'disabled' : '' %>>Save and rebuild</button>
+                  <% if (!reel.settings.inherited) { %><button class="report-button secondary" type="submit" name="use_defaults" value="1" formnovalidate>Use study defaults</button><% } %></div>
+                </form>
+              </details>
+            </article>
+          <% }) %>
+          <details class="reel-new"><summary>+ Add a reel</summary>
+            <form method="POST" action="/admin/video-summary/reels">
+              <input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="summary_id" value="<%= selected.id %>" />
+              <label class="research-field">Name<input name="name" maxlength="80" required placeholder="e.g. 60s client cut" /></label>
+              <%- include('../partials/reel_settings_fields', { s: reelDefaults.settings, options: reelOptions, hasLogo: !!reelDefaults.logoPath, hasMusic: !!reelDefaults.musicPath }) %>
+              <div class="reel-actions"><button class="report-button" type="submit">Build this reel</button>
+              <button class="report-button secondary" type="submit" name="use_defaults" value="1">Build with study defaults</button></div>
+            </form>
+          </details>
+        </details>
+      <% } %>
+      <div class="report-narrative"><%= selected.overview %></div>
+      <% if (!selected.points.length) { %><p class="report-empty">No supported research findings could be extracted. Review the coverage and source videos below.</p><% } %>
+      <% selected.points.forEach(p => { %>
+        <article class="research-finding"><p class="report-kicker"><%= p.question || 'Research finding' %></p><h3><%= p.point %></h3>
+          <p><strong><%= p.respondents.length %> of <%= p.respondent_base ?? selected.respondent_count %> respondents</strong> with evidence for this question<% if (p.video_count != null) { %> · <%= p.video_count %> supporting recordings<% } %></p>
+          <% if (p.quote) { %><blockquote>“<%= p.quote %>” <span class="report-muted">— <%= p.quote_respondent %></span></blockquote><% } %>
+          <details><summary>Supporting moments (<%= (p.supports || []).length %>)</summary>
+            <% (p.supports || []).forEach(id => { const v = selected.evidence.find(v => v.moments?.some(m => m.id === id)); const m = v?.moments.find(m => m.id === id); if (!m) return; %>
+              <p><a href="<%= typeof mediaUrl === 'function' ? mediaUrl(v.file_path) + '#t=' + m.start + ',' + m.end : '#source-' + v.clip_id %>" target="_blank" rel="noopener"><%= v.respondent %> · <%= v.day %> · <%= time(m.start) %>–<%= time(m.end) %></a> · <%= m.kind === 'speech' ? 'Spoken evidence' : 'Visual observation' %><br /><%= m.text %></p>
+            <% }) %>
+          </details>
+        </article>
+      <% }) %>
+      <% if (selected.coverage && selected.points.length) { %>
+        <details class="research-review"><summary>Edit findings and selected clips</summary>
+          <p class="report-muted">Check each finding against its evidence. Clip boundaries must retain the complete supporting moment; extend them to preserve context. Saving returns the summary to draft and rebuilds the reel.</p>
+          <form method="POST" action="/admin/video-summary/review" data-research-review>
+            <input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="id" value="<%= selected.id %>" /><input type="hidden" name="revision" value="<%= selected.review_revision %>" />
+            <label class="research-field">Overview<textarea name="overview" rows="5" maxlength="10000" required><%= selected.overview %></textarea></label>
+            <% selected.points.forEach((p, i) => { %><fieldset data-finding="<%= i %>"><legend><%= p.question %> · finding <%= i + 1 %></legend>
+              <input type="hidden" name="points[<%= i %>][index]" value="<%= i %>" data-field="index" />
+              <label><input type="checkbox" name="points[<%= i %>][include]" value="1" checked data-field="include" /> Keep this finding</label>
+              <label class="research-field">Finding<textarea name="points[<%= i %>][point]" rows="3" maxlength="1000" data-field="point"><%= p.point %></textarea></label>
+              <label>Order <input type="number" name="points[<%= i %>][order]" value="<%= i + 1 %>" min="1" data-field="order" /></label>
+              <details><summary>Select and adjust supporting clips</summary>
+              <% (p.supports || []).forEach((id, j) => { const v = selected.evidence.find(v => v.moments?.some(m => m.id === id)); const m = v?.moments.find(m => m.id === id); if (!m || !v.shareable) return; const picked = p.clips.find(c => c.moment_id === id); %>
+                <div class="research-clip" data-clip>
+                  <input type="hidden" name="points[<%= i %>][clips][<%= j %>][moment_id]" value="<%= id %>" data-field="moment_id" />
+                  <label><input type="checkbox" name="points[<%= i %>][clips][<%= j %>][include]" value="1" <%= picked ? 'checked' : '' %> data-field="include" /> <%= v.respondent %> · <%= v.day %> · <%= time(m.start) %>–<%= time(m.end) %></label>
+                  <p><%= m.text %></p>
+                  <div class="research-boundaries"><label>Start (seconds)<input type="number" step="0.001" min="0" max="<%= m.start %>" name="points[<%= i %>][clips][<%= j %>][start]" value="<%= picked?.start ?? m.start %>" data-field="start" /></label><label>End (seconds)<input type="number" step="0.001" min="<%= m.end %>" max="<%= v.duration %>" name="points[<%= i %>][clips][<%= j %>][end]" value="<%= picked?.end ?? m.end %>" data-field="end" /></label></div>
+                  <% if (typeof mediaUrl === 'function') { %><video controls playsinline preload="none" src="<%= mediaUrl(v.file_path) %>#t=<%= picked?.start ?? m.start %>,<%= picked?.end ?? m.end %>" aria-label="Review supporting moment from <%= v.respondent %>"></video><% } %>
+                </div>
+              <% }) %>
+              </details>
+            </fieldset><% }) %>
+            <button class="report-button" type="submit" <%= ['pending','building'].includes(reelStatus) ? 'disabled' : '' %>>Save review and rebuild reel</button>
+          </form>
+        </details>
+        <details class="research-review"><summary>Approve for clients</summary>
+          <form method="POST" action="/admin/video-summary/approve">
+            <input type="hidden" name="study_id" value="<%= study.id %>" /><input type="hidden" name="id" value="<%= selected.id %>" /><input type="hidden" name="revision" value="<%= selected.review_revision %>" />
+            <label class="research-check"><input type="checkbox" name="evidence_reviewed" value="1" required /> I checked the findings, selected moments, captions and completed reel against the source videos.</label>
+            <% if (selected.coverage.analysed !== selected.coverage.eligible) { %><label class="research-check"><input type="checkbox" name="coverage_acknowledged" value="1" required /> I accept the incomplete coverage, which will also be shown to clients.</label><% } %>
+            <p class="report-muted">Clients see the reviewed findings and coverage. Quotes and the reel require media-sharing permission and respondent consent.</p>
+            <button class="report-button" type="submit" <%= stale || !['ready','no_clips'].includes(reelStatus) ? 'disabled' : '' %>>Approve for clients</button>
+          </form>
+        </details>
+      <% } %>
+      <details class="research-review"><summary>Source videos and analysis coverage (<%= selected.evidence.length %>)</summary>
+        <% selected.evidence.forEach(v => { %><article id="source-<%= v.clip_id %>" class="research-finding"><h3><%= v.clip_id %> · <%= v.respondent %> · <%= v.day %></h3><p><%= v.question || 'Video diary' %> · <%= v.analysis_status || 'Legacy transcript only' %> · <%= v.shareable ? 'Media sharing consent given' : 'Not shareable' %></p>
+          <% if (v.analysis_error) { %><p class="report-notice error"><%= v.analysis_error %></p><% } %>
+          <% (v.failed_ranges || []).forEach(r => { %><p class="report-notice error"><%= time(r.start) %>–<%= time(r.end) %>: <%= r.error %></p><% }) %>
+          <% if (typeof mediaUrl === 'function') { %><video controls playsinline preload="none" src="<%= mediaUrl(v.file_path) %>" aria-label="Source video from <%= v.respondent %>"></video><% } %>
+          <% (v.moments || []).forEach(m => { %><p><strong><%= time(m.start) %>–<%= time(m.end) %> · <%= m.kind %></strong> <%= m.text %></p><% }) %>
+        </article><% }) %>
+      </details>
+      <p class="report-muted">Saved <%= selected.generated_at %> by <%= selected.generated_by %>. AI-extracted speech, visual observations and timecodes require review. Analysis covers eligible submitted videos; practice, excluded and unresolved QC records are omitted.</p>
+    <% } else { %><p class="report-empty"><%= evidence.stats.videos ? 'Generate a summary to analyse every eligible video in this period. Completed video analysis is reused on subsequent runs.' : 'There are no eligible respondent videos in this period.' %></p><% } %>
+    <% if (!aiConfigured) { %><p class="report-notice">Video understanding or research summarisation is unavailable. Ask your administrator to configure the analysis service.</p><% } %>
+  </section>
+  <section class="report-panel">
+    <details class="research-review" <%= reelSaved ? 'open' : '' %>><summary>Reel defaults for this study</summary>
+      <% if (reelSaved) { %><div class="report-notice" role="status">Reel defaults saved. Reels using the study defaults pick them up the next time they are built.</div><% } %>
+      <p class="report-muted">Every reel in this study starts from these settings. A reel can still be given its own settings. Upload your logo and a music track here (you must have the rights to use the music).</p>
+      <form method="POST" action="/admin/video-summary/reel-defaults" enctype="multipart/form-data">
+        <input type="hidden" name="study_id" value="<%= study.id %>" /><% if (selected) { %><input type="hidden" name="summary_id" value="<%= selected.id %>" /><% } %>
+        <div class="reel-grid">
+          <label>Logo (PNG, JPEG or WebP, max 2 MB; transparent PNG works best)<input type="file" name="logo" accept="image/png,image/jpeg,image/webp" /></label>
+          <label>Music (MP3, M4A, AAC, WAV or OGG, max 15 MB)<input type="file" name="music" accept="audio/*" /></label>
+        </div>
+        <p class="report-muted">
+          Logo: <%= reelDefaults.logoPath ? 'uploaded' : 'none' %><% if (reelDefaults.logoPath) { %> · <label><input type="checkbox" name="remove_logo" value="1" /> remove</label><% } %>
+          · Music: <%= reelDefaults.musicPath ? 'uploaded' : 'none' %><% if (reelDefaults.musicPath) { %> · <label><input type="checkbox" name="remove_music" value="1" /> remove</label><% } %>
+        </p>
+        <%- include('../partials/reel_settings_fields', { s: reelDefaults.settings, options: reelOptions, hasLogo: !!reelDefaults.logoPath, hasMusic: !!reelDefaults.musicPath }) %>
+        <div class="reel-actions"><button class="report-button" type="submit">Save study defaults</button></div>
+      </form>
+    </details>
+  </section>
+  <section class="report-panel"><h2>Video summary history</h2>
+    <% if (summaries.length) { %><div class="dashboard-table-scroll"><table class="report-table dashboard-table"><thead><tr><th>Period</th><th>Saved</th><th>Videos</th><th>Status</th><th>View</th></tr></thead><tbody><% summaries.forEach(s => { %><tr><td><%= s.period_start || 'Start' %> → <%= s.period_end || 'All dates' %></td><td><%= s.generated_at %></td><td><%= s.video_count %></td><td><%= s.generation_status === 'processing' ? 'Processing' : s.generation_status === 'failed' ? 'Failed' : s.review_status %></td><td><a href="/admin/video-summary?study=<%= study.id %>&summary=<%= s.id %>">View</a></td></tr><% }) %></tbody></table></div><% } else { %><p class="report-muted">Your generated summaries will appear here.</p><% } %>
+  </section>
+</div>
+<script src="/public/js/video-summary-review.js" defer></script>
+<%- include('../partials/footer') %>

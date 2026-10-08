@@ -17,9 +17,9 @@ offline fallback, local draft autosave).
 This is a prototype, not a production deployment — see `PRODUCTION_READINESS.md` for the
 exact list of what's still needed (real WhatsApp credentials, HTTPS, SSO, managed database,
 secrets management, backups, retention, monitoring, and release validation) before it
-touches real respondent data. Three of the AI providers (Azure AI Vision for brand
-detection + video pre-fill, Azure AI Speech for transcription) and media storage already
-have real, working implementations behind an env-var flip — see the companion **Azure
+touches real respondent data. The AI providers (OpenAI gpt-5.4-mini for brand detection,
+video pre-fill, summaries and answer scoring; OpenAI speech-to-text for transcription) and
+media storage already have real, working implementations behind an env-var flip — see the companion **Azure
 Deployment Runbook** for exact Azure Portal/CLI steps to provision everything and deploy
 this app for real, sized to fit an Azure free-account $200/30-day credit.
 
@@ -65,17 +65,17 @@ Admin → Study → Respondents screen, or generated live via Interviewer → Re
 - `lib/whatsappDiary.js` — inbound WhatsApp diary conversation, questionnaire validation,
   skip/termination logic and submission into the shared QC/analysis data model
 - `lib/brandDetection.js` — pluggable brand-detection provider for photo/video evidence
-  (mock by default; a real Azure AI Vision implementation is one `.env` flip away, see
+  (mock by default; a real OpenAI implementation is one `.env` flip away, see
   PRODUCTION_READINESS.md B9)
 - `lib/videoFieldExtraction.js` — pluggable provider that pre-fills diary questions from a
-  Video-mode entry's recording (mock by default, real implementation reuses the Azure AI
-  Vision wiring; B9)
+  Video-mode entry's recording (mock by default; real implementation sends sampled frames and
+  the transcript to OpenAI gpt-5.4-mini; B9)
 - `lib/audioTranscription.js` — pluggable provider that transcribes a Voice-Note-mode entry's
-  recording (mock by default, real implementation calls Azure AI Speech; see
-  PRODUCTION_READINESS.md B10)
-- `lib/azureVisionClient.js`, `lib/ffmpegFrames.js` — shared helpers the two Vision-based
-  providers above use (frame sampling for video uses a bundled ffmpeg binary, no system
-  install needed)
+  recording (mock by default; real implementation calls OpenAI speech-to-text,
+  gpt-4o-mini-transcribe; see PRODUCTION_READINESS.md B10)
+- `lib/openaiClient.js`, `lib/ffmpegFrames.js` — the shared OpenAI transport (text, images and
+  speech) and the frame sampler the providers above use (frame sampling for video uses a
+  bundled ffmpeg binary, no system install needed)
 - `lib/mediaStorage.js` — pluggable storage for uploaded media: local disk (default) or
   Azure Blob Storage (`STORAGE_PROVIDER=azure_blob`) with private containers and short-lived
   signed URLs — see PRODUCTION_READINESS.md B4
@@ -116,12 +116,12 @@ Tapping **Log Consumption** first asks the respondent how they'd like to log thi
 - **Standard Form** — answer each question directly, same as before.
 - **Video (AI-assisted)** — record one video first; it's analyzed by a pluggable field-
   extraction provider (mock by default — nothing is ever guessed, exactly like brand
-  detection; a real Azure AI Vision implementation is available, see PRODUCTION_READINESS.md B9)
+  detection; a real OpenAI implementation is available, see PRODUCTION_READINESS.md B9)
   that pre-fills whatever it can confidently identify, then the respondent completes the
   remaining questions and reviews/edits anything pre-filled before submitting.
 - **Voice Note** — fill in the questions manually as usual, then record a short voice summary
   at the end. It's always attached as a QC-reviewable audio note and queued for transcription
-  by a pluggable provider (mock by default; a real Azure AI Speech implementation is
+  by a pluggable provider (mock by default; a real OpenAI speech-to-text implementation is
   available, see PRODUCTION_READINESS.md B10).
 
 Every diary record keeps track of which method was used (visible on the respondent's own diary

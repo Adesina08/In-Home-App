@@ -127,7 +127,7 @@
             <% const pvArr = Array.isArray(pv) ? pv : (pv ? [pv] : []); %>
             <% q.options.forEach((opt, oi) => { %>
               <label class="flex items-center gap-3 text-base sm:text-sm rounded-xl border border-slate-200 px-4 py-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50 active:bg-slate-50 transition">
-                <input type="checkbox" name="q_<%= q.id %>[]" value="<%= opt %>" <%= pvArr.includes(opt) ? 'checked' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
+                <input type="checkbox" name="q_<%= q.id %>[]" value="<%= opt %>" <%= pvArr.includes(opt) ? 'checked' : '' %> <%= (q.exclusiveOptions || []).includes(opt) ? 'data-exclusive=1' : '' %> class="cond-input h-5 w-5 accent-brand-700" data-qid="<%= q.id %>" />
                 <%= opt %>
               </label>
               <% if ((q.otherSpecifyOptions || []).includes(opt)) { %><input type="text" data-other-question="<%= q.id %>" data-other-option="<%= opt %>" value="<%= pfOther[String(q.id)] && pfOther[String(q.id)][opt] || '' %>" class="other-specify hidden w-full border border-brand-200 rounded-xl px-4 py-3 text-base" placeholder="Please specify…" /><% } %>
@@ -208,10 +208,12 @@
   questions.reduce((acc, q) => { if (q.code) acc[q.code] = q.id; return acc; }, {})
 ).replace(/</g, "\\u003c") %></script>
 <script src="/public/js/piping.js"></script>
+<script src="/public/js/skip-logic.js"></script>
 <script>window.INICIO_RESPONDENT_TOKEN = "<%= respondent.unique_token %>";</script>
 <script src="/public/js/camera-capture.js"></script>
 <script>
   const RULES = <%- JSON.stringify(rules) %>;
+  const LOGIC_QUESTIONS = <%- JSON.stringify(questions.map(q => ({ id: q.id, section: q.section || null, type: q.type, option_scores_json: q.option_scores_json || null, code: q.code || null, options: q.options || [] }))).replace(/</g, '\\u003c') %>;
   function updateOtherSpecify() {
     const payload = {};
     document.querySelectorAll('.other-specify').forEach(function (input) {
@@ -235,33 +237,6 @@
     // the answer instead of "no answer yet".
     const other = document.querySelector(`.cond-input[data-qid="${qid}"]:not([type=radio]):not([type=checkbox])`);
     return other ? other.value : '';
-  }
-
-  function setSectionVisible(section, visible) {
-    document.querySelectorAll(`.q-wrap[data-section="${CSS.escape(section)}"]`).forEach(w => {
-      w.style.display = visible ? '' : 'none';
-      setRequiredEnabled(w, visible);
-    });
-    const heading = document.querySelector(`.section-heading[data-section="${CSS.escape(section)}"]`);
-    if (heading) heading.style.display = visible ? '' : 'none';
-  }
-
-  // rule.value is "|"-joined when a condition lists more than one value (e.g.
-  // "Show if Q1 equals A or B"), matching the same "|" convention getConditionValue()
-  // already uses for a multi-select answer's several checked values.
-  function matchesCondition(val, rule) {
-    const ruleValues = String(rule.value || '').split('|');
-    switch (rule.operator) {
-      case 'not_equals': return val !== rule.value;
-      case 'in': return ruleValues.includes(val);
-      case 'not_in': return !ruleValues.includes(val);
-      case 'includes': {
-        const valValues = String(val || '').split('|').filter(Boolean);
-        return ruleValues.some((rv) => valValues.includes(rv));
-      }
-      case 'equals':
-      default: return val === rule.value;
-    }
   }
 
   // "Terminate survey" rules are given a UI treatment here for instant
@@ -316,40 +291,25 @@
     }
   }
 
+  // Visibility and termination come from the same engine the server uses
+  // (public/js/skip-logic.js), so both always agree on what was on screen.
   function evaluateSkipLogic() {
-    // default: visible, unless a 'show' rule targets it (then hidden until matched)
-    const defaultHiddenQ = new Set(RULES.filter(r => r.action === 'show' && r.target_question_id).map(r => r.target_question_id));
-    const defaultHiddenSections = new Set(RULES.filter(r => r.action === 'show' && r.target_section).map(r => r.target_section));
-    document.querySelectorAll('.q-wrap').forEach(w => {
-      const qid = parseInt(w.dataset.qid, 10);
-      const inHiddenSection = w.dataset.section && defaultHiddenSections.has(w.dataset.section);
-      const hidden = defaultHiddenQ.has(qid) || inHiddenSection;
-      w.style.display = hidden ? 'none' : '';
-      setRequiredEnabled(w, !hidden);
+    const answerFor = (qid) => { const v = getConditionValue(qid); return v === '' ? undefined : v; };
+    const wraps = Array.from(document.querySelectorAll('.q-wrap'));
+    const state = SkipLogic.evaluate(LOGIC_QUESTIONS, RULES, answerFor);
+    const { visibleIds, hiddenSections } = state;
+    // Score and variables feed ${score} / ${variable} pipes (public/js/piping.js).
+    window.SkipLogicState = state;
+    document.dispatchEvent(new CustomEvent('skiplogic:state'));
+    wraps.forEach(w => {
+      const shown = visibleIds.has(parseInt(w.dataset.qid, 10));
+      w.style.display = shown ? '' : 'none';
+      setRequiredEnabled(w, shown);
     });
     document.querySelectorAll('.section-heading').forEach(h => {
-      h.style.display = defaultHiddenSections.has(h.dataset.section) ? 'none' : '';
+      h.style.display = hiddenSections.has(h.dataset.section) ? 'none' : '';
     });
-    let terminated = false;
-    RULES.forEach(rule => {
-      const val = getConditionValue(rule.condition_question_id);
-      const matches = matchesCondition(val, rule);
-      if (rule.action === 'terminate') {
-        if (matches) terminated = true;
-        return;
-      }
-      if (rule.target_section) {
-        // A section rule wins over any earlier per-question display for questions in that section.
-        setSectionVisible(rule.target_section, rule.action === 'show' ? matches : !matches);
-        return;
-      }
-      const wrap = document.getElementById('q-wrap-' + rule.target_question_id);
-      if (!wrap) return;
-      if (rule.action === 'show') wrap.style.display = matches ? '' : 'none';
-      if (rule.action === 'hide') wrap.style.display = matches ? 'none' : '';
-      setRequiredEnabled(wrap, wrap.style.display !== 'none');
-    });
-    applyTermination(terminated);
+    applyTermination(!!SkipLogic.findTerminateMatch(RULES, answerFor, LOGIC_QUESTIONS));
   }
 
   document.addEventListener('input', evaluateSkipLogic);
@@ -456,6 +416,17 @@
     wrap.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return false;
   }
+  // Exclusive options ("None of these"): ticking one clears the rest of the
+  // question; ticking a regular option clears any exclusive one. Runs in the
+  // capture phase so skip logic and limits below see the final selection.
+  document.addEventListener('change', function (e) {
+    const box = e.target;
+    if (!box || box.type !== 'checkbox' || !box.checked || !box.dataset.qid) return;
+    const exclusive = box.dataset.exclusive === '1';
+    document.querySelectorAll('input[type="checkbox"][data-qid="' + box.dataset.qid + '"]:checked').forEach(function (other) {
+      if (other !== box && (exclusive || other.dataset.exclusive === '1')) other.checked = false;
+    });
+  }, true);
   document.addEventListener('change', function (e) {
     if (e.target && e.target.matches('.q-wrap[data-qtype="multi"] input[type="checkbox"]')) {
       enforceMultiSelectionLimit(e.target);

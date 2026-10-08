@@ -8,6 +8,7 @@ const checks=[
  ['Azure media read signing configured',!!process.env.AZURE_STORAGE_ACCOUNT_NAME&&!!process.env.AZURE_STORAGE_ACCOUNT_KEY],
  ['Production runtime',process.env.NODE_ENV==='production'],
  ['TLS public URL',/^https:\/\//.test(process.env.PUBLIC_BASE_URL||process.env.APP_BASE_URL||'')],
+ ['OpenAI key for AI features',!!(process.env.OPENAI_API_KEY||'').trim()],
 ];
 for(const [label,ok]of checks)process.stdout.write(`${ok?'PASS':'CHECK'} ${label}\n`);
 process.stdout.write('Managed backups, restore drills, blob versioning, retention approval and external monitoring require operational evidence.\n');

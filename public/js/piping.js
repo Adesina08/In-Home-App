@@ -15,7 +15,7 @@
 // preview only tags them data-qid="<id>"), so field lookup tries both rather
 // than assuming either page's convention.
 (function () {
-  var spans = document.querySelectorAll("[data-pipe-q]");
+  var spans = document.querySelectorAll("[data-pipe-q], [data-pipe-ref]");
   if (!spans.length) return; // no piped questions on this page -- nothing to watch
 
   // Scope to whatever container actually holds the questions, rather than
@@ -66,10 +66,37 @@
     return els[0].value || "";
   }
 
+  function codeFor(name) {
+    if (CODE_TO_QID[name]) return name;
+    var lower = String(name).toLowerCase();
+    for (var code in CODE_TO_QID) if (code.toLowerCase() === lower) return code;
+    return null;
+  }
+
+  // ${NAME} tags (QuestionPro style): the total score, a question code, a
+  // code's other-specify text (${Q5_OTHER}), else a logic variable. Score and
+  // variables come from the page's logic engine (window.SkipLogicState).
+  function valueForRef(name) {
+    var state = window.SkipLogicState || {};
+    if (String(name).toLowerCase() === "score") return state.score == null ? "" : String(state.score);
+    var code = codeFor(name);
+    if (code) return valueForCode(code);
+    var other = /^(.+)_OTHER$/i.exec(name);
+    if (other && codeFor(other[1])) {
+      var boxes = scope.querySelectorAll('.other-specify[data-other-question="' + CODE_TO_QID[codeFor(other[1])] + '"]');
+      var texts = [];
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].value.trim()) texts.push(boxes[i].value.trim());
+      return texts.join(", ");
+    }
+    var variables = state.variables || {};
+    return Object.prototype.hasOwnProperty.call(variables, name) && variables[name] != null ? variables[name] : "";
+  }
+
   function refresh() {
     for (var i = 0; i < spans.length; i++) {
       var span = spans[i];
-      var val = valueForCode(span.getAttribute("data-pipe-q"));
+      var ref = span.getAttribute("data-pipe-ref");
+      var val = ref ? valueForRef(ref) : valueForCode(span.getAttribute("data-pipe-q"));
       var fallback = span.getAttribute("data-pipe-fallback") || "…";
       var next = val && String(val).trim() !== "" ? val : fallback;
       if (span.textContent !== next) span.textContent = next;
@@ -79,5 +106,7 @@
   var listenOn = scope === document ? document : scope;
   listenOn.addEventListener("input", refresh);
   listenOn.addEventListener("change", refresh);
+  // The logic engine recomputes score and variables after each answer.
+  document.addEventListener("skiplogic:state", refresh);
   refresh(); // prefilled / draft-restored answers should show immediately
 })();

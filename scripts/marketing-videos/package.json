@@ -1,0 +1,8 @@
+{
+  "name": "inicio-marketing-videos",
+  "private": true,
+  "description": "Records scripted demo walkthroughs of the app against a throwaway demo database and edits them into marketing videos.",
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

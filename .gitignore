@@ -10,3 +10,6 @@ data.localdb.json*
 
 # Built APKs and their manifests are supplied by the Android workflow.
 /public/downloads/
+
+# Marketing video tooling: demo database, recordings and rendered videos.
+/scripts/marketing-videos/.work/

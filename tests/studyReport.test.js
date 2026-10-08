@@ -73,10 +73,11 @@ test('client word cloud excludes transcripts from media without respondent conse
 });
 test('summary generation awaits the metrics and stores real distributions', async () => {
   const originalFetch = global.fetch;
-  const originalEnv = { endpoint: process.env.AZURE_OPENAI_ENDPOINT, key: process.env.AZURE_OPENAI_KEY, deployment: process.env.AZURE_OPENAI_DEPLOYMENT, provider: process.env.AI_SUMMARY_PROVIDER };
-  process.env.AI_SUMMARY_PROVIDER = 'azure_openai';
-  process.env.AZURE_OPENAI_ENDPOINT = 'https://example.openai.azure.com'; process.env.AZURE_OPENAI_KEY = 'test-key'; process.env.AZURE_OPENAI_DEPLOYMENT = 'summary-model';
-  global.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'Azure summary based on 4 submitted records.' } }] }) });
+  const originalEnv = { key: process.env.OPENAI_API_KEY, provider: process.env.AI_SUMMARY_PROVIDER };
+  process.env.AI_SUMMARY_PROVIDER = 'openai';
+  process.env.OPENAI_API_KEY = 'test-key';
+  const reply = text => ({ status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] });
+  global.fetch = async (_, options) => new Response(JSON.stringify(reply(JSON.parse(options.body).text ? '{"themes":[],"overall_sentiment":null}' : 'OpenAI summary based on 4 submitted records.')));
   try {
     const summary = await generateSummary(study.id, { from: '2026-09-06', to: '2026-09-06', generatedBy: 'test' });
     const metrics = JSON.parse(summary.metrics_json);
@@ -89,7 +90,7 @@ test('summary generation awaits the metrics and stores real distributions', asyn
     await assert.rejects(generateSummary(study.id, { from: '2026-02-30' }));
   } finally {
     global.fetch = originalFetch;
-    for (const key of ['endpoint','key','deployment']) { const envKey = 'AZURE_OPENAI_' + key.toUpperCase(); const value = originalEnv[key]; if (value === undefined) delete process.env[envKey]; else process.env[envKey] = value; }
+    if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
     if (originalEnv.provider === undefined) delete process.env.AI_SUMMARY_PROVIDER; else process.env.AI_SUMMARY_PROVIDER = originalEnv.provider;
   }
 });

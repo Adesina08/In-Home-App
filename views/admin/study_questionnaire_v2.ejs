@@ -81,6 +81,7 @@
 
 <div id="saveToast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs font-medium px-3.5 py-2 rounded-lg opacity-0 transition-opacity pointer-events-none">Saved</div>
 
+<script src="/public/js/skip-logic.js"></script>
 <script>
 (function () {
   var STUDY_ID = <%= study.id %>;
@@ -100,7 +101,10 @@
     ['text', 'Short text'], ['longtext', 'Long text'], ['date', 'Date'],
     ['time', 'Time'], ['photo', 'Photo'], ['video', 'Video'], ['audio', 'Audio'],
   ];
-  var OPS = { equals: 'is', not_equals: 'is not', in: 'is one of', not_in: 'is none of', includes: 'includes' };
+  var OPS = { equals: 'is', not_equals: 'is not', in: 'is one of', not_in: 'is none of', includes: 'includes', gt: 'is greater than', gte: 'is at least', lt: 'is less than', lte: 'is at most' };
+  // The logic types, named as QuestionPro names them.
+  var LOGIC_TABS = [['skip', 'Skip Logic'], ['compound', 'Compound Branching'], ['showhide', 'Show/Hide Question'], ['scoring', 'Scoring'], ['custom', 'JavaScript Logic (expressions)'], ['variables', 'Update Variables']];
+  var logicTab = 'skip';
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -143,6 +147,17 @@
     try { var p = JSON.parse(raw || '[]'); return Array.isArray(p) ? p : []; } catch (e) { return []; }
   }
   function specifyOptions(q) { try { var p=JSON.parse(q.other_specify_options_json||'[]'); return Array.isArray(p)?p:[]; } catch(e){ return []; } }
+  function exclusiveOptions(q) { if (q.type !== 'multi') return []; try { var p=JSON.parse(q.exclusive_options_json||'[]'); return Array.isArray(p)?p:[]; } catch(e){ return []; } }
+  // One dropdown carries both flags: terminate (ends participation) and
+  // exclusive (multi-select only -- ticking it clears every other option).
+  function behaviourSelect(q, o) {
+    var term = terminationFor(q.id, o), excl = exclusiveOptions(q).indexOf(o) > -1;
+    var value = excl ? (term ? 'exclusive_study' : 'exclusive') : (term ? 'study' : '');
+    var choices = [['', 'Continue'], ['study', 'Terminate']];
+    if (q.type === 'multi') choices.push(['exclusive', 'Exclusive'], ['exclusive_study', 'Exclusive + Terminate']);
+    return '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'" title="Exclusive: picking this option clears every other selected option">' +
+      choices.map(function(c){ return '<option value="'+c[0]+'"'+(c[0]===value?' selected':'')+'>'+c[1]+'</option>'; }).join('') + '</select>';
+  }
   function terminationFor(qid, option) { return rules.some(function(r){ return r.action==='terminate' && Number(r.condition_question_id)===Number(qid) && r.operator==='equals' && r.value===option; }); }
   function canAiFill(q) { return AI_FILLABLE.indexOf(q.type) > -1 && optionsOf(q).length > 0; }
 
@@ -220,7 +235,11 @@
         '<div class="mt-5"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Options</div>' +
         '<div id="optList" class="space-y-1.5"></div>' +
         '<button type="button" id="addOpt" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add option</button></div>' : '') +
-      '<div class="mt-5 pt-4 border-t border-slate-100"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mb-2">Logic for this question</div><div id="ruleList" class="space-y-2"></div><button id="addRule" type="button" class="mt-2 text-xs text-signal font-medium hover:underline">+ Add show / hide rule</button><div id="ruleForm" class="hidden mt-3 space-y-2 text-xs"></div></div>' +
+      '<div class="mt-5 pt-4 border-t border-slate-100">' +
+        '<div class="flex items-center justify-between gap-3 mb-2"><div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500">Logic</div>' +
+        '<select id="logicTab" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white">' + LOGIC_TABS.map(function (t) { return '<option value="' + t[0] + '"' + (t[0] === logicTab ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select></div>' +
+        '<div id="logicBody" class="text-xs space-y-2"></div>' +
+        '<div class="font-mono text-[10px] uppercase tracking-[0.09em] text-slate-500 mt-4 mb-2">Rules on this question</div><div id="ruleList" class="space-y-2"></div></div>' +
       '<div class="mt-5 pt-4 border-t border-slate-100">' +
         (canAiFill(q)
           ? '<div class="flex items-start gap-2 text-xs font-medium text-verified bg-verified-soft rounded-lg px-3 py-2.5">' +
@@ -239,14 +258,14 @@
     if (!host) return;
     var specify = specifyOptions(q);
     host.innerHTML = opts.map(function (o, i) {
-      return '<div class="grid grid-cols-[20px_20px_minmax(140px,1fr)_150px_auto_auto] items-center gap-2">' +
+      return '<div class="grid grid-cols-[20px_20px_minmax(140px,1fr)_170px_auto_auto] items-center gap-2">' +
         '<span class="font-mono text-[10px] text-slate-400 w-4 text-right tabular-nums">' + (i + 1) + '</span>' +
         '<div class="flex flex-col leading-none">' +
           '<button type="button" class="opt-up text-slate-400 hover:text-slate-700 disabled:opacity-25 disabled:hover:text-slate-400 text-[10px] px-0.5" data-i="' + i + '" ' + (i === 0 ? 'disabled' : '') + ' title="Move up">&#9650;</button>' +
           '<button type="button" class="opt-down text-slate-400 hover:text-slate-700 disabled:opacity-25 disabled:hover:text-slate-400 text-[10px] px-0.5" data-i="' + i + '" ' + (i === opts.length - 1 ? 'disabled' : '') + ' title="Move down">&#9660;</button>' +
         '</div>' +
         '<input class="opt-in flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm" value="' + esc(o) + '" data-i="' + i + '" />' +
-        '<select class="opt-terminate border border-slate-300 rounded-lg px-2 py-1.5 text-xs" data-option="'+esc(o)+'"><option value="">Continue</option><option value="study" '+(terminationFor(q.id,o)?'selected':'')+'>Terminate</option></select>'+
+        behaviourSelect(q, o)+
         '<label class="text-[11px] text-slate-600 whitespace-nowrap"><input type="checkbox" class="opt-specify" data-option="'+esc(o)+'" '+(specify.indexOf(o)>-1?'checked':'')+' /> Other text</label>'+
         '<button type="button" class="opt-del text-slate-400 hover:text-red-600 text-sm px-1" data-i="' + i + '">&times;</button></div>';
     }).join('') || '<div class="text-xs text-slate-400">No options yet — this question cannot be answered until it has some.</div>';
@@ -278,7 +297,7 @@
     host.querySelectorAll('.opt-down').forEach(function (b) {
       b.addEventListener('click', function () { moveOption(Number(b.dataset.i), 1); });
     });
-    function saveBehaviour(option) { var term=host.querySelector('.opt-terminate[data-option="'+CSS.escape(option)+'"]'); var specifyBox=host.querySelector('.opt-specify[data-option="'+CSS.escape(option)+'"]'); api('POST','/admin/studies/'+STUDY_ID+'/questions/'+q.id+'/option-behaviour',{option:option,terminate_scope:term?term.value:'',allows_specify:!!(specifyBox&&specifyBox.checked)}).then(function(data){ q.other_specify_options_json=data.question.other_specify_options_json; rules=rules.filter(function(r){return !(r.action==='terminate'&&Number(r.condition_question_id)===Number(q.id)&&r.operator==='equals'&&r.value===option);}); if(data.rule) rules.push(data.rule); renderEditor(); saved('Option behaviour saved'); }).catch(fail); }
+    function saveBehaviour(option) { var term=host.querySelector('.opt-terminate[data-option="'+CSS.escape(option)+'"]'); var specifyBox=host.querySelector('.opt-specify[data-option="'+CSS.escape(option)+'"]'); api('POST','/admin/studies/'+STUDY_ID+'/questions/'+q.id+'/option-behaviour',{option:option,terminate_scope:term&&/study$/.test(term.value)?'study':'',exclusive:!!(term&&/^exclusive/.test(term.value)),allows_specify:!!(specifyBox&&specifyBox.checked)}).then(function(data){ q.other_specify_options_json=data.question.other_specify_options_json; q.exclusive_options_json=data.question.exclusive_options_json; rules=rules.filter(function(r){return !(r.action==='terminate'&&Number(r.condition_question_id)===Number(q.id)&&r.operator==='equals'&&r.value===option);}); if(data.rule) rules.push(data.rule); renderEditor(); saved('Option behaviour saved'); }).catch(fail); }
     host.querySelectorAll('.opt-terminate').forEach(function(el){el.addEventListener('change',function(){saveBehaviour(el.dataset.option);});});
     host.querySelectorAll('.opt-specify').forEach(function(el){el.addEventListener('change',function(){saveBehaviour(el.dataset.option);});});
     var add = document.getElementById('addOpt');
@@ -322,21 +341,78 @@
     } catch (e) { fail(e); }
   }
 
+  // ---------- logic panel ----------
+  function questionLabel(qid) {
+    var idx = questions.findIndex(function (q) { return Number(q.id) === Number(qid); });
+    if (idx < 0) return '(deleted question)';
+    return 'Q' + (idx + 1) + ' ' + (questions[idx].text || '(untitled)');
+  }
+  function variableNames() {
+    var names = {};
+    rules.forEach(function (r) { if (r.action === 'set_variable' && r.variable_name) names[r.variable_name] = true; });
+    return Object.keys(names).sort();
+  }
+  function isChoice(q) { return q.type === 'single' || q.type === 'multi'; }
+  function laterQuestions(q) {
+    var idx = questions.findIndex(function (x) { return x.id === q.id; });
+    return questions.slice(idx + 1);
+  }
+  function jumpSelect(cls, q, selected, blankLabel, attrs) {
+    return '<select class="' + cls + ' w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white" ' + (attrs || '') + '>' +
+      '<option value="">' + blankLabel + '</option>' +
+      laterQuestions(q).map(function (x) { return '<option value="' + x.id + '"' + (String(selected) === String(x.id) ? ' selected' : '') + '>Jump to ' + esc(questionLabel(x.id)) + '</option>'; }).join('') +
+      '<option value="end"' + (selected === 'end' ? ' selected' : '') + '>End of survey</option></select>';
+  }
+  function isOptionRule(r, q) { return Number(r.source_question_id) === Number(q.id) && !r.conditions_json && (r.action === 'skip_to' || r.action === 'set_variable'); }
+  function scoresOf(q) { try { var m = JSON.parse(q.option_scores_json || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } }
+
+  // The per-option table state, read from the saved rules so each tab posts
+  // the whole table and never wipes another tab's settings.
+  function optionLogic(q) {
+    var state = { jumps: {}, default_jump: '', variables: {}, scores: scoresOf(q) };
+    rules.forEach(function (r) {
+      if (!isOptionRule(r, q)) return;
+      var dest = r.skip_to_end ? 'end' : String(r.target_question_id || '');
+      if (r.action === 'skip_to' && r.is_default) state.default_jump = dest;
+      else if (r.action === 'skip_to') state.jumps[r.value] = dest;
+      else state.variables[r.value] = { name: r.variable_name, value: r.variable_value === r.value ? '' : r.variable_value };
+    });
+    return state;
+  }
+  async function saveOptionLogic(q, state, message) {
+    try {
+      var data = await api('POST', '/admin/studies/' + STUDY_ID + '/questions/' + q.id + '/option-logic', state);
+      q.option_scores_json = data.question.option_scores_json;
+      rules = data.rules;
+      renderEditor(); saved(message);
+    } catch (e) { fail(e); }
+  }
+
   function renderRules(currentQuestion) {
     var host = document.getElementById('ruleList');
     if (!host || !currentQuestion) return;
-    var byId = {};
-    questions.forEach(function (q) { byId[q.id] = q; });
-    var visible = rules.filter(function(r){ return r.action==='terminate' ? Number(r.condition_question_id)===Number(currentQuestion.id) : Number(r.target_question_id)===Number(currentQuestion.id); });
+    var q = currentQuestion;
+    var visible = rules.filter(function (r) {
+      if (r.action === 'terminate') return Number(r.condition_question_id) === Number(q.id);
+      if (r.action === 'skip_to' || r.action === 'set_variable') return Number(r.source_question_id) === Number(q.id);
+      return Number(r.target_question_id) === Number(q.id);
+    });
     host.innerHTML = visible.map(function (r) {
-      var val = ['in', 'not_in', 'includes'].indexOf(r.operator) > -1 ? String(r.value || '').split('|').join(', ') : r.value;
+      var described = SkipLogic.describeConditions(r, questionLabel, OPS);
+      var conditionsHtml = described.parts.map(function (p) {
+        return '<strong>' + esc(p.question) + '</strong> ' + esc(p.operator) + ' <strong>' + esc(p.value) + '</strong>';
+      }).join(' <span class="font-mono text-[10px] uppercase text-signal">' + described.joiner + '</span> ');
+      var outcome = r.action === 'terminate' ? (r.terminate_scope === 'study' ? 'end participation' : 'end this entry')
+        : r.action === 'show' ? 'show this question'
+        : r.action === 'hide' ? 'hide this question'
+        : r.action === 'skip_to' ? (r.skip_to_end ? 'jump to the end of the survey' : 'jump to <strong>' + esc(questionLabel(r.target_question_id)) + '</strong>')
+        : 'set <strong>' + esc(r.variable_name) + '</strong> = <strong>' + esc(r.variable_value) + '</strong>';
+      var lead = r.is_default ? 'Otherwise (default branch), ' : 'If ' + conditionsHtml + ', ';
       return '<div class="group border-l-2 border-signal bg-brand-50/50 pl-2.5 pr-1.5 py-1.5 rounded-r text-[12px] leading-snug text-slate-700">' +
-        'If <strong>' + esc(r.condition_text || byId[r.condition_question_id]?.text || '') + '</strong> ' + (OPS[r.operator] || r.operator) + ' <strong>' + esc(val) + '</strong>, ' +
-        (r.action === 'terminate' ? (r.terminate_scope==='study'?'end participation':'end this entry') : (r.action === 'show' ? 'show this question' : 'hide this question')) + '.' +
+        lead + outcome + '.' +
         '<button class="rule-del float-right text-slate-300 group-hover:text-red-600" data-id="' + r.id + '">&times;</button></div>';
-    }).join('') || '<div class="px-1 py-3 text-xs text-slate-400">No show, hide or termination rules are attached to this question.</div>';
+    }).join('') || '<div class="px-1 py-3 text-xs text-slate-400">No logic is attached to this question yet.</div>';
     document.getElementById('rCount').textContent = rules.length;
-
     host.querySelectorAll('.rule-del').forEach(function (b) {
       b.addEventListener('click', async function () {
         try {
@@ -346,14 +422,159 @@
         } catch (e) { fail(e); }
       });
     });
-    var add=document.getElementById('addRule'); if(!add)return;
-    add.addEventListener('click', function () {
-      var form = document.getElementById('ruleForm'); form.classList.toggle('hidden');
-      if (form.classList.contains('hidden')) { form.innerHTML=''; return; }
-      var qOpts=questions.filter(function(item){return item.id!==currentQuestion.id;}).map(function(item){return '<option value="'+item.id+'">'+esc(item.text||'(untitled)')+'</option>';}).join('');
-      form.innerHTML='<div class="grid grid-cols-2 gap-2"><select id="rAction" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white"><option value="show">Show this question</option><option value="hide">Hide this question</option></select><select id="rOp" class="border border-slate-300 rounded-lg px-2 py-1.5 bg-white">'+Object.keys(OPS).map(function(k){return '<option value="'+k+'">'+OPS[k]+'</option>';}).join('')+'</select></div><select id="rCond" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white">'+qOpts+'</select><input id="rVal" class="w-full border border-slate-300 rounded-lg px-2 py-1.5" placeholder="Answer value"/><button type="button" id="rSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Add rule</button>';
-      document.getElementById('rSave').onclick=async function(){var op=document.getElementById('rOp').value, raw=document.getElementById('rVal').value; try{var created=await api('POST','/admin/studies/'+STUDY_ID+'/skip-logic',{target_type:'question',target_question_id:currentQuestion.id,condition_question_id:Number(document.getElementById('rCond').value),action:document.getElementById('rAction').value,operator:op,value:['in','not_in','includes'].indexOf(op)>-1?raw.split(',').map(function(v){return v.trim();}).filter(Boolean).join('|'):raw}); rules.push(created.rule||created); renderEditor(); saved('Rule added');}catch(e){fail(e);}};
-    });
+
+    var tabSel = document.getElementById('logicTab');
+    tabSel.onchange = function () { logicTab = tabSel.value; renderLogicBody(q); };
+    renderLogicBody(q);
+  }
+
+  function renderLogicBody(q) {
+    var body = document.getElementById('logicBody');
+    var opts = optionsOf(q);
+    var choiceOnly = '<p class="text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5">' +
+      'This logic is set per answer option, so it needs a single- or multi-select question with options. Use Compound Branching for other questions.</p>';
+    var saveBtn = '<button type="button" id="lSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Save logic</button>';
+
+    if (logicTab === 'skip') {
+      if (!isChoice(q) || !opts.length) { body.innerHTML = choiceOnly; return; }
+      var st = optionLogic(q);
+      body.innerHTML = '<p class="text-slate-500">If an option is selected, jump to a later question or the end of the survey. Questions in between are skipped.' + (q.type === 'multi' ? ' On a multi-select with several selected options, the highest one in this list that has a jump wins.' : '') + '</p>' +
+        opts.map(function (o) {
+          return '<div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2 items-center"><span class="truncate text-slate-700">' + esc(o) + '</span>' + jumpSelect('l-jump', q, st.jumps[o] || '', 'Next question (no jump)', 'data-option="' + esc(o) + '"') + '</div>';
+        }).join('') +
+        '<div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2 items-center pt-1 border-t border-slate-100"><span class="text-slate-500">Default branch</span>' + jumpSelect('l-default', q, st.default_jump, 'None') + '</div>' +
+        '<p class="text-[11px] text-slate-500">The default branch runs once this question is answered and no option above matched. To end someone’s participation, set an option to Terminate in the options list.</p>' + saveBtn;
+      document.getElementById('lSave').onclick = function () {
+        body.querySelectorAll('.l-jump').forEach(function (el) { if (el.value) st.jumps[el.dataset.option] = el.value; else delete st.jumps[el.dataset.option]; });
+        st.default_jump = body.querySelector('.l-default').value;
+        saveOptionLogic(q, st, 'Skip logic saved');
+      };
+      return;
+    }
+
+    if (logicTab === 'scoring') {
+      if (!isChoice(q) || !opts.length) { body.innerHTML = choiceOnly; return; }
+      var sc = optionLogic(q);
+      body.innerHTML = '<p class="text-slate-500">Give options a score. Each entry’s total score adds up the chosen options on every question it showed; branch on it with Compound Branching and show it with <code>${score}</code>.</p>' +
+        opts.map(function (o) {
+          return '<div class="grid grid-cols-[minmax(0,1fr)_110px] gap-2 items-center"><span class="truncate text-slate-700">' + esc(o) + '</span>' +
+            '<input type="number" step="any" class="l-score border border-slate-300 rounded-lg px-2 py-1.5" data-option="' + esc(o) + '" value="' + esc(sc.scores[o] != null ? sc.scores[o] : '') + '" placeholder="0" /></div>';
+        }).join('') + saveBtn;
+      document.getElementById('lSave').onclick = function () {
+        sc.scores = {};
+        body.querySelectorAll('.l-score').forEach(function (el) { if (el.value.trim() !== '') sc.scores[el.dataset.option] = el.value; });
+        saveOptionLogic(q, sc, 'Scores saved');
+      };
+      return;
+    }
+
+    if (logicTab === 'variables') {
+      if (!isChoice(q) || !opts.length) { body.innerHTML = choiceOnly; return; }
+      var vs = optionLogic(q);
+      body.innerHTML = '<p class="text-slate-500">When an option is selected, set a variable. Leave the value blank to store the option’s own text. Use it later in conditions, or pipe it with <code>${name}</code>. The latest value set wins.</p>' +
+        '<div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 font-mono text-[10px] uppercase text-slate-400"><span>Option</span><span>Variable</span><span>Value</span></div>' +
+        opts.map(function (o) {
+          var v = vs.variables[o] || {};
+          return '<div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 items-center"><span class="truncate text-slate-700">' + esc(o) + '</span>' +
+            '<input class="l-var-name border border-slate-300 rounded-lg px-2 py-1.5 font-mono" data-option="' + esc(o) + '" value="' + esc(v.name || '') + '" placeholder="e.g. segment" />' +
+            '<input class="l-var-value border border-slate-300 rounded-lg px-2 py-1.5" data-option="' + esc(o) + '" value="' + esc(v.value || '') + '" placeholder="' + esc(o) + '" /></div>';
+        }).join('') + saveBtn;
+      document.getElementById('lSave').onclick = function () {
+        vs.variables = {};
+        body.querySelectorAll('.l-var-name').forEach(function (el) {
+          var value = body.querySelector('.l-var-value[data-option="' + CSS.escape(el.dataset.option) + '"]').value;
+          if (el.value.trim()) vs.variables[el.dataset.option] = { name: el.value.trim(), value: value };
+        });
+        saveOptionLogic(q, vs, 'Variables saved');
+      };
+      return;
+    }
+
+    if (logicTab === 'custom') {
+      var codes = questions.filter(function (x) { return x.code; }).map(function (x) { return '<code>' + esc(x.code) + '</code>'; }).join(', ');
+      body.innerHTML = '<p class="text-slate-500">Write a condition as an expression; when it is true, the action below runs. It is checked by our own logic engine, never run as code.</p>' +
+        '<textarea id="xExpr" rows="3" class="w-full font-mono border border-slate-300 rounded-lg px-2 py-1.5" placeholder="selectedCount(\'Q3\') >= 2 and score > 5"></textarea>' +
+        '<div id="xStatus" class="text-[11px] text-slate-500">&nbsp;</div>' +
+        '<select id="xAction" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white"><option value="show">Show this question</option><option value="hide">Hide this question</option><option value="skip_to">Jump after this question…</option><option value="set_variable">Set a variable…</option></select>' +
+        '<div id="xJump" class="hidden">' + jumpSelect('', q, '', 'Choose where to jump…', 'id="xJumpTo"') + '</div>' +
+        '<div id="xVar" class="hidden grid grid-cols-2 gap-2"><input id="xVarName" class="border border-slate-300 rounded-lg px-2 py-1.5 font-mono" placeholder="variable name" /><input id="xVarValue" class="border border-slate-300 rounded-lg px-2 py-1.5" placeholder="value" /></div>' +
+        '<details class="text-[11px] text-slate-600 bg-slate-50 rounded-lg px-3 py-2"><summary class="cursor-pointer font-medium">Functions and operators</summary>' +
+        '<div class="mt-1.5 space-y-0.5 font-mono">' +
+        '<div>answer(\'Q1\') · number(\'Q4\') · selectedCount(\'Q3\')</div><div>selectedIndex(\'Q1\') · isSelected(\'Q3\', \'A\') · isAnswered(\'Q2\')</div>' +
+        '<div>score · any variable name</div><div>== != &gt; &gt;= &lt; &lt;= and or not ( ) + - * /</div></div>' +
+        '<div class="mt-1.5">QuestionPro names like <code>$survey.getSelectedOption(\'Q1\')</code> also work. Question codes: ' + (codes || 'none yet — set a Code on each question you want to reference') + '.</div></details>' +
+        '<button type="button" id="xSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Add rule</button>';
+      var expr = document.getElementById('xExpr'), status = document.getElementById('xStatus'), act = document.getElementById('xAction');
+      expr.oninput = function () {
+        var problem = expr.value.trim() ? SkipLogic.validateExpression(expr.value) : null;
+        status.textContent = problem || (expr.value.trim() ? '✓ Valid expression' : ' ');
+        status.className = 'text-[11px] ' + (problem ? 'text-red-600' : 'text-verified');
+      };
+      act.onchange = function () {
+        document.getElementById('xJump').classList.toggle('hidden', act.value !== 'skip_to');
+        document.getElementById('xVar').classList.toggle('hidden', act.value !== 'set_variable');
+      };
+      document.getElementById('xSave').onclick = async function () {
+        var payload = { action: act.value, conditions: [{ expression: expr.value }] };
+        if (act.value === 'show' || act.value === 'hide') { payload.target_type = 'question'; payload.target_question_id = q.id; }
+        else { payload.source_question_id = q.id; }
+        if (act.value === 'skip_to') payload.skip_to = document.getElementById('xJumpTo').value;
+        if (act.value === 'set_variable') { payload.variable_name = document.getElementById('xVarName').value; payload.variable_value = document.getElementById('xVarValue').value; }
+        try { var created = await api('POST', '/admin/studies/' + STUDY_ID + '/skip-logic', payload); rules.push(created.rule || created); renderEditor(); saved('Rule added'); } catch (e) { fail(e); }
+      };
+      return;
+    }
+
+    // Compound Branching and Show/Hide share the condition builder.
+    var branching = logicTab === 'compound';
+    var sources = questions.filter(function (item) { return branching || item.id !== q.id; });
+    var sourceOpts = '<optgroup label="Questions">' + sources.map(function (item) { return '<option value="q:' + item.id + '">' + esc(questionLabel(item.id)) + '</option>'; }).join('') + '</optgroup>' +
+      '<optgroup label="Derived values"><option value="v:score">Total score</option>' + variableNames().map(function (n) { return '<option value="v:' + esc(n) + '">Variable “' + esc(n) + '”</option>'; }).join('') + '</optgroup>';
+    var opOpts = Object.keys(OPS).map(function (k) { return '<option value="' + k + '">' + OPS[k] + '</option>'; }).join('');
+    function conditionRow() {
+      return '<div class="r-cond rounded-lg border border-slate-200 bg-white p-2 space-y-1.5">' +
+        '<div class="flex gap-1.5"><select class="r-q flex-1 min-w-0 border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + sourceOpts + '</select>' +
+        '<button type="button" class="r-remove text-slate-400 hover:text-red-600 px-1" title="Remove condition">&times;</button></div>' +
+        '<div class="grid grid-cols-[130px_1fr] gap-1.5"><select class="r-op border border-slate-300 rounded-lg px-2 py-1.5 bg-white">' + opOpts + '</select>' +
+        '<input class="r-val border border-slate-300 rounded-lg px-2 py-1.5" placeholder="Value" /></div>' +
+        '<datalist class="r-suggest"></datalist></div>';
+    }
+    body.innerHTML = (branching
+        ? '<p class="text-slate-500">After this question, jump when the conditions below match. Conditions can read any question, the total score or a variable.</p>' + jumpSelect('', q, '', 'Choose where to jump…', 'id="rJump"')
+        : '<select id="rAction" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 bg-white"><option value="show">Show this question</option><option value="hide">Hide this question</option></select>') +
+      '<div class="flex items-center gap-2 text-slate-600"><span>when</span><select id="rMatch" class="border border-slate-300 rounded-lg px-2 py-1 bg-white"><option value="all">all conditions match (AND)</option><option value="any">any condition matches (OR)</option></select></div>' +
+      '<div id="rConds" class="space-y-1.5"></div>' +
+      '<button type="button" id="rAddCond" class="text-signal font-medium hover:underline">+ Add condition</button>' +
+      '<p class="text-[11px] text-slate-500">For “is one of”, “is none of” and “includes”, separate values with commas.</p>' +
+      '<button type="button" id="rSave" class="w-full bg-signal text-white rounded-lg py-2 font-semibold">Add rule</button>';
+    var condHost = document.getElementById('rConds'), uid = 0;
+    var byId = {}; questions.forEach(function (item) { byId[item.id] = item; });
+    function addCondition() {
+      condHost.insertAdjacentHTML('beforeend', conditionRow());
+      var row = condHost.lastElementChild, listId = 'rSuggest' + (++uid);
+      row.querySelector('.r-suggest').id = listId; row.querySelector('.r-val').setAttribute('list', listId);
+      if (branching) row.querySelector('.r-q').value = 'q:' + q.id;
+      function suggest() {
+        var key = row.querySelector('.r-q').value, src = key.indexOf('q:') === 0 ? byId[key.slice(2)] : null;
+        row.querySelector('.r-suggest').innerHTML = (src ? optionsOf(src) : []).map(function (o) { return '<option value="' + esc(o) + '"></option>'; }).join('');
+        if (key === 'v:score') row.querySelector('.r-op').value = 'gte';
+      }
+      row.querySelector('.r-q').addEventListener('change', suggest); suggest();
+      row.querySelector('.r-remove').addEventListener('click', function () { if (condHost.children.length > 1) row.remove(); });
+    }
+    addCondition();
+    document.getElementById('rAddCond').onclick = addCondition;
+    document.getElementById('rSave').onclick = async function () {
+      var conditions = Array.from(condHost.querySelectorAll('.r-cond')).map(function (row) {
+        var op = row.querySelector('.r-op').value, raw = row.querySelector('.r-val').value, key = row.querySelector('.r-q').value;
+        var value = ['in', 'not_in', 'includes'].indexOf(op) > -1 ? raw.split(',').map(function (v) { return v.trim(); }).filter(Boolean).join('|') : raw.trim();
+        return key.indexOf('v:') === 0 ? { variable: key.slice(2), operator: op, value: value } : { question_id: Number(key.slice(2)), operator: op, value: value };
+      });
+      var payload = branching
+        ? { action: 'skip_to', source_question_id: q.id, skip_to: document.getElementById('rJump').value, match: document.getElementById('rMatch').value, conditions: conditions }
+        : { action: document.getElementById('rAction').value, target_type: 'question', target_question_id: q.id, match: document.getElementById('rMatch').value, conditions: conditions };
+      try { var created = await api('POST', '/admin/studies/' + STUDY_ID + '/skip-logic', payload); rules.push(created.rule || created); renderEditor(); saved('Rule added'); } catch (e) { fail(e); }
+    };
   }
 
   // ---------- events ----------

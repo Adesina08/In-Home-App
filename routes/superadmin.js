@@ -282,6 +282,8 @@ router.post("/superadmin/studies/:id/delete", onlySuperadmin, async (req, res) =
   await removeWhere("consent_versions", { study_id: studyId });
   await removeWhere("kpi_config", { study_id: studyId });
   await removeWhere("ai_summaries", { study_id: studyId });
+  try { await require("../lib/videoSummary").removeVideoSummaries({ study_id: studyId }); }
+  catch (e) { console.warn("Study delete cleanup skipped video_summaries:", e.message); }
   await removeWhere("respondent_profile_snapshots", { study_id: studyId });
   for (const collection of ["interviewer_assignments", "fieldwork_visits", "backchecks", "incentive_rules", "incentive_ledger", "client_grants", "report_snapshots", "report_schedules", "research_alerts", "research_audit", "theme_codes", "coded_verbatims", "privacy_requests", "follow_up_log", "end_validations"]) {
     await removeWhere(collection, { study_id: studyId });

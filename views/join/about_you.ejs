@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <form method="POST" action="/join/<%= code %>/about-you" class="space-y-5">
+    <form method="POST" action="<%= typeof formAction !== 'undefined' ? formAction : '/join/' + code + '/about-you' %>" class="space-y-5">
       <div>
         <label class="block text-sm font-semibold text-slate-800 mb-1.5">Name</label>
         <input name="name" value="<%= values.name || '' %>" autocomplete="name" class="w-full rounded-xl border <%= errors.name ? 'border-red-400' : 'border-slate-300' %> px-3.5 py-3 text-sm" />

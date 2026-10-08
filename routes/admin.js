@@ -17,13 +17,15 @@ const { qrPngToResponse } = require("../lib/qrcode");
 const { respondentDiaryUrl, appBaseUrl } = require("../lib/urls");
 const { getOrCreateJoinCode, remoteOnboardingOpen } = require("../lib/joinCode");
 const aiSummary = require("../lib/aiSummary");
-const { CATEGORIES, parseCategories, toStoredCategories, selectedOrAllCategories } = require("../lib/categories");
+const { CATEGORIES, toStoredCategories, selectedOrAllCategories, detectionCategories, normalizeCustomCategories } = require("../lib/categories");
 const accounts = require("../lib/respondentAccounts");
 const { nextRespondentCode } = require("../lib/respondentCode");
 const messaging = require("../lib/whatsapp");
 const kpiEngine = require("../lib/kpi");
 const { v4: uuidv4 } = require("uuid");
 const { loadQuestionnaire, isQuestionActive, CADENCES } = require("../lib/questionnaire");
+const { ruleQuestionIds } = require("../lib/skipLogic");
+const { validateExpression } = require("../public/js/skip-logic.js");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 const staffEmail = require("../lib/staffEmail");
 const geography = require("../lib/geography");
@@ -334,6 +336,13 @@ async function recentActivity(study) {
 }
 
 // ---------- Studies ----------
+// Built-in ticks plus the "Add a category" rows. A typed name that is really
+// a built-in ticks that built-in rather than becoming a near-duplicate.
+function categoriesFromForm(body) {
+  const { customs, builtIns } = normalizeCustomCategories(body.custom_category_name, body.custom_category_group, body.custom_category_description);
+  return { category: toStoredCategories([].concat(body.category || [], builtIns), customs), custom_categories: customs };
+}
+
 router.get("/studies", async (req, res) => {
   const studies = await store.find("studies", studyScopeFilter(req), { sort: { id: -1 } });
   res.render("admin/studies", { studies, countries: geography.countries() });
@@ -346,8 +355,8 @@ router.post("/studies", requireRole("superadmin"), async (req, res) => {
   const { name, diary_mode, recruitment_mode } = req.body;
   const chosenCountry = geography.country(req.body.market_country_code || req.body.market);
   if (!chosenCountry) return res.status(400).render("error", { message: "Choose a valid market country.", user: req.session.user });
-  const category = toStoredCategories(req.body.category);
-  const { id } = await store.insert("studies", { name, market: chosenCountry.name, market_country_code: chosenCountry.isoCode, market_regions: [], category, diary_mode, recruitment_mode });
+  const { category, custom_categories } = categoriesFromForm(req.body);
+  const { id } = await store.insert("studies", { name, market: chosenCountry.name, market_country_code: chosenCountry.isoCode, market_regions: [], category, custom_categories, diary_mode, recruitment_mode });
   // seed default KPI candidates
   const defaults = [
     ["completion_rate", "Diary Completion Rate"],
@@ -426,7 +435,7 @@ router.post("/studies/:id/settings", async (req, res) => {
     market: chosenCountry.name,
     market_country_code: chosenCountry.isoCode,
     market_regions: regionCodes.map((code) => ({ code, name: allowedRegions.get(code).name })),
-    category: toStoredCategories(b.category),
+    ...categoriesFromForm(b),
     status: b.status,
     diary_mode: b.diary_mode,
     recruitment_mode: b.recruitment_mode,
@@ -474,11 +483,12 @@ router.get("/studies/:id/questionnaire", async (req, res) => {
   // condition_text keep their aliases, the template reads them.
   const questionsById = new Map(questions.map((q) => [q.id, q]));
   const rules = (await store.find("skip_rules", { study_id: studyId }, { sort: { id: 1 } }))
-    .filter((sr) => questionsById.has(sr.condition_question_id))
+    // A rule is dropped once any question it depends on is gone.
+    .filter((sr) => ruleQuestionIds(sr).every((qid) => questionsById.has(qid)))
     .map((sr) => ({
       ...sr,
       target_text: questionsById.has(sr.target_question_id) ? questionsById.get(sr.target_question_id).text : null,
-      condition_text: questionsById.get(sr.condition_question_id).text,
+      condition_text: questionsById.has(sr.condition_question_id) ? questionsById.get(sr.condition_question_id).text : null,
     }));
   res.render("admin/study_questionnaire_v2", {
     study, questions, activeQuestions, sections, rules, tab: "questionnaire",
@@ -635,6 +645,8 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
           })()
         : q.applicable_cadences,
     other_specify_options_json: q.other_specify_options_json || null,
+    exclusive_options_json: q.exclusive_options_json || null,
+    option_scores_json: q.option_scores_json || null,
     rotate_options: b.rotate_options !== undefined ? (b.rotate_options ? 1 : 0) : q.rotate_options,
     every_nth_occasion: parsed.everyNth,
     from_hour_utc: parsed.fromHour,
@@ -654,17 +666,38 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     const isReorderOnly = oldOptions.length === newOptions.length
       && [...oldOptions].sort().join(" ") === [...newOptions].sort().join(" ")
       && oldOptions.join(" ") !== newOptions.join(" ");
-    let oldSpecify = []; try { oldSpecify = JSON.parse(q.other_specify_options_json || "[]"); } catch (_) {}
-    const mappedSpecify = isReorderOnly
-      ? oldSpecify.filter((value) => newOptions.includes(value))
-      : oldSpecify.map((value) => {
-          const index = oldOptions.indexOf(value); return index >= 0 && newOptions[index] ? newOptions[index] : null;
-        }).filter(Boolean);
-    next.other_specify_options_json = mappedSpecify.length ? JSON.stringify(mappedSpecify) : null;
+    // "Other text" and "exclusive" flags follow the option's text through renames.
+    const remapFlags = (raw) => {
+      let old = []; try { old = JSON.parse(raw || "[]"); } catch (_) {}
+      const mapped = isReorderOnly
+        ? old.filter((value) => newOptions.includes(value))
+        : old.map((value) => {
+            const index = oldOptions.indexOf(value); return index >= 0 && newOptions[index] ? newOptions[index] : null;
+          }).filter(Boolean);
+      return mapped.length ? JSON.stringify(mapped) : null;
+    };
+    next.other_specify_options_json = remapFlags(q.other_specify_options_json);
+    next.exclusive_options_json = remapFlags(q.exclusive_options_json);
+    let oldScores = {}; try { oldScores = JSON.parse(q.option_scores_json || "{}") || {}; } catch (_) {}
+    const newScores = {};
+    for (const [option, score] of Object.entries(oldScores)) {
+      const index = oldOptions.indexOf(option);
+      const renamed = isReorderOnly ? (newOptions.includes(option) ? option : null) : (index >= 0 ? newOptions[index] : null);
+      if (renamed) newScores[renamed] = score;
+    }
+    next.option_scores_json = Object.keys(newScores).length ? JSON.stringify(newScores) : null;
     if (!isReorderOnly) {
       for (let index = 0; index < oldOptions.length; index++) {
         if (oldOptions[index] !== newOptions[index] && newOptions[index]) {
           await store.update("skip_rules", { study_id: q.study_id, condition_question_id: q.id, operator: "equals", value: oldOptions[index], action: "terminate" }, { value: newOptions[index] });
+          // Per-option jumps and variables follow the option too (a variable
+          // that stored the option's own text keeps storing the new text).
+          for (const action of ["skip_to", "set_variable"]) {
+            for (const rule of await store.find("skip_rules", { study_id: q.study_id, source_question_id: q.id, condition_question_id: q.id, value: oldOptions[index], action })) {
+              if (rule.conditions_json) continue;
+              await store.update("skip_rules", { id: rule.id }, { value: newOptions[index], ...(rule.variable_value === oldOptions[index] ? { variable_value: newOptions[index] } : {}) });
+            }
+          }
         }
       }
     }
@@ -682,6 +715,8 @@ router.patch("/studies/:id/questions/:qid", async (req, res) => {
     section: next.section,
     applicable_cadences: next.applicable_cadences,
     other_specify_options_json: next.other_specify_options_json,
+    exclusive_options_json: next.exclusive_options_json,
+    option_scores_json: next.option_scores_json,
     rotate_options: next.rotate_options,
     every_nth_occasion: next.every_nth_occasion,
     from_hour_utc: next.from_hour_utc,
@@ -702,7 +737,16 @@ router.post("/studies/:id/questions/:qid/option-behaviour", async (req, res) => 
   try { specify = JSON.parse(q.other_specify_options_json || "[]"); } catch (_) {}
   specify = specify.filter((value) => options.includes(value) && value !== option);
   if (req.body.allows_specify === true) specify.push(option);
-  await store.update("questions", { id: q.id }, { other_specify_options_json: specify.length ? JSON.stringify(specify) : null });
+  // Exclusive ("None of these") only means something on a multi-select.
+  let exclusive = [];
+  try { exclusive = JSON.parse(q.exclusive_options_json || "[]"); } catch (_) {}
+  exclusive = exclusive.filter((value) => options.includes(value) && value !== option);
+  const makeExclusive = q.type === "multi" && req.body.exclusive === true;
+  if (makeExclusive) exclusive.push(option);
+  await store.update("questions", { id: q.id }, {
+    other_specify_options_json: specify.length ? JSON.stringify(specify) : null,
+    exclusive_options_json: exclusive.length ? JSON.stringify(exclusive) : null,
+  });
   await store.remove("skip_rules", { study_id: studyId, condition_question_id: q.id, operator: "equals", value: option, action: "terminate" });
   const scope = req.body.terminate_scope === "study" ? "study" : null;
   let created = null;
@@ -710,7 +754,7 @@ router.post("/studies/:id/questions/:qid/option-behaviour", async (req, res) => 
     const result = await store.insert("skip_rules", { study_id: studyId, target_question_id: null, target_section: null, condition_question_id: q.id, operator: "equals", value: option, action: "terminate", terminate_scope: scope });
     created = await store.findOne("skip_rules", { id: result.id });
   }
-  logAudit(req.session.user.email, "update_option_behaviour", "questions", q.id, { option, allows_specify: req.body.allows_specify === true, terminate_scope: scope });
+  logAudit(req.session.user.email, "update_option_behaviour", "questions", q.id, { option, allows_specify: req.body.allows_specify === true, exclusive: makeExclusive, terminate_scope: scope });
   res.json({ question: await store.findOne("questions", { id: q.id }), rule: created });
 });
 
@@ -763,12 +807,23 @@ router.get("/studies/:id/questionnaire/template.xlsx", async (req, res) => {
   const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
   const XLSX = require("xlsx");
+  const logicBlank = { "Exclusive options": "", "Option scores": "", "Skip logic": "", "Default jump": "", "Set variables": "", "Custom logic": "" };
   const rows = [
-    { Code: "Q1", Section: "Screening", Question: "Did you consume the category today?", Type: "single", Options: "Yes|No|Other", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "", "Other specify options": "Other", "Terminate entry options": "No", "Terminate study options": "" },
-    { Code: "Q2", Section: "Consumption", Question: "Which product did you consume?", Type: "multi", Options: "Product A|Product B|Other", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "Show if Q1 equals Yes", "Other specify options": "Other", "Terminate entry options": "", "Terminate study options": "" },
+    { Code: "Q1", Section: "Screening", Question: "Did you consume the category today?", Type: "single", Options: "Yes|No|Other", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "", "Other specify options": "Other", "Terminate entry options": "No", "Terminate study options": "", ...logicBlank, "Option scores": "Yes=1|No=0", "Set variables": "Yes=consumer:Yes" },
+    { Code: "Q2", Section: "Consumption", Question: "Which product did you consume?", Type: "multi", Options: "Product A|Product B|Other|None of these", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "Show if Q1 equals Yes", "Other specify options": "Other", "Terminate entry options": "", "Terminate study options": "", ...logicBlank, "Exclusive options": "None of these", "Option scores": "Product A=2|Product B=2", "Skip logic": "None of these=END", "Set variables": "Product A=segment:Brand loyal" },
+    { Code: "Q3", Section: "Consumption", Question: "How often do you buy Product A?", Type: "single", Options: "Daily|Weekly|Rarely", Required: "Yes", Cadence: "daily", Minimum: "", Maximum: "", Condition: "", "Other specify options": "", "Terminate entry options": "", "Terminate study options": "", ...logicBlank, "Option scores": "Daily=3|Weekly=2|Rarely=1", "Skip logic": "Rarely=Q5", "Default jump": "", "Custom logic": "Show if isSelected('Q2', 'Product A')" },
+    { Code: "Q4", Section: "Consumption", Question: "Why do you buy it so often?", Type: "text", Options: "", Required: "No", Cadence: "daily", Minimum: "", Maximum: "", Condition: "", "Other specify options": "", "Terminate entry options": "", "Terminate study options": "", ...logicBlank, "Custom logic": "Hide if score < 4" },
+    { Code: "Q5", Section: "Wrap-up", Question: "Anything else about ${segment} products?", Type: "text", Options: "", Required: "No", Cadence: "daily", Minimum: "", Maximum: "", Condition: "", "Other specify options": "", "Terminate entry options": "", "Terminate study options": "", ...logicBlank },
   ];
   const instructions = [
     ["Column", "How to complete it"], ["Type", "single, multi, numeric, scale, rank, text, date, time, photo, video or audio"], ["Options", "Use | between choices. Leave blank for non-choice questions."], ["Cadence", "realtime, daily, weekly, monthly or hybrid. Use | for several."], ["Condition", "Example: Show if Q1 equals Yes"], ["Other specify options", "Copy exact option labels that should open a required text box; use | for several."], ["Terminate entry options", "Exact option labels that end only the current diary entry."], ["Terminate study options", "Exact option labels that end participation. An option cannot appear in both termination columns."],
+    ["Exclusive options", "Multi-select only. Option labels that clear every other selection when picked (e.g. None of these); use | for several."],
+    ["Option scores", "Single/multi only. Option=score pairs, e.g. Yes=3|No=0. Each entry's total score adds up the chosen options; use it in Custom logic as score and pipe it with ${score}."],
+    ["Skip logic", "Single/multi only. Option=destination pairs, e.g. No=Q5|Maybe=END. Jumps only go forward; END finishes the questionnaire. Q5 means the row whose Code is Q5 (else the 5th row)."],
+    ["Default jump", "Single/multi only. Where to jump once the question is answered and no Skip logic option matched, e.g. Q7 or END."],
+    ["Set variables", "Single/multi only. Option=variable:value pairs, e.g. Yes=segment:Heavy|No=segment:Light. Leave out :value to store the option text. Use variables in Custom logic and pipe them with ${segment}."],
+    ["Custom logic", "One rule per row: Show if <expression>, Hide if <expression>, or Jump to Q9 if <expression> (or END). Functions: answer('Q1'), number('Q4'), selectedCount('Q3'), selectedIndex('Q1'), isSelected('Q3', 'A'), isAnswered('Q2'); values: score and variable names; operators: == != > >= < <= and or not."],
+    ["Piping", "In question text, ${Q2} shows the answer to the question with Code Q2, ${Q2_OTHER} its other-specify text, ${score} the total score and ${segment} a variable."],
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Questionnaire");
@@ -833,6 +888,7 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
   let rulesSkipped = 0;
   const questionIdByTemplateRow = new Map(); // template "#" -> newly inserted question id, included rows only
   const optionsByTemplateRow = new Map();
+  const importedQuestions = []; // { id, row, code, type, position } in questionnaire order
   // for...of rather than forEach: each insert is awaited, and the running
   // `inserted` counter feeds the next row's order_index, so they have to stay
   // in sequence.
@@ -848,6 +904,12 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
       return index >= 0 ? optionsArr[index] : null;
     }).filter(Boolean);
     const cadences = Array.isArray(orig && orig.applicable_cadences) ? orig.applicable_cadences : [];
+    const isChoice = ["single", "multi"].includes(r.type || "text");
+    const scores = {};
+    for (const [option, score] of Object.entries((orig && orig.option_scores) || {})) {
+      const [renamed] = mapBehaviourOptions([option]);
+      if (renamed) scores[renamed] = score;
+    }
     const { id } = await store.insert("questions", {
       study_id: study.id,
       order_index: maxOrder + inserted + 1,
@@ -857,6 +919,8 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
       required: r.required ? 1 : 0,
       options_json: optionsArr.length ? JSON.stringify(optionsArr) : null,
       other_specify_options_json: mapBehaviourOptions(orig && orig.other_specify_options).length ? JSON.stringify(mapBehaviourOptions(orig.other_specify_options)) : null,
+      exclusive_options_json: (r.type || "text") === "multi" && mapBehaviourOptions(orig && orig.exclusive_options).length ? JSON.stringify(mapBehaviourOptions(orig.exclusive_options)) : null,
+      option_scores_json: isChoice && Object.keys(scores).length ? JSON.stringify(scores) : null,
       min_value: r.min !== undefined && r.min !== "" ? parseFloat(r.min) : null,
       max_value: r.max !== undefined && r.max !== "" ? parseFloat(r.max) : null,
       section: r.section && r.section.trim() ? r.section.trim() : null,
@@ -864,6 +928,65 @@ router.post("/studies/:id/questionnaire/preview/:importId/commit", async (req, r
     });
     inserted++;
     if (orig && orig.row !== undefined) { questionIdByTemplateRow.set(orig.row, id); optionsByTemplateRow.set(orig.row, { original: orig.options || [], edited: optionsArr }); }
+    importedQuestions.push({ id, row: orig && orig.row, code: r.code || null, type: r.type || "text", position: inserted });
+  }
+
+  // Skip logic, default jumps, variables and custom logic, now that every
+  // included row has an id. A reference ("Q5") matches a row's Code first,
+  // then the n-th row; jumps may only go forward.
+  const resolveRef = (ref) => {
+    if (/^end$/i.test(ref)) return "end";
+    const byCode = importedQuestions.find((q) => q.code && q.code.toLowerCase() === String(ref).toLowerCase());
+    if (byCode) return byCode;
+    const n = /^Q(\d+)$/i.exec(ref);
+    return n ? importedQuestions.find((q) => q.row === Number(n[1])) || null : null;
+  };
+  const jumpFields = (source, ref) => {
+    const target = resolveRef(ref);
+    if (target === "end") return { skip_to_end: 1, target_question_id: null };
+    return target && target.position > source.position ? { skip_to_end: 0, target_question_id: target.id } : null;
+  };
+  const optionRuleBase = { study_id: study.id, target_section: null, conditions_json: null, match: null, terminate_scope: null };
+  for (const [idx, row] of originalRows.entries()) {
+    const source = importedQuestions.find((q) => q.row === (row.row || idx + 1));
+    if (!source) continue;
+    const mapping = optionsByTemplateRow.get(source.row);
+    const renamed = (option) => { const at = mapping ? mapping.original.indexOf(option) : -1; return at >= 0 ? mapping.edited[at] : null; };
+    const operator = source.type === "multi" ? "includes" : "equals";
+    const choice = ["single", "multi"].includes(source.type);
+    for (const [option, ref] of Object.entries(choice ? row.jumps || {} : {})) {
+      const fields = jumpFields(source, ref), value = renamed(option);
+      if (!fields || !value) { rulesSkipped++; continue; }
+      await store.insert("skip_rules", { ...optionRuleBase, action: "skip_to", source_question_id: source.id, condition_question_id: source.id, operator, value, is_default: 0, variable_name: null, variable_value: null, ...fields });
+      rulesCreated++;
+    }
+    if (choice && row.default_jump) {
+      const fields = jumpFields(source, row.default_jump);
+      if (!fields) rulesSkipped++;
+      else {
+        await store.insert("skip_rules", { ...optionRuleBase, action: "skip_to", source_question_id: source.id, condition_question_id: null, operator: null, value: null, is_default: 1, variable_name: null, variable_value: null, ...fields });
+        rulesCreated++;
+      }
+    }
+    for (const [option, variable] of Object.entries(choice ? row.variables || {} : {})) {
+      const value = renamed(option);
+      if (!value) { rulesSkipped++; continue; }
+      await store.insert("skip_rules", { ...optionRuleBase, action: "set_variable", source_question_id: source.id, condition_question_id: source.id, operator, value, target_question_id: null, skip_to_end: null, is_default: 0, variable_name: variable.name, variable_value: variable.value || value });
+      rulesCreated++;
+    }
+    const custom = row.custom_logic;
+    if (custom) {
+      const fields = custom.action === "skip_to" ? jumpFields(source, custom.target) : null;
+      if (custom.action === "skip_to" && !fields) { rulesSkipped++; continue; }
+      await store.insert("skip_rules", {
+        ...optionRuleBase,
+        action: custom.action,
+        conditions_json: JSON.stringify([{ expression: custom.expression }]),
+        condition_question_id: null, operator: null, value: null, is_default: 0, variable_name: null, variable_value: null,
+        ...(custom.action === "skip_to" ? { source_question_id: source.id, ...fields } : { source_question_id: null, skip_to_end: null, target_question_id: source.id }),
+      });
+      rulesCreated++;
+    }
   }
 
   for (const [idx, row] of originalRows.entries()) {
@@ -949,43 +1072,179 @@ router.get("/studies/:id/skip-logic", (req, res) => {
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
 });
 
+// Rule actions the builder can create. "terminate" rules come from the
+// option dropdown (option-behaviour) and the questionnaire import.
+const RULE_ACTIONS = ["show", "hide", "skip_to", "set_variable", "terminate"];
+const RULE_OPERATORS = ["equals", "not_equals", "in", "not_in", "includes", "gt", "gte", "lt", "lte"];
+// Variable names are what authors type into ${name} pipes and conditions.
+// "score" is the built-in total score, so it can't be set by a rule.
+const VARIABLE_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+
+// Active questions of a study in questionnaire order -- jumps may only go
+// forward, so "later" is judged against this order.
+async function orderedStudyQuestions(studyId) {
+  return (await store.find("questions", { study_id: studyId }, { sort: { order_index: 1, id: 1 } })).filter(isQuestionActive);
+}
+
+// Where a jump lands: "end" (finish the questionnaire) or a question that
+// comes after the source. Returns null for "no jump" and throws on an invalid
+// destination.
+function jumpDestination(raw, sourceId, ordered) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (raw === "end") return { skip_to_end: 1, target_question_id: null };
+  const from = ordered.findIndex((q) => String(q.id) === String(sourceId));
+  const to = ordered.findIndex((q) => String(q.id) === String(raw));
+  if (from < 0 || to <= from) throw Object.assign(new Error("A jump can only go to a later question."), { status: 400 });
+  return { skip_to_end: 0, target_question_id: ordered[to].id };
+}
+
 router.post("/studies/:id/skip-logic", async (req, res) => {
-  const { target_type, target_question_id, target_section, condition_question_id, operator, value, action, terminate_scope } = req.body;
+  const studyId = toId(req.params.id);
+  const { target_type, target_question_id, target_section, terminate_scope } = req.body;
+  const action = RULE_ACTIONS.includes(req.body.action) ? req.body.action : null;
+  if (!action) return res.status(400).json({ error: "Choose what this rule should do." });
   const isTerminate = action === "terminate";
-  const isSection = !isTerminate && target_type === "section";
+  const isSection = (action === "show" || action === "hide") && target_type === "section";
   // "is one of" / "is none of" / "includes" accept a comma-separated value list
   // in the form -- normalize to the same "|" join the auto-created (template
   // import) rules and the respondent form's matching logic both use.
-  const storedValue = ["in", "not_in", "includes"].includes(operator)
-    ? String(value || "").split(",").map((v) => v.trim()).filter(Boolean).join("|")
-    : value;
+  const normalize = (operator, value) => ["in", "not_in", "includes"].includes(operator)
+    ? String(value || "").split(/[,|]/).map((v) => v.trim()).filter(Boolean).join("|")
+    : String(value ?? "").trim();
+  // A compound rule posts conditions: [{ question_id | variable, operator,
+  // value }] joined by match ("all" = AND, "any" = OR); the original
+  // single-condition fields are still accepted. The first question condition
+  // is mirrored into condition_question_id / operator / value so older
+  // readers keep working.
+  const posted = Array.isArray(req.body.conditions) && req.body.conditions.length
+    ? req.body.conditions
+    : [{ question_id: req.body.condition_question_id, operator: req.body.operator, value: req.body.value }];
+  const conditions = posted.map((c) => {
+    // Custom logic: an expression evaluated by the logic engine, never eval'd.
+    if (c.expression !== undefined) return { expression: String(c.expression).trim() };
+    const operator = RULE_OPERATORS.includes(c.operator) ? c.operator : "equals";
+    const variable = c.variable ? String(c.variable).trim() : null;
+    return variable
+      ? { variable, operator, value: normalize(operator, c.value) }
+      : { question_id: toId(c.question_id), operator, value: normalize(operator, c.value) };
+  });
+  const ordered = await orderedStudyQuestions(studyId);
+  const studyQuestionIds = new Set(ordered.map((q) => String(q.id)));
+  for (const c of conditions.filter((item) => item.expression !== undefined)) {
+    const problem = c.expression ? validateExpression(c.expression) : "Write the custom logic expression.";
+    if (problem) return res.status(400).json({ error: problem });
+  }
+  if (conditions.some((c) => c.expression === undefined && !c.variable && !studyQuestionIds.has(String(c.question_id)))) {
+    return res.status(400).json({ error: "Every condition must use a question from this study." });
+  }
+  if (conditions.some((c) => c.variable && c.variable !== "score" && !VARIABLE_NAME.test(c.variable))) {
+    return res.status(400).json({ error: "Variable names use letters, numbers and _ and start with a letter." });
+  }
+  if (conditions.some((c) => c.expression === undefined && c.value === "")) return res.status(400).json({ error: "Every condition needs a value." });
+  if (conditions.some((c) => ["gt", "gte", "lt", "lte"].includes(c.operator) && !Number.isFinite(Number(c.value)))) {
+    return res.status(400).json({ error: "Greater / less than conditions need a number." });
+  }
+
+  const doc = { target_question_id: null, target_section: null, source_question_id: null, skip_to_end: null, is_default: null, variable_name: null, variable_value: null };
+  if (action === "show" || action === "hide") {
+    if (isSection) doc.target_section = target_section || null;
+    else doc.target_question_id = toId(target_question_id);
+  } else if (action === "skip_to") {
+    // Compound branching: when the conditions match, jump from the source question.
+    doc.source_question_id = toId(req.body.source_question_id);
+    if (!studyQuestionIds.has(String(doc.source_question_id))) return res.status(400).json({ error: "Choose the question this jump starts from." });
+    let destination;
+    try { destination = jumpDestination(req.body.skip_to, doc.source_question_id, ordered); } catch (error) { return res.status(400).json({ error: error.message }); }
+    if (!destination) return res.status(400).json({ error: "Choose where to jump to." });
+    Object.assign(doc, destination);
+  } else if (action === "set_variable") {
+    doc.source_question_id = req.body.source_question_id ? toId(req.body.source_question_id) : null;
+    doc.variable_name = String(req.body.variable_name || "").trim();
+    doc.variable_value = String(req.body.variable_value ?? "").trim();
+    if (!VARIABLE_NAME.test(doc.variable_name) || doc.variable_name === "score") return res.status(400).json({ error: "Variable names use letters, numbers and _, start with a letter, and can't be “score”." });
+  }
+
+  const firstQuestion = conditions.find((c) => !c.variable && c.expression === undefined);
   const { id } = await store.insert("skip_rules", {
-    study_id: toId(req.params.id),
-    // A terminate rule has no target question/section -- it ends the entry
-    // (or the respondent's whole participation) rather than showing/hiding
-    // something else, so both stay null regardless of what target_type was posted.
-    target_question_id: isTerminate ? null : (isSection ? null : toId(target_question_id)),
-    target_section: isTerminate ? null : (isSection ? target_section || null : null),
-    condition_question_id: toId(condition_question_id),
-    operator,
-    value: storedValue,
+    study_id: studyId,
+    ...doc,
+    condition_question_id: firstQuestion ? firstQuestion.question_id : null,
+    operator: firstQuestion ? firstQuestion.operator : null,
+    value: firstQuestion ? firstQuestion.value : null,
+    conditions_json: conditions.length > 1 || !firstQuestion ? JSON.stringify(conditions) : null,
+    match: conditions.length > 1 ? (req.body.match === "any" ? "any" : "all") : null,
     action,
     terminate_scope: isTerminate && terminate_scope === "study" ? "study" : (isTerminate ? "entry" : null),
   });
-  logAudit(req.session.user.email, "add_skip_rule", "skip_rules", null, req.body);
+  logAudit(req.session.user.email, "add_skip_rule", "skip_rules", id, req.body);
   if (req.xhr) {
-    // Same two joins as the Questionnaire page, for this one rule: LEFT onto
-    // the target question, INNER onto the condition question -- so a rule
-    // whose condition question is missing yields nothing, as before.
     const created = await store.findOne("skip_rules", { id });
-    const tq = created.target_question_id ? await store.findOne("questions", { id: created.target_question_id }) : null;
-    const cq = await store.findOne("questions", { id: created.condition_question_id });
-    const rule = cq
-      ? { ...created, target_text: tq ? tq.text : null, condition_text: cq.text }
-      : undefined;
-    return res.json(rule);
+    const tq = created.target_question_id ? ordered.find((q) => q.id === created.target_question_id) : null;
+    const cq = created.condition_question_id ? ordered.find((q) => q.id === created.condition_question_id) : null;
+    return res.json({ ...created, target_text: tq ? tq.text : null, condition_text: cq ? cq.text : null });
   }
   res.redirect(`/admin/studies/${req.params.id}/questionnaire#skip-logic`);
+});
+
+// The per-option logic table for one choice question, saved as a whole --
+// QuestionPro-style "if this option is selected": jump to a later question or
+// the end (plus a default branch), add to the score, and set a variable.
+// Replaces the question's previous per-option jump and variable rules.
+router.post("/studies/:id/questions/:qid/option-logic", async (req, res) => {
+  const studyId = toId(req.params.id), questionId = toId(req.params.qid);
+  const q = await store.findOne("questions", { id: questionId, study_id: studyId });
+  if (!q || !["single", "multi"].includes(q.type)) return res.status(404).json({ error: "Choice question not found." });
+  const options = require("../lib/questionnaire").parseOptions(q.options_json || q.options);
+  const ordered = await orderedStudyQuestions(studyId);
+  const operator = q.type === "multi" ? "includes" : "equals";
+  const jumps = req.body.jumps || {}, variables = req.body.variables || {}, scores = req.body.scores || {};
+
+  const jumpRules = [], variableRules = [], scoreMap = {};
+  let defaultJump = null;
+  try {
+    for (const option of options) {
+      const destination = jumpDestination(jumps[option], q.id, ordered);
+      if (destination) jumpRules.push({ ...destination, value: option });
+      const variable = variables[option];
+      if (variable && String(variable.name || "").trim()) {
+        const name = String(variable.name).trim();
+        if (!VARIABLE_NAME.test(name) || name === "score") throw Object.assign(new Error(`“${name}” isn't a valid variable name — use letters, numbers and _, start with a letter, and don't use “score”.`), { status: 400 });
+        // A blank value stores the option's own text, as QuestionPro does.
+        variableRules.push({ name, value: String(variable.value ?? "").trim() || option, option });
+      }
+      const score = scores[option];
+      if (score !== undefined && score !== null && String(score).trim() !== "") {
+        if (!Number.isFinite(Number(score))) throw Object.assign(new Error(`The score for “${option}” must be a number.`), { status: 400 });
+        scoreMap[option] = Number(score);
+      }
+    }
+    defaultJump = jumpDestination(req.body.default_jump, q.id, ordered);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+
+  // Per-option rules are single-condition rules on this question owned by it;
+  // compound branching rules (conditions_json set) are left alone.
+  const existing = await store.find("skip_rules", { study_id: studyId, source_question_id: q.id });
+  for (const rule of existing) {
+    if ((rule.action === "skip_to" || rule.action === "set_variable") && !rule.conditions_json) await store.remove("skip_rules", { id: rule.id });
+  }
+  const base = { study_id: studyId, source_question_id: q.id, target_section: null, conditions_json: null, match: null, terminate_scope: null };
+  for (const jump of jumpRules) {
+    await store.insert("skip_rules", { ...base, action: "skip_to", condition_question_id: q.id, operator, value: jump.value, target_question_id: jump.target_question_id, skip_to_end: jump.skip_to_end, is_default: 0, variable_name: null, variable_value: null });
+  }
+  if (defaultJump) {
+    await store.insert("skip_rules", { ...base, action: "skip_to", condition_question_id: null, operator: null, value: null, target_question_id: defaultJump.target_question_id, skip_to_end: defaultJump.skip_to_end, is_default: 1, variable_name: null, variable_value: null });
+  }
+  for (const variable of variableRules) {
+    await store.insert("skip_rules", { ...base, action: "set_variable", condition_question_id: q.id, operator, value: variable.option, target_question_id: null, skip_to_end: null, is_default: 0, variable_name: variable.name, variable_value: variable.value });
+  }
+  await store.update("questions", { id: q.id }, { option_scores_json: Object.keys(scoreMap).length ? JSON.stringify(scoreMap) : null });
+  logAudit(req.session.user.email, "update_option_logic", "questions", q.id, req.body);
+  res.json({
+    question: await store.findOne("questions", { id: q.id }),
+    rules: await store.find("skip_rules", { study_id: studyId }, { sort: { id: 1 } }),
+  });
 });
 
 router.post("/studies/:id/skip-logic/:rid/delete", async (req, res) => {
@@ -1461,7 +1720,7 @@ router.get("/ai-summary", async (req, res) => {
   res.render("admin/ai_summary", {
     study, studies, summaries, selected: selected || null, report, questionnaireDashboard,
     aiConfigured: aiSummary.isAiModelConfigured(),
-    aiProviderLabel: aiSummary.providerName() === "gemini" ? "Gemini" : "Azure AI",
+    aiProviderLabel: aiSummary.providerLabel(),
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
     themes, sentiment, banners, bannerLabels: BANNER_SEGMENTS,
     objectiveGroups: require('../lib/studyObjectives').objectiveGroups(objectiveKpis),
@@ -1491,6 +1750,194 @@ router.post("/ai-summary/generate", async (req, res) => {
     // A failed model call must not lose the admin's period selection.
     if (req.xhr || req.accepts(["json", "html"]) === "json") return res.status(502).json({ error: e.message || "Could not generate a summary." });
     res.redirect(`/admin/ai-summary?${qs(`&error=${encodeURIComponent(e.message || "Could not generate a summary.")}`)}`);
+  }
+});
+
+// ---------- Video summary: one AI read across every respondent video ----------
+router.get("/video-summary", async (req, res) => {
+  const { study, studies } = await getStudyOrFirst(req);
+  if (!study) return res.redirect("/admin/studies");
+  const videoSummary = require("../lib/videoSummary");
+  const summaries = await videoSummary.listVideoSummaries(study.id);
+  const requested = req.query.summary || req.query.generated;
+  const selectedRow = requested ? summaries.find(s => String(s.id) === String(requested)) : summaries.find(s => (s.period_start || "") === (req.query.from || "") && (s.period_end || "") === (req.query.to || ""));
+  let period = { from: selectedRow ? selectedRow.period_start || "" : req.query.from || "", to: selectedRow ? selectedRow.period_end || "" : req.query.to || "" };
+  let error = req.query.error || (requested && !selectedRow ? "That video summary is not available for this study." : null);
+  let evidence = { stats: { videos: 0, respondents: 0, transcribed: 0, sampled: 0 }, brands: [], videos: [] };
+  try { evidence = await videoSummary.collectVideoEvidence(study.id, period); }
+  catch (e) { error = e.message; period = { from: "", to: "" }; }
+  const stale = !selectedRow || selectedRow.source_signature !== require("crypto").createHash("sha256").update(JSON.stringify(evidence)).digest("hex");
+  const reelSettings = require("../lib/reelSettings");
+  const extraReels = selectedRow ? (await videoSummary.listReels(selectedRow.id)).map((reel) => ({ ...reel, status: videoSummary.extraReelStatus(reel), settings: reelSettings.effective(study, reel.settings_json) })) : [];
+  res.render("admin/video_summary", {
+    study, studies, summaries, selected: videoSummary.hydrate(selectedRow), evidence, stale, reelStatus: videoSummary.reelStatus(selectedRow),
+    reelDefaults: reelSettings.studyDefaults(study), mainReel: selectedRow ? reelSettings.effective(study, selectedRow.reel_settings_json) : null,
+    extraReels, reelOptions: { formats: reelSettings.FORMATS, captionFields: reelSettings.CAPTION_FIELDS },
+    generationStatus: videoSummary.generationStatus(selectedRow),
+    aiConfigured: aiSummary.isAiModelConfigured() && require("../lib/videoResearch").isConfigured(),
+    aiProviderLabel: aiSummary.providerLabel(),
+
+    approved: req.query.approved === "1",
+    reelSaved: req.query.reel_saved === "defaults",
+    ...period, error,
+  });
+});
+
+router.post("/video-summary/generate", async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const from = (req.body.from || "").trim() || null;
+  const to = (req.body.to || "").trim() || null;
+  const qs = (extra) => `study=${studyId}&from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}${extra}`;
+  try {
+    const row = await require("../lib/videoSummary").startGeneration(studyId, { from, to, generatedBy: req.session.user.email, force: req.body.force === "1" });
+    logAudit(req.session.user.email, "generate_video_summary", "video_summaries", row.id, { study_id: studyId, from, to, provider: row.provider });
+    res.redirect(`/admin/video-summary?${qs(`&generated=${row.id}`)}`);
+  } catch (e) {
+    res.redirect(`/admin/video-summary?${qs(`&error=${encodeURIComponent(e.message || "Could not generate a video summary.")}`)}`);
+  }
+});
+
+router.post("/video-summary/rebuild-reel", async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const row = await store.findOne("video_summaries", { id: Number(req.body.id), study_id: studyId });
+  if (!row) return res.redirect(`/admin/video-summary?study=${studyId}&error=${encodeURIComponent("Video summary not found.")}`);
+  await store.update("video_summaries", { id: row.id }, { review_status: "draft", approved_at: null, reel_status: "pending", reel_started_at: store.nowSql(), reel_error: null });
+  require("../lib/videoSummary").startReelBuild(row.id);
+  logAudit(req.session.user.email, "rebuild_video_reel", "video_summaries", row.id, { study_id: studyId });
+  res.redirect(`/admin/video-summary?study=${studyId}&summary=${row.id}`);
+});
+
+router.get("/video-summary/:id/reel", async (req, res) => {
+  const row = await store.findOne("video_summaries", { id: Number(req.params.id) });
+  if (!row || !canAccessStudy(req, row.study_id)) return res.sendStatus(404);
+  require("../lib/videoSummary").sendReel(res, row, { download: req.query.download === "1" ? `video-summary-${row.id}-client-reel.mp4` : null });
+});
+
+// ---------- Reel customisation ----------
+const REEL_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const REEL_MUSIC_TYPES = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/wav", "audio/x-wav", "audio/wave", "audio/ogg"];
+const reelBack = (studyId, summaryId, extra = "") => `/admin/video-summary?study=${studyId}${summaryId ? `&summary=${summaryId}` : ""}${extra}`;
+const reelError = (res, studyId, summaryId, message) => res.redirect(reelBack(studyId, summaryId, `&error=${encodeURIComponent(message)}`));
+
+// Study-wide reel defaults, with the study's logo and music track.
+router.post("/video-summary/reel-defaults", importUpload.fields([{ name: "logo", maxCount: 1 }, { name: "music", maxCount: 1 }]), async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const study = await store.findOne("studies", { id: studyId });
+  const mediaStorage = require("../lib/mediaStorage");
+  const logo = req.files && req.files.logo && req.files.logo[0];
+  const music = req.files && req.files.music && req.files.music[0];
+  if (logo && (!REEL_LOGO_TYPES.includes(logo.mimetype) || logo.size > 2 * 1024 * 1024)) return reelError(res, studyId, req.body.summary_id, "The logo must be a PNG, JPEG or WebP image under 2 MB.");
+  if (music && !REEL_MUSIC_TYPES.includes(music.mimetype)) return reelError(res, studyId, req.body.summary_id, "The music must be an MP3, M4A, AAC, WAV or OGG file under 15 MB.");
+  const changes = { reel_settings_json: JSON.stringify(require("../lib/reelSettings").fromForm(req.body)) };
+  for (const [field, file, remove] of [["reel_logo_path", logo, req.body.remove_logo === "1"], ["reel_music_path", music, req.body.remove_music === "1"]]) {
+    if (!file && !remove) continue;
+    if (study[field]) await mediaStorage.deleteMedia(study[field]).catch(() => {});
+    changes[field] = file ? await mediaStorage.persistBuffer(file.buffer, file.mimetype) : null;
+  }
+  await store.update("studies", { id: studyId }, changes);
+  logAudit(req.session.user.email, "update_reel_defaults", "studies", studyId, { logo: !!logo, music: !!music });
+  res.redirect(reelBack(studyId, req.body.summary_id, "&reel_saved=defaults"));
+});
+
+// The main (client) reel's own settings, or back to the study defaults.
+router.post("/video-summary/main-reel-settings", async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const row = await store.findOne("video_summaries", { id: Number(req.body.id), study_id: studyId });
+  if (!row) return reelError(res, studyId, null, "Video summary not found.");
+  if (["pending", "building"].includes(require("../lib/videoSummary").reelStatus(row))) return reelError(res, studyId, row.id, "The client reel is building. Wait for it to finish.");
+  const settings = req.body.use_defaults === "1" ? null : require("../lib/reelSettings").fromForm(req.body);
+  await require("../lib/videoSummary").setMainReelSettings(row.id, settings);
+  logAudit(req.session.user.email, "update_main_reel_settings", "video_summaries", row.id, { study_id: studyId, use_defaults: !settings });
+  res.redirect(reelBack(studyId, row.id));
+});
+
+router.post("/video-summary/reels", async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const row = await store.findOne("video_summaries", { id: Number(req.body.summary_id), study_id: studyId });
+  if (!row) return reelError(res, studyId, null, "Video summary not found.");
+  try {
+    const settings = req.body.use_defaults === "1" ? null : require("../lib/reelSettings").fromForm(req.body);
+    const reel = await require("../lib/videoSummary").createReel(row.id, { name: req.body.name, settings, createdBy: req.session.user.email });
+    logAudit(req.session.user.email, "create_video_reel", "video_reels", reel.id, { study_id: studyId, summary_id: row.id });
+    res.redirect(reelBack(studyId, row.id));
+  } catch (e) {
+    reelError(res, studyId, row.id, e.message);
+  }
+});
+
+// Every extra-reel action checks the reel belongs to a study this user can open.
+async function ownedReel(req, res) {
+  const reel = await store.findOne("video_reels", { id: Number(req.params.rid) });
+  if (!reel || !canAccessStudy(req, reel.study_id)) { res.sendStatus(404); return null; }
+  return reel;
+}
+
+router.post("/video-summary/reels/:rid/settings", async (req, res) => {
+  const reel = await ownedReel(req, res); if (!reel) return;
+  try {
+    const settings = req.body.use_defaults === "1" ? null : require("../lib/reelSettings").fromForm(req.body);
+    await require("../lib/videoSummary").updateReelSettings(reel.id, settings);
+    logAudit(req.session.user.email, "update_video_reel", "video_reels", reel.id, { study_id: reel.study_id });
+    res.redirect(reelBack(reel.study_id, reel.summary_id));
+  } catch (e) {
+    reelError(res, reel.study_id, reel.summary_id, e.message);
+  }
+});
+
+router.post("/video-summary/reels/:rid/delete", async (req, res) => {
+  const reel = await ownedReel(req, res); if (!reel) return;
+  await require("../lib/videoSummary").deleteReel(reel.id);
+  logAudit(req.session.user.email, "delete_video_reel", "video_reels", reel.id, { study_id: reel.study_id });
+  res.redirect(reelBack(reel.study_id, reel.summary_id));
+});
+
+router.post("/video-summary/reels/:rid/use-as-client", async (req, res) => {
+  const reel = await ownedReel(req, res); if (!reel) return;
+  try {
+    await require("../lib/videoSummary").useAsClientReel(reel.id);
+    logAudit(req.session.user.email, "use_reel_as_client_reel", "video_reels", reel.id, { study_id: reel.study_id, summary_id: reel.summary_id });
+    res.redirect(reelBack(reel.study_id, reel.summary_id));
+  } catch (e) {
+    reelError(res, reel.study_id, reel.summary_id, e.message);
+  }
+});
+
+router.get("/video-summary/reels/:rid/file", async (req, res) => {
+  const reel = await ownedReel(req, res); if (!reel) return;
+  if (reel.status !== "ready" || !reel.path) return res.sendStatus(404);
+  const name = `${String(reel.name).replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-") || "reel"}.mp4`;
+  require("../lib/videoSummary").sendReelFile(res, reel.path, { download: req.query.download === "1" ? name : null });
+});
+
+router.post('/video-summary/review', async (req, res) => {
+  const studyId = Number(req.body.study_id);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  try {
+    const summary = require('../lib/videoSummary');
+    const points = req.body.points_json ? JSON.parse(req.body.points_json) : req.body.points;
+    const row = await summary.saveReview(studyId, req.body.id, { ...req.body, points });
+    if (row.reel_status === 'pending') summary.startReelBuild(row.id);
+    logAudit(req.session.user.email, 'edit_video_summary', 'video_summaries', row.id, { study_id: studyId });
+    res.redirect(`/admin/video-summary?study=${studyId}&summary=${row.id}`);
+  } catch (e) {
+    res.redirect(`/admin/video-summary?study=${studyId}&summary=${encodeURIComponent(req.body.id)}&error=${encodeURIComponent(e.message)}`);
+  }
+});
+
+router.post("/video-summary/approve", async (req, res) => {
+  const studyId = parseInt(req.body.study_id, 10);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  try {
+    const row = await require("../lib/videoSummary").approveVideoSummary(studyId, req.body.id, { approvedBy: req.session.user.email, revision: req.body.revision, evidenceReviewed: req.body.evidence_reviewed, coverageAcknowledged: req.body.coverage_acknowledged });
+    logAudit(req.session.user.email, "approve_video_summary", "video_summaries", row.id, { study_id: studyId });
+    res.redirect(`/admin/video-summary?study=${studyId}&summary=${row.id}&approved=1`);
+  } catch (e) {
+    res.redirect(`/admin/video-summary?study=${studyId}&error=${encodeURIComponent(e.message)}`);
   }
 });
 
@@ -2222,7 +2669,7 @@ router.post("/media/:id/detect", async (req, res) => {
   const brands = await require("../lib/productCandidates").forStudy(detectStudy);
   try {
     const provider = getBrandDetectionProvider();
-    await provider.detect(media, brands, parseCategories(detectStudy.category));
+    await provider.detect(media, brands, detectionCategories(detectStudy));
     logAudit(req.session.user.email, "brand_detection_run", "media", media.id, {});
   } catch (e) {
     await store.update("media", { id: media.id }, {
@@ -2304,7 +2751,10 @@ router.get("/export/diary.csv", async (req, res) => {
     (await store.find("respondents", { id: { $in: [...new Set(records.map((r) => r.respondent_id))] } }))
       .map((r) => [r.id, r.respondent_code])
   );
-  // Key order is the CSV column order -- identical to the old SELECT list.
+  // Logic variables become one column each (var_<name>), after the score.
+  const variablesOf = (dr) => { try { return JSON.parse(dr.variables_json || "{}") || {}; } catch (_) { return {}; } };
+  const variableNames = [...new Set(records.flatMap((dr) => Object.keys(variablesOf(dr))))].sort();
+  // Key order is the CSV column order -- the old SELECT list, then score and variables.
   const rows = records
     .filter((dr) => codeById.has(dr.respondent_id)) // INNER JOIN semantics
     .map((dr) => ({
@@ -2319,6 +2769,8 @@ router.get("/export/diary.csv", async (req, res) => {
       status: dr.status,
       terminate_note: dr.terminate_note,
       is_practice: dr.is_practice,
+      score: dr.score ?? null,
+      ...Object.fromEntries(variableNames.map((name) => [`var_${name}`, variablesOf(dr)[name] ?? null])),
     }));
   res.set("Content-Type", "text/csv");
   res.set("Content-Disposition", "attachment; filename=diary_records.csv");

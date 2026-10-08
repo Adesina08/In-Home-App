@@ -6,7 +6,7 @@ const store = require("../lib/store");
 const { runQcForRecord, checkCrossChannelDuplicate } = require("../lib/qc");
 const { logAudit } = require("../lib/audit");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
-const { parseCategories } = require("../lib/categories");
+const { detectionCategories } = require("../lib/categories");
 const { getProvider: getAudioTranscriptionProvider } = require("../lib/audioTranscription");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
 const closeOut = require("../lib/closeOutQuestionnaire");
@@ -14,8 +14,8 @@ const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
 const { getProvider: getVideoFieldExtractionProvider } = require("../lib/videoFieldExtraction");
 const { persistUpload } = require("../lib/mediaStorage");
 const { loadQuestionnaire } = require("../lib/questionnaire");
-const { findTerminateMatch } = require("../lib/skipLogic");
-const { validateSubmission } = require("../lib/answerValidation");
+const { findTerminateMatch, derivedValues } = require("../lib/skipLogic");
+const { validateSubmission, answersFrom } = require("../lib/answerValidation");
 const webauthn = require("../lib/webauthn");
 const push = require("../lib/push");
 
@@ -500,7 +500,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   const study = await store.findOne("studies", { id: respondent.study_id });
   const { questions, rules } = await loadQuestionnaire(study.id,{respondentId:respondent.id});
   const brands = await require("../lib/productCandidates").forStudy(study);
-  const categories = parseCategories(study.category);
+  const categories = detectionCategories(study);
   const practice = req.body.practice === "1";
 
   if (!req.file) {
@@ -522,7 +522,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
   // extraction, five Vision calls and a Speech call only to be handed a form
   // to fill in anyway.
   //
-  // Everything the provider does can fail (misconfigured Azure, network blip,
+  // Everything the provider does can fail (misconfigured AI provider, network blip,
   // corrupt upload). None of it may take the entry down with it: the video is
   // already saved as evidence, and a failed analysis just means no AI answers.
   const storedPath = await persistUpload(req.file).catch(() => `/uploads/${req.file.filename}`);
@@ -654,9 +654,11 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
       id: { $in: allRules.map((r) => r.condition_question_id) },
     });
     const conditionById = new Map(conditionQuestions.map((q) => [q.id, q]));
+    // Rules without a question condition (default jumps, score/variable
+    // conditions) are kept: terminate rules can read the score they feed.
     const rules = allRules
-      .filter((r) => conditionById.has(r.condition_question_id))
-      .map((r) => ({ ...r, condition_text: conditionById.get(r.condition_question_id).text }));
+      .filter((r) => r.condition_question_id == null || conditionById.has(r.condition_question_id))
+      .map((r) => ({ ...r, condition_text: conditionById.has(r.condition_question_id) ? conditionById.get(r.condition_question_id).text : null }));
     const answers = {};
     questions.forEach((q) => {
       const field = `q_${q.id}`;
@@ -667,7 +669,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
         answers[q.id] = req.body[field];
       }
     });
-    terminateMatch = findTerminateMatch(rules, answers);
+    terminateMatch = findTerminateMatch(rules, answers, questions);
   }
   const isTerminated = !!terminateMatch;
   let otherText = {};
@@ -724,6 +726,11 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     }
   }
 
+  // Total score and logic variables, from the same engine the form ran.
+  async function entryDerivedValues() {
+    const { rules: liveRules } = await loadQuestionnaire(study.id, { respondentId: respondent.id });
+    return derivedValues(questions, liveRules, answersFrom(questions, req.body));
+  }
   const { id: recordId } = await store.insert("diary_records", {
     respondent_id: respondent.id,
     study_id: study.id,
@@ -736,6 +743,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     is_practice: isPractice,
     entry_mode: entryMode,
     terminate_note: terminateNote,
+    ...(await entryDerivedValues()),
   });
 
   for (const q of questions) {
@@ -752,13 +760,13 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
   }
 
   const brands = await require("../lib/productCandidates").forStudy(study);
-  const categories = parseCategories(study.category);
+  const categories = detectionCategories(study);
 
   // AI enrichment (brand detection / transcription) is always best-effort and
   // must never block or crash a diary submission -- the diary record and the
   // respondent's actual answers are the data that matters. Provider
   // construction can throw synchronously (e.g. a real provider selected with
-  // missing/invalid credentials); catch that here so a misconfigured Azure
+  // missing/invalid credentials); catch that here so a misconfigured AI
   // resource degrades to "detection/transcription skipped" instead of
   // crashing the whole app for every respondent.
   let brandProvider = null;
@@ -813,7 +821,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     if (f.fieldname === "audio_note" || f.fieldname.startsWith("audio_q_") || (f.mimetype || "").startsWith("audio/")) {
       const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: "audio", file_path: storedPath });
       const mediaRow = { id: mediaId, record_id: recordId, media_type: "audio", file_path: storedPath };
-      // Queue transcription — runs inline against the mock/Azure provider,
+      // Queue transcription — runs inline against the configured provider,
       // see lib/audioTranscription.js. Brand detection for a voice note
       // reads the transcript once it exists, so it's chained after.
       if (audioProvider) {
@@ -827,7 +835,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     const { id: mediaId } = await store.insert("media", { record_id: recordId, media_type: mediaType, file_path: storedPath });
     const mediaRow = { id: mediaId, record_id: recordId, media_type: mediaType, file_path: storedPath };
     // Queue brand detection for evidence that could show a product (photo or video).
-    // Runs inline against the mock/Azure provider — see lib/brandDetection.js.
+    // Runs inline against the configured provider — see lib/brandDetection.js.
     if (brandProvider) brandProvider.detect(mediaRow, brands, categories).catch(() => {});
   }
 

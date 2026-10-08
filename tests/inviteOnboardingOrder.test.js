@@ -52,6 +52,7 @@ before(async () => {
   app.use("/join", require("../routes/joinEntryBridge"));
   app.use("/join", require("../routes/join"));
   app.use("/invite", require("../routes/invitePresurvey"));
+  app.use("/invite", require("../routes/inviteProfile"));
   app.use("/invite", require("../routes/inviteAppHandoff"));
   app.use("/invite", require("../routes/invite"));
   server = app.listen(0, "127.0.0.1");
@@ -114,7 +115,23 @@ test("invitation enforces introduction, consent, pre-survey, method and account 
   const wrong = await request("/verify", { method: "POST", body: new URLSearchParams({ code: sentCode === "999999" ? "000000" : "999999" }) });
   assert.equal(wrong.status, 400);
   const verified = await request("/verify", { method: "POST", body: new URLSearchParams({ code: sentCode }) });
-  assert.equal(verified.headers.get("location"), "/invite/invite-order-token/choose");
+  assert.equal(verified.headers.get("location"), "/invite/invite-order-token/about-you");
+
+  // The one-time profile comes before the method choice, not in the app.
+  const earlyChoiceBeforeProfile = await request("");
+  assert.equal(earlyChoiceBeforeProfile.headers.get("location"), "/invite/invite-order-token/about-you");
+  const aboutYou = await request("/about-you");
+  const aboutYouHtml = await aboutYou.text();
+  assert.match(aboutYouHtml, /A little about you/);
+  assert.match(aboutYouHtml, /action="\/invite\/invite-order-token\/about-you"/);
+  assert.match(aboutYouHtml, /value="Test Respondent"/);
+  const incompleteProfile = await request("/about-you", { method: "POST", body: new URLSearchParams({ name: "Test Respondent" }) });
+  assert.equal(incompleteProfile.status, 400);
+  const profileSaved = await request("/about-you", { method: "POST", body: new URLSearchParams({
+    name: "Test Respondent", location: "Lagos", age: "30", gender: "female", education_level: "secondary",
+    occupation: "trader_retail", religion: "prefer_not_to_say", marital_status: "single", recontact_consent: "yes",
+  }) });
+  assert.equal(profileSaved.headers.get("location"), "/invite/invite-order-token");
 
   const choice = await request("");
   const choiceHtml = await choice.text();
@@ -141,6 +158,10 @@ test("invitation enforces introduction, consent, pre-survey, method and account 
   assert.equal(saved.presurvey_answers[presurveyId], "Yes");
   assert.equal(saved.chosen_mode, "app");
   assert.equal(saved.activation_status, "activated");
+  // The mobile app reads the account's profile, so it must already be complete.
+  const accountProfile = await store.findOne("respondent_profiles", { account_id: saved.account_id });
+  assert.ok(accountProfile && accountProfile.completed_at);
+  assert.equal(saved.profile_id, accountProfile.id);
 });
 
 test("phone entered during invite setup receives an SMS code and verifies", async () => {
@@ -186,8 +207,12 @@ test("phone entered during invite setup receives an SMS code and verifies", asyn
     const verified = await fetch(`${base}/invite/invite-phone-token/verify`, {
       method: "POST", redirect: "manual", body: new URLSearchParams({ code }),
     });
-    assert.equal(verified.headers.get("location"), "/invite/invite-phone-token/choose");
+    assert.equal(verified.headers.get("location"), "/invite/invite-phone-token/about-you");
     assert.ok((await store.findOne("respondents", { id })).contact_verified_at);
+    await fetch(`${base}/invite/invite-phone-token/about-you`, { method: "POST", redirect: "manual", body: new URLSearchParams({
+      name: "Phone Respondent", location: "Abuja", age: "40", gender: "male", education_level: "tertiary_university",
+      occupation: "farmer", religion: "islam", marital_status: "married", recontact_consent: "no",
+    }) });
     const chosen = await fetch(`${base}/invite/invite-phone-token/choose`, {
       method: "POST", redirect: "manual", body: new URLSearchParams({ mode: "whatsapp" }),
     });

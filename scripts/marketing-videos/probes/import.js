@@ -1,0 +1,23 @@
+const { chromium } = require('playwright');
+const { CHROME, BASE, WORK } = require('../config');
+const { staffLogin } = require('../rec');
+(async () => {
+  const b = await chromium.launch({ executablePath: CHROME });
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  await staffLogin(p);
+  await p.goto(BASE + '/admin/studies', { waitUntil: 'networkidle' });
+  await p.click('[data-open-dialog="create-study"]');
+  await p.fill('#create-study input[name=name]', 'Noodle Moments · Abuja');
+  await p.selectOption('#create-study select[name=market_country_code]', 'NG');
+  await Promise.all([p.waitForNavigation(), p.locator('#create-study').getByRole('button', { name: 'Create Study', exact: true }).click()]);
+  const id = p.url().match(/studies\/(\d+)/)[1]; console.log('study', id);
+  await p.goto(`${BASE}/admin/studies/${id}/questionnaire/upload`, { waitUntil: 'networkidle' });
+  await p.screenshot({ path: WORK + '/shots/up1.png', fullPage: true });
+  console.log(await p.$$eval('input,button', (e) => e.filter((x) => x.offsetParent || x.type === 'file').map((x) => `${x.tagName}:${x.type}.${x.name}[${(x.innerText || x.value || '').trim().slice(0, 30)}]`).join(' | ')));
+  await p.setInputFiles('input[type=file]', WORK + '/noodles-questionnaire.xlsx');
+  await Promise.all([p.waitForNavigation({ waitUntil: 'networkidle' }), p.locator('form[action$="/questionnaire/upload"] button[type=submit], form[action$="/questionnaire/upload"] button').last().click()]);
+  console.log('preview', p.url());
+  await p.screenshot({ path: WORK + '/shots/up2.png', fullPage: true });
+  console.log(await p.evaluate(() => document.body.innerText.replace(/\n+/g, ' / ').slice(0, 1800)));
+  await b.close();
+})();

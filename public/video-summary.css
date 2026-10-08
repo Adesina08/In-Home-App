@@ -1,0 +1,29 @@
+.research-reel { width:100%;max-width:880px;border-radius:12px;background:#111;margin-top:20px }
+.research-finding { padding:20px 0;border-bottom:1px solid #dce3ee;scroll-margin-top:90px }
+.research-finding h3 { margin:6px 0 12px;font-size:18px;line-height:1.5 }
+.research-finding blockquote { margin:12px 0;padding-left:16px;border-left:3px solid #93b5ef }
+.research-finding video,.research-clip video { width:100%;max-width:400px;border-radius:8px;background:#111 }
+.research-review { margin:24px 0 }
+.research-review summary,.research-finding summary { cursor:pointer;font-weight:600;padding:10px 0 }
+.research-review fieldset { min-width:0;margin:18px 0;padding:18px;border:1px solid #dce3ee;border-radius:10px }
+.research-review legend { padding:0 8px;font-weight:600 }
+.research-field { display:block;margin:14px 0 }
+.research-field textarea { display:block;box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #bdc9dc;border-radius:6px;font:inherit }
+.research-clip { padding:14px 0;border-bottom:1px solid #dce3ee }
+.research-boundaries { display:flex;gap:16px;flex-wrap:wrap;margin:12px 0 }
+.research-boundaries label { display:grid;gap:6px }
+.research-review input[type=number] { max-width:130px;padding:8px;border:1px solid #bdc9dc;border-radius:6px }
+.research-check { display:block;margin:16px 0;line-height:1.6 }
+
+/* Reel customisation */
+.reel-settings fieldset { min-width:0;margin:14px 0;padding:14px 16px;border:1px solid #dce3ee;border-radius:10px }
+.reel-settings legend { padding:0 6px;font-weight:600 }
+.reel-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:8px 0 }
+.reel-grid label { display:flex;flex-direction:column;gap:4px;font-size:13px }
+.reel-grid input[type=color] { width:56px;height:32px;padding:0;border:1px solid #d2dbe7;border-radius:6px;background:none }
+.reel-choices { display:flex;flex-wrap:wrap;gap:8px 18px;margin:6px 0 }
+.reel-settings input[type=range] { width:100%;max-width:320px;display:block }
+.reel-actions { display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px }
+.reel-actions form { margin:0 }
+.reel-card .research-reel { max-width:520px }
+.reel-new { margin-top:16px }
