@@ -32,6 +32,17 @@
         </fieldset>
       <% }) %>
     </div>
+    <details class="xtab-filter" <%= filters.length ? 'open' : '' %> data-xtab-picker>
+      <summary><strong>Filter</strong> <span data-xtab-count></span><small>Count only entries with these answers. Answers to one question mean "any of"; different questions must all match.</small></summary>
+      <input type="search" placeholder="Filter questions…" aria-label="Filter the filter list" data-xtab-filter />
+      <div class="xtab-filter-grid">
+        <% filterChoices.forEach(v => { %>
+          <fieldset data-xtab-option><legend><%= v.label %></legend>
+            <% v.options.forEach(o => { const value = v.id + '::' + o; %><label><input type="checkbox" name="filter" value="<%= value %>" <%= filters.includes(value) ? 'checked' : '' %> /> <%= o %></label><% }) %>
+          </fieldset>
+        <% }) %>
+      </div>
+    </details>
     <div class="xtab-settings">
       <fieldset><legend>Base</legend>
         <label><input type="radio" name="base" value="entries" <%= base === 'entries' ? 'checked' : '' %> /> Occasions (entries)</label>
@@ -57,7 +68,7 @@
   <% if (result) { %>
     <section class="report-panel">
       <div class="report-panel-head">
-        <div><h2>Results</h2><p><%= result.base === 'respondents' ? 'Respondent base: a person counts in every category they gave in any entry.' : 'Occasion base: each diary entry counts once.' %> Column % = cell ÷ the column's answering base<%= result.tables.some(t => t.multi) ? '; multi-select questions can add up to more than 100%' : '' %>. Columns under <%= result.minimum %> <%= result.unitLabel %> are marked low base<%= result.significance ? ' and are not tested' : '' %>.<% if (result.significance) { %> <strong>Letters</strong> mark a column significantly higher than the lettered column(s) in the same top break at <%= result.significance %>% confidence (column %: two-proportion z-test; means: Welch's t-test).<% } %></p></div>
+        <div><h2>Results</h2><% if (result.filters.length) { %><p class="xtab-active-filter"><strong>Filtered:</strong> <%= result.filters.map(f => f.label + ' = ' + f.values.join(' or ')).join('; and ') %> · <%= result.filteredOut %> entr<%= result.filteredOut === 1 ? 'y' : 'ies' %> excluded</p><% } %><p><%= result.base === 'respondents' ? 'Respondent base: a person counts in every category they gave in any entry.' : 'Occasion base: each diary entry counts once.' %> Column % = cell ÷ the column's answering base<%= result.tables.some(t => t.multi) ? '; multi-select questions can add up to more than 100%' : '' %>. Columns under <%= result.minimum %> <%= result.unitLabel %> are marked low base<%= result.significance ? ' and are not tested' : '' %>.<% if (result.significance) { %> <strong>Letters</strong> mark a column significantly higher than the lettered column(s) in the same top break at <%= result.significance %>% confidence (column %: two-proportion z-test; means: Welch's t-test).<% } %></p></div>
         <div class="xtab-export">
           <a class="report-button secondary" href="/admin/crosstab/export.csv?<%= queryString %>"><%- icon('download', 'w-4 h-4') %>CSV</a>
           <a class="report-button" href="/admin/crosstab/export.xlsx?<%= queryString %>"><%- icon('download', 'w-4 h-4') %>Excel</a>

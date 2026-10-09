@@ -52,3 +52,19 @@ test('crosstab cells carry the letters of the columns they are significantly hig
   assert.match(csv, /"","Significance","","B",""/);
   assert.match(csv, /two-proportion z-test/);
 });
+
+test('crosstab filters keep only matching entries: "any of" within a question, "all of" across questions', () => {
+  const lagos = crosstab.buildCrosstab(report(), { side: ['q:drink'], filters: ['q:city::Lagos'] });
+  assert.equal(lagos.tables[0].bases[0], 100);
+  assert.equal(lagos.filteredOut, 100);
+  assert.deepEqual(lagos.filters, [{ id: 'q:city', label: 'city · Which city?', values: ['Lagos'] }]);
+  const either = crosstab.buildCrosstab(report(), { side: ['q:drink'], filters: ['q:city::Lagos', 'q:city::Abuja'] });
+  assert.equal(either.tables[0].bases[0], 200, 'two options of one question widen the filter');
+  const both = crosstab.buildCrosstab(report(), { side: ['q:city'], filters: ['q:city::Lagos', 'q:drink::Tea'] });
+  assert.equal(both.tables[0].bases[0], 60, 'Lagos AND Tea');
+  const ignored = crosstab.buildCrosstab(report(), { side: ['q:drink'], filters: ['q:spend::10', 'nonsense', 'q:missing::x'] });
+  assert.equal(ignored.filters.length, 0, 'numeric, malformed and unknown filters are dropped');
+  assert.match(crosstab.toCsv(both, { study: { name: 'x' } }), /"Filter","city · Which city\? = Lagos; and drink · Which drink\? = Tea \(140 entries excluded\)"/);
+  const choices = crosstab.filterChoices(report());
+  assert.deepEqual(choices.find((c) => c.id === 'q:city').options, ['Lagos', 'Abuja']);
+});
