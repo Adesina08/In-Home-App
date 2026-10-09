@@ -114,7 +114,8 @@ test('the AI proposal is validated against the questionnaire: wrong ids, wrong t
   ] }));
   assert.equal((await kpiMapping.runMapping(study.id, { actor: 'tester' })).status, 'done');
   assert.equal(calls.length, 1);
-  const prompt = JSON.parse(calls[0].input);
+  assert.match(calls[0].input, /json/i, 'OpenAI JSON mode needs the word in the input');
+  const prompt = JSON.parse(calls[0].input.slice(calls[0].input.indexOf('{')));
   assert.ok(prompt.questions.some((question) => question.id === q.brand.id && question.options.includes('Indomie')));
   assert.ok(!prompt.questions.some((question) => question.id === q.note.id), 'open-text questions are not offered');
   assert.ok(prompt.kpis.some((k) => k.kpi === 'repurchase_cycle' && k.inputs[0].options === 'required'));
@@ -173,7 +174,7 @@ test('a re-run keeps approved mappings, respects a rejection the AI repeats, and
     { kpi: 'brand_penetration', inputs: { brand: { question_id: q.bought.id } }, confidence: 0.2, reason: 'Should not be asked.' },
   ] }));
   await kpiMapping.runMapping(study.id);
-  const asked = JSON.parse(calls[0].input).kpis.map((k) => k.kpi);
+  const asked = JSON.parse(calls[0].input.slice(calls[0].input.indexOf('{'))).kpis.map((k) => k.kpi);
   assert.ok(!asked.includes('brand_penetration'), 'approved KPIs are not re-asked');
   const rows = await kpiMapping.loadMappings(study.id);
   assert.equal(rows.get('brand_penetration').status, 'approved');
