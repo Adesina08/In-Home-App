@@ -149,3 +149,14 @@ test("detection offers a custom category, with its description, and can return i
   assert.equal(result.detectedCategory, "Zobo");
   assert.equal(result.categoryConfidence, 0.77);
 }));
+
+test("OpenAI JSON mode always mentions json in the input, which the API requires", () => withEnv({ OPENAI_API_KEY: "test-key" }, async () => {
+  const bodies = [];
+  global.fetch = async (url, options) => { bodies.push(JSON.parse(options.body)); return completed('{"score":80,"rationale":"ok"}'); };
+  const { generateText } = require("../lib/openaiClient");
+  await generateText({ system: "Return an object.", prompt: JSON.stringify({ transcript: "Maltina, cold." }), json: true, label: "scoring" });
+  assert.match(bodies[0].input, /json/i);
+  assert.deepEqual(bodies[0].text, { format: { type: "json_object" } });
+  await generateText({ system: "x", prompt: "Plain prose please.", label: "summary" });
+  assert.equal(bodies[1].input, "Plain prose please.", "non-JSON calls are untouched");
+}));

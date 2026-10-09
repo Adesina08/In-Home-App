@@ -31,7 +31,7 @@ test('Responses API request preserves system/input, uses bearer auth and opts ou
   assert.equal(text, '{"findings":[]}');
   assert.equal(request.url, 'https://api.openai.com/v1/responses');
   assert.equal(request.headers.Authorization, 'Bearer test-openai-key');
-  assert.equal(request.body.instructions, 'Use evidence only. Return JSON.'); assert.equal(request.body.input, 'provided evidence');
+  assert.equal(request.body.instructions, 'Use evidence only. Return JSON.'); assert.equal(request.body.input, 'Respond in JSON.\nprovided evidence', 'JSON mode needs json named in the input');
   assert.equal(request.body.store, false); assert.equal(request.body.max_output_tokens, 6000);
   assert.deepEqual(request.body.text, { format: { type: 'json_object' } });
   assert.ok(request.signal); assert.equal('temperature' in request.body, false);

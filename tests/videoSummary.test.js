@@ -95,7 +95,7 @@ test('OpenAI synthesises the video research summary while reusing Gemini video e
   process.env.AI_SUMMARY_PROVIDER = 'openai'; process.env.OPENAI_API_KEY = 'test-openai-key';
   global.fetch = async (url, options) => {
     assert.equal(url, 'https://api.openai.com/v1/responses'); openaiCalls++;
-    const prompt = JSON.parse(JSON.parse(options.body).input);
+    const prompt = JSON.parse(JSON.parse(options.body).input.replace(/^Respond in JSON\.\n/, ''));
     const result = prompt.evidence ? { findings: prompt.evidence.map(m => ({ point: m.text, supports: [m.id] })) }
       : prompt.findings ? { groups: prompt.findings.map(p => ({ point: p.point, sources: [p.id] })) }
       : { paragraphs: [{ text: 'Reviewed meal experiences include milk, noodles and a concern about prices.', sources: prompt.paragraphs.map((_, i) => i) }] };
