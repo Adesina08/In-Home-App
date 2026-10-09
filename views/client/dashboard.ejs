@@ -9,7 +9,7 @@
 <dl class="report-stats"><% [['Submitted entries',report.submitted,'In the selected period'],['Contributors',report.contributors,'With submitted entries'],['Participation compliance',completionRate===null?'—':completionRate + '%','Completed / expected participation periods'],['Eligible entries',report.eligible,'No open entry-level QC flags']].forEach(([label,value,note]) => { %><div class="report-stat"><dt><%= label %></dt><dd><%= value??'—' %></dd><dd class="report-stat-note"><%= note %></dd></div><% }) %></dl>
 <% if(report.suppressed){ %><div class="report-notice">Results are suppressed because fewer than <%= report.minimumBase %> eligible respondents contributed.</div><% } %>
 <%- include('../partials/questionnaire_dashboard', { questionnaireDashboard }) %>
-<%- include('../partials/report_objectives', { objectiveGroups }) %>
+<% if (typeof recipeStory !== 'undefined' && recipeStory) { %><%- include('../partials/report_story', { storySections: recipeStory, studyTypeLabel, admin: false }) %><% if (typeof modeEffects !== 'undefined' && modeEffects) { %><%- include('../partials/report_mode_effects', { modeEffects, admin: false }) %><% } %><% } else { %><%- include('../partials/report_objectives', { objectiveGroups }) %><% } %>
 <%- include('../partials/report_dashboard_charts', { report }) %>
 <%- include('../partials/report_brand_table', { report }) %>
 <% if (!insights) { %>

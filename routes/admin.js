@@ -27,6 +27,8 @@ const { loadQuestionnaire, isQuestionActive, CADENCES } = require("../lib/questi
 const { ruleQuestionIds } = require("../lib/skipLogic");
 const { validateExpression } = require("../public/js/skip-logic.js");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
+const kpiMapping = require("../lib/kpiMapping");
+const studyRecipes = require("../lib/studyRecipes");
 const staffEmail = require("../lib/staffEmail");
 const geography = require("../lib/geography");
 
@@ -68,6 +70,8 @@ router.use((req, res, next) => {
       markQuestionnaireDirty(toId(match[1])).catch((e) =>
         console.error("Could not flag the questionnaire as edited:", e.message)
       );
+      // The questionnaire changed, so the AI re-reads it for the study's KPIs.
+      kpiMapping.scheduleMapping(toId(match[1]));
     }
   });
   next();
@@ -163,6 +167,49 @@ router.get('/analysis/export', async (req, res) => {
     throw e;
   }
   return res.attachment(`study-${study.id}-crosstab.csv`).type('text/csv').send(analysisCsv(data));
+});
+
+// ---------- Crosstabs (questions by questions) ----------
+// Side break = the questions down the rows, top break = the questions or
+// respondent variables across the columns. The same query string drives the
+// page and both exports, so a download is exactly the table on screen.
+async function crosstabFor(req) {
+  const { study, studies } = await getStudyOrFirst(req);
+  if (!study) return { study: null, studies };
+  const { loadStudyReport, validatePeriod } = require("../lib/studyReport");
+  const crosstab = require("../lib/crosstab");
+  const period = validatePeriod({ from: req.query.from, to: req.query.to });
+  const report = await loadStudyReport(study.id, period);
+  const side = [].concat(req.query.side || []), top = [].concat(req.query.top || []);
+  const metrics = [].concat(req.query.metrics || ["n", "colPct"]).filter((m) => crosstab.METRIC_LABELS[m]);
+  const base = req.query.base === "respondents" ? "respondents" : "entries";
+  let result = null, error = null;
+  if (side.length) {
+    try {
+      result = crosstab.buildCrosstab(report, { side, top, base, minimum: Math.max(2, Number(study.minimum_base_size) || 5), profiles: await require("../lib/staffAnalysis").loadProfiles(study.id) });
+    } catch (e) { if (e.status !== 400) throw e; error = e.message; }
+  }
+  return { study, studies, report, period, side, top, base, metrics: metrics.length ? metrics : ["n", "colPct"], result, error, variables: crosstab.variables(report) };
+}
+
+router.get("/crosstab", async (req, res) => {
+  let data;
+  try { data = await crosstabFor(req); }
+  catch (e) { if (/date|period/i.test(e.message)) return res.status(400).render("error", { message: e.message, user: req.session.user }); throw e; }
+  if (!data.study) return res.redirect("/admin/studies");
+  res.render("admin/crosstab", { ...data, from: data.period.from || "", to: data.period.to || "", queryString: new URLSearchParams(Object.entries(req.query).flatMap(([k, v]) => [].concat(v).map((x) => [k, x]))).toString() });
+});
+
+router.get("/crosstab/export.:format(csv|xlsx)", async (req, res) => {
+  const data = await crosstabFor(req);
+  if (!data.study) return res.status(404).render("error", { message: "Study not found.", user: req.session.user });
+  if (!data.result) return res.status(400).render("error", { message: data.error || "Choose at least one question for the side break.", user: req.session.user });
+  const crosstab = require("../lib/crosstab");
+  const options = { study: data.study, from: data.period.from, to: data.period.to, metrics: data.metrics };
+  const name = `study-${data.study.id}-crosstab-${new Date().toISOString().slice(0, 10)}`;
+  logAudit(req.session.user.email, "export_crosstab", "studies", data.study.id, { side: data.side, top: data.top, base: data.base, format: req.params.format });
+  if (req.params.format === "csv") return res.attachment(`${name}.csv`).type("text/csv").send(crosstab.toCsv(data.result, options));
+  res.attachment(`${name}.xlsx`).type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").send(crosstab.toXlsx(data.result, options));
 });
 
 // ---------- Ops Dashboard ----------
@@ -355,8 +402,10 @@ router.post("/studies", requireRole("superadmin"), async (req, res) => {
   const { name, diary_mode, recruitment_mode } = req.body;
   const chosenCountry = geography.country(req.body.market_country_code || req.body.market);
   if (!chosenCountry) return res.status(400).render("error", { message: "Choose a valid market country.", user: req.session.user });
+  const study_type = studyRecipes.STUDY_TYPES[req.body.study_type] ? req.body.study_type : null;
+  if (!study_type) return res.status(400).render("error", { message: "Choose the study type: Out-of-Home Tracker or In-Home Tracker.", user: req.session.user });
   const { category, custom_categories } = categoriesFromForm(req.body);
-  const { id } = await store.insert("studies", { name, market: chosenCountry.name, market_country_code: chosenCountry.isoCode, market_regions: [], category, custom_categories, diary_mode, recruitment_mode });
+  const { id } = await store.insert("studies", { name, market: chosenCountry.name, market_country_code: chosenCountry.isoCode, market_regions: [], category, custom_categories, study_type, diary_mode, recruitment_mode });
   // seed default KPI candidates
   const defaults = [
     ["completion_rate", "Diary Completion Rate"],
@@ -379,6 +428,7 @@ router.get("/studies/:id", async (req, res) => {
   res.render("admin/study_settings", {
     study, tab: "settings",
     CATEGORIES, selectedCategories: selectedOrAllCategories(study.category),
+    studyTypes: studyRecipes.STUDY_TYPES,
     countries: geography.countries(),
     selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
     selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
@@ -407,6 +457,7 @@ router.post("/studies/:id/settings", async (req, res) => {
         closeBlocked: blocking,
         CATEGORIES,
         selectedCategories: selectedOrAllCategories(study.category),
+        studyTypes: studyRecipes.STUDY_TYPES,
         countries: geography.countries(), selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
         selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
       });
@@ -430,7 +481,12 @@ router.post("/studies/:id/settings", async (req, res) => {
     return res.status(400).render("error", { message: "Unit factor must be a number of zero or more.", user: req.session.user });
   }
 
+  // A study keeps no type until one is chosen; once chosen it can be changed
+  // (the form confirms first) but not cleared.
+  const previous = await store.findOne("studies", { id: studyId }, { projection: { study_type: 1 } });
+  const studyType = studyRecipes.STUDY_TYPES[b.study_type] ? b.study_type : (previous && previous.study_type) || null;
   await store.update("studies", { id: studyId }, {
+    study_type: studyType,
     name: b.name,
     market: chosenCountry.name,
     market_country_code: chosenCountry.isoCode,
@@ -462,6 +518,8 @@ router.post("/studies/:id/settings", async (req, res) => {
     retention_days: b.retention_days ? Math.min(36500, Math.max(1, parseInt(b.retention_days, 10))) : null,
   });
   logAudit(req.session.user.email, "update_settings", "studies", req.params.id, b);
+  // A new type brings a different KPI set, so map it straight away.
+  if (studyType && studyType !== (previous && previous.study_type)) kpiMapping.scheduleMapping(studyId, 0);
   res.redirect(`/admin/studies/${req.params.id}?saved=1`);
 });
 
@@ -1297,6 +1355,16 @@ router.get("/studies/:id/kpis", async (req, res) => {
   // real number while building the KPI, rather than defining it blind and
   // finding out days later that it reads 0% or an em-dash.
   const { results, entryCount } = await kpiEngine.computeAll(study.id, kpis);
+  // The study-type recipe: every KPI with its AI-proposed or approved
+  // questions, computed live so the researcher approves with the number in view.
+  // A queued/running status left behind by a restart would otherwise show
+  // "the AI is reading…" forever.
+  if (kpiMapping.isPending(study.id)) study.kpi_mapping_status = "running";
+  else if (["queued", "running"].includes(study.kpi_mapping_status)) study.kpi_mapping_status = study.kpi_mapped_at ? "done" : "idle";
+  const recipeSections = studyRecipes.studyTypeOf(study)
+    ? await kpiMapping.recipeSections(study, await require("../lib/studyReport").loadStudyReport(study.id))
+    : null;
+  const mappableQuestions = recipeSections ? await kpiMapping.candidateQuestions(study.id) : [];
   const [clientUsers, clientGrants] = await Promise.all([
     store.find("users", { role: "client" }, { sort: { name: 1 } }),
     store.find("client_grants", { study_id: studyId }, { sort: { id: 1 } }),
@@ -1309,6 +1377,12 @@ router.get("/studies/:id/kpis", async (req, res) => {
     questionsById,
     metrics: kpiEngine.METRICS,
     objectives: require('../lib/studyObjectives').OBJECTIVES,
+    sectionOptions: studyRecipes.sectionOptions(study),
+    studyType: studyRecipes.STUDY_TYPES[studyRecipes.studyTypeOf(study)] || null,
+    recipeSections,
+    mappableQuestions,
+    mappingProvider: kpiMapping.provider()?.name || null,
+    notice: req.query.notice || null,
     operators: kpiEngine.OPERATORS,
     describeKpi: (k) => kpiEngine.describeKpi(k, questionsById),
     computed: results,
@@ -1348,7 +1422,11 @@ router.post("/studies/:id/kpis", async (req, res) => {
   const objectiveKey = String(req.body.objective_key || '');
   if (!label) return back("Give the KPI a name so the client knows what they're looking at.");
   if (!kpiEngine.METRICS[metric]) return back("Choose what this KPI measures.");
-  if (!require('../lib/studyObjectives').OBJECTIVE_KEYS.has(objectiveKey)) return back('Choose which study objective this KPI answers.');
+  const kpiStudy = await store.findOne("studies", { id: toId(studyId) });
+  const sectionKeys = studyRecipes.studyTypeOf(kpiStudy)
+    ? new Set([...studyRecipes.sectionOptions(kpiStudy).map((section) => section.key), "custom"])
+    : require('../lib/studyObjectives').OBJECTIVE_KEYS;
+  if (!sectionKeys.has(objectiveKey)) return back(studyRecipes.studyTypeOf(kpiStudy) ? 'Choose which report section this KPI belongs to.' : 'Choose which study objective this KPI answers.');
 
   const spec = kpiEngine.METRICS[metric];
   const questionId = req.body.question_id ? Number(req.body.question_id) : null;
@@ -1392,6 +1470,39 @@ router.post("/studies/:id/kpis", async (req, res) => {
   });
   logAudit(req.session.user.email, "create_kpi", "kpi_config", id, { label, metric, objectiveKey });
   back(null);
+});
+
+// ---------- Recipe KPI mapping (AI proposes, researcher approves) ----------
+// Re-running is fire-and-forget: the AI call can take tens of seconds, and the
+// KPI page shows the mapping status and refreshes itself while it runs.
+router.post("/studies/:id/kpi-mapping/run", async (req, res) => {
+  const studyId = toId(req.params.id);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  kpiMapping.runMapping(studyId, { actor: req.session.user.email })
+    .catch((e) => console.error(`KPI mapping failed for study ${studyId}:`, e.message));
+  res.redirect(`/admin/studies/${studyId}/kpis#recipe`);
+});
+
+router.post("/studies/:id/kpi-mapping/:key/:action(approve|reject|manual)", async (req, res) => {
+  const studyId = toId(req.params.id);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const back = (query) => res.redirect(`/admin/studies/${studyId}/kpis?${query}#kpi-${req.params.key}`);
+  try {
+    if (req.params.action === "manual") {
+      // One select per input (q_<role>) plus its option checkboxes (opt_<role>).
+      const proposed = {};
+      for (const [field, value] of Object.entries(req.body)) {
+        const match = /^q_(\w+)$/.exec(field);
+        if (match && value) proposed[match[1]] = { question_id: Number(value), options: [].concat(req.body[`opt_${match[1]}`] || []) };
+      }
+      await kpiMapping.setManual(studyId, req.params.key, proposed, req.session.user.email);
+      return back("notice=" + encodeURIComponent("Mapping saved and approved."));
+    }
+    await kpiMapping.review(studyId, req.params.key, req.params.action, req.session.user.email);
+    back("notice=" + encodeURIComponent(req.params.action === "approve" ? "Mapping approved." : "Mapping rejected; this KPI will show as not measured."));
+  } catch (e) {
+    back("error=" + encodeURIComponent(e.message));
+  }
 });
 
 // Bulk invitations share one implementation with the interviewer side -- see
@@ -1698,9 +1809,16 @@ router.get("/ai-summary", async (req, res) => {
   try { validatePeriod(period); } catch (e) { error = e.message; period = { from: '', to: '' }; }
   const report = await loadStudyReport(study.id, period);
   const questionnaireDashboard = require('../lib/questionnaireDashboard').buildQuestionnaireDashboard(report);
-  const objectiveKpis = (await store.find('kpi_config', { study_id: study.id, enabled: 1 }, { sort: { id: 1 } }))
+  const enabledKpis = await store.find('kpi_config', { study_id: study.id, enabled: 1 }, { sort: { id: 1 } });
+  const computeCustom = kpi => ({ ...kpi, ...kpiEngine.computeKpi(kpi, report.entries, { respondentIds: report.respondents.map(r => r.id) }) });
+  const objectiveKpis = enabledKpis
     .filter(kpi => require('../lib/studyObjectives').OBJECTIVE_KEYS.has(kpi.objective_key))
-    .map(kpi => ({ ...kpi, ...kpiEngine.computeKpi(kpi, report.entries, { respondentIds: report.respondents.map(r => r.id) }) }));
+    .map(computeCustom);
+  // A typed study reports in its recipe's story order instead of the six objectives.
+  const recipeStory = studyRecipes.studyTypeOf(study)
+    ? kpiMapping.attachCustomKpis(await kpiMapping.recipeSections(study, report, { withSplits: true }), enabledKpis.filter(kpi => kpi.metric && kpi.objective_key).map(computeCustom))
+    : null;
+  const modeEffects = recipeStory ? kpiMapping.modeEffects(recipeStory, study) : null;
   let sourceSignature = null;
   try { sourceSignature = await aiSummary.currentSignature(study.id, period); } catch (_) {}
   // Comparing against a hardcoded "azure_openai" here meant every summary
@@ -1724,8 +1842,27 @@ router.get("/ai-summary", async (req, res) => {
     openTextSampleSize: aiSummary.OPEN_TEXT_SAMPLE_SIZE,
     themes, sentiment, banners, bannerLabels: BANNER_SEGMENTS,
     objectiveGroups: require('../lib/studyObjectives').objectiveGroups(objectiveKpis),
+    recipeStory, modeEffects, studyTypeLabel: studyRecipes.STUDY_TYPES[study.study_type]?.label || null,
+    // Every number in the draft (and in the approved client text) checked
+    // against the figures the summary was written from.
+    claimCheck: selected ? aiSummary.claimCheckFor(selected) : null,
+    approvedCheck: selected && selected.client_narrative ? aiSummary.claimCheckFor(selected, selected.client_narrative) : null,
+    notice: req.query.notice || null,
     ...period, error, stale,
   });
+});
+
+router.post("/ai-summary/approve", async (req, res) => {
+  const row = await store.findOne("ai_summaries", { id: toId(req.body.summary_id) });
+  if (!row || !canAccessStudy(req, row.study_id)) return studyNotFound(res);
+  const back = (query) => res.redirect(`/admin/ai-summary?study=${row.study_id}&summary=${row.id}&${query}#summary-approval`);
+  try {
+    const check = await aiSummary.approveSummary(row, { narrative: req.body.narrative, actor: req.session.user.email, allowUnsupported: req.body.allow_unsupported === "1" });
+    logAudit(req.session.user.email, "approve_summary", "ai_summaries", row.id, { unsupported_numbers: check.unsupported.map((n) => n.text) });
+    back("notice=" + encodeURIComponent(check.unsupported.length ? `Approved with ${check.unsupported.length} number(s) you accepted.` : "Approved for clients. Every number traces to a calculated figure."));
+  } catch (e) {
+    back("error=" + encodeURIComponent(e.message));
+  }
 });
 
 router.post("/ai-summary/generate", async (req, res) => {

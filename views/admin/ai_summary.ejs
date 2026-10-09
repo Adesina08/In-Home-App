@@ -5,6 +5,7 @@
 <div class="report-page">
   <div class="report-heading"><div><div class="report-kicker"><%= study.name %></div><h1>AI Summary</h1><p class="report-lead">Executive summary, key charts, respondent language and media in one clear view.</p></div><span class="report-badge"><%= aiConfigured ? aiProviderLabel + ' connected' : 'AI setup required' %></span></div>
   <% if (error) { %><div class="report-notice error" role="alert"><%= error %></div><% } %>
+  <% if (notice) { %><div class="report-notice" role="status"><%= notice %></div><% } %>
   <form class="report-toolbar" method="GET" action="/admin/ai-summary">
     <input type="hidden" name="study" value="<%= study.id %>" />
     <label>From<input type="date" name="from" value="<%= from %>" /></label><label>To<input type="date" name="to" value="<%= to %>" /></label>
@@ -20,6 +21,26 @@
       <span class="report-badge"><%= stale ? 'Update available' : 'Current ' + aiProviderLabel + ' draft · review before sharing' %></span>
       <div class="report-narrative"><%= selected.narrative %></div>
       <p class="report-muted" style="margin-top:20px">Saved <%= selected.generated_at %> · <%= selected.base_records %> submitted entries · <%= selected.base_respondents %> contributors.</p>
+      <div id="summary-approval" class="claim-check <%= claimCheck.unsupported.length ? 'has-issues' : '' %>">
+        <h3>Number check</h3>
+        <% if (!claimCheck.checked) { %><p>This draft states no figures in digits.</p>
+        <% } else if (!claimCheck.unsupported.length) { %><p>All <%= claimCheck.checked %> numbers in this draft trace to a calculated figure.</p>
+        <% } else { %>
+          <p><strong><%= claimCheck.unsupported.length %> of <%= claimCheck.checked %> numbers</strong> in this draft are not in the calculated figures. The AI may have calculated, estimated or misread them. Correct them before approving.</p>
+          <ul><% claimCheck.unsupported.forEach(n => { %><li><mark><%= n.text %></mark> <span>…<%= n.context %>…</span></li><% }) %></ul>
+        <% } %>
+        <% if (selected.review_status === 'approved') { %>
+          <p class="claim-check-status">Approved for clients by <%= selected.approved_by %> on <%= selected.approved_at %><%= approvedCheck && approvedCheck.unsupported.length ? ` — with ${approvedCheck.unsupported.length} unchecked number(s) accepted` : '' %>.</p>
+        <% } %>
+        <form method="POST" action="/admin/ai-summary/approve">
+          <input type="hidden" name="summary_id" value="<%= selected.id %>" />
+          <label for="clientNarrative">Text clients will see (edit before approving)</label>
+          <textarea id="clientNarrative" name="narrative" rows="8"><%= selected.client_narrative || selected.narrative %></textarea>
+          <% if (claimCheck.unsupported.length) { %><label class="claim-check-accept"><input type="checkbox" name="allow_unsupported" value="1" /> I have checked the numbers listed and accept them</label><% } %>
+          <button class="report-button"><%= selected.review_status === 'approved' ? 'Update approved text' : 'Approve for clients' %></button>
+          <p class="report-muted">The text is checked again on approval, so a number you add while editing is checked too.</p>
+        </form>
+      </div>
       <details><summary>View the saved figures and sampled answers</summary>
         <% let snapshot = null, sample = []; try { snapshot = JSON.parse(selected.metrics_json); sample = JSON.parse(selected.open_text_json || '[]'); } catch (_) {} %>
         <% if (snapshot && snapshot.base) { %><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"><%= JSON.stringify(snapshot, null, 2) %></pre><% } else { %><p class="report-muted">The saved metric snapshot is unavailable.</p><% } %>
@@ -33,7 +54,7 @@
   <%- include('../partials/report_visuals', { report }) %>
   <details class="report-panel dashboard-extra ai-summary-more">
     <summary>More analysis and history</summary>
-    <p class="report-muted">Study objectives, detailed brand results, themes, sentiment, demographic crosstabs and saved summary versions.</p>
+    <p class="report-muted"><%= recipeStory ? 'The ' + studyTypeLabel + ' report story' : 'Study objectives' %>, detailed brand results, themes, sentiment, demographic crosstabs and saved summary versions.</p>
 
   <div class="report-two">
     <section class="report-panel">
@@ -55,10 +76,15 @@
       <% } else { %><div class="report-empty">Generate a summary to read sentiment from its open-text sample.</div><% } %>
     </section>
   </div>
-    <%- include('../partials/report_objectives', { objectiveGroups, configureUrl: '/admin/studies/' + study.id + '/kpis' }) %>
+    <% if (recipeStory) { %>
+      <%- include('../partials/report_story', { storySections: recipeStory, studyTypeLabel, configureUrl: '/admin/studies/' + study.id + '/kpis#recipe', admin: true }) %>
+      <%- include('../partials/report_mode_effects', { modeEffects, admin: true }) %>
+    <% } else { %>
+      <%- include('../partials/report_objectives', { objectiveGroups, configureUrl: '/admin/studies/' + study.id + '/kpis' }) %>
+    <% } %>
     <%- include('../partials/report_brand_table', { report }) %>
   <details class="report-panel dashboard-extra"><summary>View demographic crosstabs</summary>
-    <div class="report-panel-head"><div><div class="report-kicker">Compare consumer groups</div><h2>Crosstab · <%= banners.questionLabel %></h2><p>Location, Gender and Age banners for one questionnaire question.</p></div></div>
+    <div class="report-panel-head"><div><div class="report-kicker">Compare consumer groups</div><h2>Crosstab · <%= banners.questionLabel %></h2><p>Location, Gender and Age banners for one questionnaire question. For questions by questions, with side and top breaks and Excel export, <a href="/admin/crosstab?study=<%= study.id %>">open the crosstab builder</a>.</p></div></div>
     <form class="report-toolbar" method="GET" action="/admin/ai-summary" style="margin-bottom:6px">
       <input type="hidden" name="study" value="<%= study.id %>" /><input type="hidden" name="from" value="<%= from %>" /><input type="hidden" name="to" value="<%= to %>" />
       <label>Question<select name="question"><option value="">Automatic question</option><% banners.questions.forEach(q => { %><option value="<%= q.code %>" <%= q.code === banners.question ? 'selected' : '' %>><%= q.text %></option><% }) %></select></label>

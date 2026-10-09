@@ -534,7 +534,7 @@ router.post("/:token/diary/analyze-video", upload.single("video"), async (req, r
     period_label: now.slice(0, 10),
     occurrence_time: now,capture_time:now,sync_time:now,
     submit_time: now,
-    channel: "app",
+    channel: "web", // the browser diary; the native app records "app" (routes/mobileApi.js)
     status: "submitted",
     is_practice: practice ? 1 : 0,
     entry_mode: "video",
@@ -738,7 +738,7 @@ router.post("/:token/diary", upload.any(), async (req, res) => {
     occurrence_time: occurrenceTime,
     capture_time:store.toSqlTime(req.body.capture_time)||store.nowSql(),sync_time:store.nowSql(),
     submit_time: isSubmit ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
-    channel: "app",
+    channel: "web", // the browser diary; the native app records "app" (routes/mobileApi.js)
     status: isTerminated ? "screened_out" : (isSubmit ? "submitted" : "draft"),
     is_practice: isPractice,
     entry_mode: entryMode,

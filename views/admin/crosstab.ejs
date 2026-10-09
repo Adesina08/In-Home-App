@@ -1,0 +1,100 @@
+<%- include('../partials/header', { title: 'Crosstabs — INICIO', user, currentPath: '/admin/crosstab', studyPicker: { studies, current: study.id, action: '/admin/crosstab?study=' } }) %>
+<link rel="stylesheet" href="/public/reports.css" />
+<%
+  const questions = variables.filter(v => !v.segment);
+  const segments = variables.filter(v => v.segment);
+  const metricLabels = { n: 'Count', colPct: 'Column %', rowPct: 'Row %' };
+  const pick = (name, list, chosen, onlyChoice) => list.filter(v => !onlyChoice || v.kind === 'choice');
+%>
+<div class="report-page">
+  <div class="report-heading"><div><div class="report-kicker"><%= study.name %></div><h1>Crosstabs</h1><p class="report-lead">Cross any questions down the side against any questions or respondent variables across the top, then export the table.</p></div></div>
+  <% if (error) { %><div class="report-notice error" role="alert"><%= error %></div><% } %>
+
+  <form class="report-panel xtab-builder" method="GET" action="/admin/crosstab">
+    <input type="hidden" name="study" value="<%= study.id %>" />
+    <div class="xtab-pickers">
+      <% [['side', 'Side break (rows)', 'The questions whose answers run down the table. Numeric questions show mean, median, minimum and maximum.', false], ['top', 'Top break (columns)', 'The questions or respondent variables the columns are split by. A Total column is always included.', true]].forEach(([name, title, help, onlyChoice]) => { const chosen = name === 'side' ? side : top; %>
+        <fieldset class="xtab-picker" data-xtab-picker>
+          <legend><%= title %> <span data-xtab-count></span></legend>
+          <p><%= help %></p>
+          <input type="search" placeholder="Filter questions…" aria-label="Filter <%= title.toLowerCase() %>" data-xtab-filter />
+          <div class="xtab-options">
+            <div class="xtab-group">Questions</div>
+            <% pick(name, questions, chosen, onlyChoice).forEach(v => { %>
+              <label data-xtab-option><input type="checkbox" name="<%= name %>" value="<%= v.id %>" <%= chosen.includes(v.id) ? 'checked' : '' %> /><span><%= v.label %> <small><%= v.type %></small></span></label>
+            <% }) %>
+            <% if (!pick(name, questions, chosen, onlyChoice).length) { %><p class="report-muted">No <%= onlyChoice ? 'choice or time' : 'choice, time or numeric' %> questions in this study yet.</p><% } %>
+            <div class="xtab-group">Respondent &amp; entry variables</div>
+            <% segments.forEach(v => { %>
+              <label data-xtab-option><input type="checkbox" name="<%= name %>" value="<%= v.id %>" <%= chosen.includes(v.id) ? 'checked' : '' %> /><span><%= v.label %></span></label>
+            <% }) %>
+          </div>
+        </fieldset>
+      <% }) %>
+    </div>
+    <div class="xtab-settings">
+      <fieldset><legend>Base</legend>
+        <label><input type="radio" name="base" value="entries" <%= base === 'entries' ? 'checked' : '' %> /> Occasions (entries)</label>
+        <label><input type="radio" name="base" value="respondents" <%= base === 'respondents' ? 'checked' : '' %> /> Respondents</label>
+      </fieldset>
+      <fieldset><legend>Show in cells</legend>
+        <% Object.entries(metricLabels).forEach(([key, label]) => { %><label><input type="checkbox" name="metrics" value="<%= key %>" <%= metrics.includes(key) ? 'checked' : '' %> /> <%= label %></label><% }) %>
+      </fieldset>
+      <fieldset><legend>Period</legend>
+        <label>From <input type="date" name="from" value="<%= from %>" /></label>
+        <label>To <input type="date" name="to" value="<%= to %>" /></label>
+      </fieldset>
+      <div class="xtab-actions"><button class="report-button" type="submit">Run crosstab</button><a class="report-button secondary" href="/admin/crosstab?study=<%= study.id %>">Clear</a></div>
+    </div>
+  </form>
+
+  <% if (result) { %>
+    <section class="report-panel">
+      <div class="report-panel-head">
+        <div><h2>Results</h2><p><%= result.base === 'respondents' ? 'Respondent base: a person counts in every category they gave in any entry.' : 'Occasion base: each diary entry counts once.' %> Column % = cell ÷ the column's answering base<%= result.tables.some(t => t.multi) ? '; multi-select questions can add up to more than 100%' : '' %>. Columns under <%= result.minimum %> <%= result.unitLabel %> are marked low base.</p></div>
+        <div class="xtab-export">
+          <a class="report-button secondary" href="/admin/crosstab/export.csv?<%= queryString %>"><%- icon('download', 'w-4 h-4') %>CSV</a>
+          <a class="report-button" href="/admin/crosstab/export.xlsx?<%= queryString %>"><%- icon('download', 'w-4 h-4') %>Excel</a>
+        </div>
+      </div>
+      <% const groups = []; result.columns.forEach(c => { const last = groups[groups.length - 1]; if (last && last.group === c.group) last.span++; else groups.push({ group: c.group, span: 1 }); }); %>
+      <% result.tables.forEach(table => { %>
+        <h3 class="xtab-title"><%= table.variable.label %></h3>
+        <div class="dashboard-table-scroll"><table class="xtab">
+          <thead>
+            <tr><th rowspan="2" class="xtab-stub"></th><% groups.forEach(g => { %><th colspan="<%= g.span %>" class="xtab-group-head"><%= g.group %></th><% }) %></tr>
+            <tr><% result.columns.forEach(c => { %><th class="<%= c.lowBase ? 'is-low' : '' %>"><%= c.label %><% if (c.lowBase) { %><small>low base</small><% } %></th><% }) %></tr>
+          </thead>
+          <tbody>
+            <tr class="xtab-base"><th scope="row">Base: <%= result.unitLabel %> answering</th><% table.bases.forEach(b => { %><td><%= b %></td><% }) %></tr>
+            <% if (table.kind === 'numeric') { %>
+              <% [['mean', 'Mean'], ['median', 'Median'], ['min', 'Minimum'], ['max', 'Maximum']].forEach(([key, label]) => { %><tr><th scope="row"><%= label %></th><% table.stats.forEach(s => { %><td><%= s[key] ?? '—' %></td><% }) %></tr><% }) %>
+            <% } else if (!table.rows.length) { %>
+              <tr><th scope="row" class="report-muted">No answers yet</th><% result.columns.forEach(() => { %><td>—</td><% }) %></tr>
+            <% } else { table.rows.forEach(row => { %>
+              <tr><th scope="row"><%= row.label %></th><% row.cells.forEach(cell => { %><td>
+                <% metrics.forEach((m, i) => { const v = cell[m]; %><span class="<%= i === 0 ? 'xtab-main' : 'xtab-sub' %>"><%= v === null || v === undefined ? '—' : (m === 'n' ? v : v + '%') %></span><% }) %>
+              </td><% }) %></tr>
+            <% }) } %>
+          </tbody>
+        </table></div>
+      <% }) %>
+    </section>
+  <% } else if (!error) { %>
+    <div class="report-empty">Choose at least one question for the side break, then run the crosstab.</div>
+  <% } %>
+</div>
+<script>
+  (function () {
+    document.querySelectorAll("[data-xtab-picker]").forEach(function (picker) {
+      var count = picker.querySelector("[data-xtab-count]");
+      function update() { var n = picker.querySelectorAll("input[type=checkbox]:checked").length; count.textContent = n ? "· " + n + " chosen" : ""; }
+      picker.addEventListener("change", update); update();
+      picker.querySelector("[data-xtab-filter]").addEventListener("input", function (e) {
+        var term = e.target.value.toLowerCase();
+        picker.querySelectorAll("[data-xtab-option]").forEach(function (option) { option.hidden = term && option.textContent.toLowerCase().indexOf(term) === -1; });
+      });
+    });
+  })();
+</script>
+<%- include('../partials/footer') %>

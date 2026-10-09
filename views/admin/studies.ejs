@@ -18,6 +18,18 @@
         <label class="block text-[12.5px] font-semibold text-slate-600 mb-1.5">Study name</label>
         <input name="name" required class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" placeholder="e.g. Household Beverage Consumption Pilot" />
       </div>
+      <fieldset>
+        <legend class="block text-[12.5px] font-semibold text-slate-600 mb-1.5">Study type</legend>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <% Object.values(STUDY_TYPES).forEach(function (t) { %>
+            <label class="flex items-start gap-2.5 border border-slate-300 rounded-[11px] px-3 py-2.5 cursor-pointer has-[:checked]:border-signal has-[:checked]:bg-blue-50/60">
+              <input type="radio" name="study_type" value="<%= t.key %>" required class="mt-0.5 accent-signal" />
+              <span><span class="block text-sm font-semibold text-slate-800"><%= t.label %></span><span class="block text-xs text-slate-500 leading-snug mt-0.5"><%= t.description %></span></span>
+            </label>
+          <% }) %>
+        </div>
+        <p class="text-xs text-slate-400 mt-1.5">Decides the study's KPIs and the story order of its reports. The AI matches your questions to those KPIs once the questionnaire is in.</p>
+      </fieldset>
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-[12.5px] font-semibold text-slate-600 mb-1.5">Market</label>

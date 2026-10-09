@@ -43,7 +43,13 @@ async function loadPage(req, res, next) {
   }
   const questionnaireDashboard=require('../lib/questionnaireDashboard').buildQuestionnaireDashboard(raw,{minimumBase:user.role==='client'?report.minimumBase:1,suppressed:!!report.suppressed,allowText:user.role!=='client'||!!grant.text,allowMedia:user.role!=='client'||!!grant.media,media:dashboardMedia});
   const { objectiveGroups, OBJECTIVE_KEYS } = require('../lib/studyObjectives');
-  res.locals.clientData={study,studies,report,questionnaireDashboard,kpis:kpiValues.filter(kpi=>!OBJECTIVE_KEYS.has(kpi.objective_key)),objectiveGroups:objectiveGroups(kpiValues),insight,videoInsight,grant,completionRate:a.compliance.rate,active:report.suppressed?'—':raw.respondents.length,totalRespondents:report.suppressed?'—':raw.respondents.length,...period};
+  // A typed study shows its recipe story: approved and automatic KPIs only,
+  // small bases suppressed, hand-built KPIs filed into their sections.
+  const studyRecipes=require('../lib/studyRecipes'),kpiMapping=require('../lib/kpiMapping');
+  const typed=!!studyRecipes.studyTypeOf(study);
+  const recipeStory=!typed?null:report.suppressed?[]:kpiMapping.attachCustomKpis(await kpiMapping.recipeSections(study,raw,{forClient:user.role==='client',withSplits:true}),kpiValues.filter(k=>k.metric&&k.objective_key));
+  const modeEffects=recipeStory&&recipeStory.length?kpiMapping.modeEffects(recipeStory,study):null;
+  res.locals.clientData={study,studies,report,questionnaireDashboard,kpis:kpiValues.filter(kpi=>typed?!(kpi.metric&&kpi.objective_key):!OBJECTIVE_KEYS.has(kpi.objective_key)),objectiveGroups:objectiveGroups(kpiValues),recipeStory,modeEffects,studyTypeLabel:studyRecipes.STUDY_TYPES[study.study_type]?.label||null,insight,videoInsight,grant,completionRate:a.compliance.rate,active:report.suppressed?'—':raw.respondents.length,totalRespondents:report.suppressed?'—':raw.respondents.length,...period};
   next();
 }
 router.get(['/', '/insights'], loadPage, (req, res) => res.render('client/dashboard', { ...res.locals.clientData, insights: req.path === '/insights' }));

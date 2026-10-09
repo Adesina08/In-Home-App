@@ -40,6 +40,8 @@ router.post('/studies/:id/research/:action',async(req,res)=>{
         await store.insert('questions',{...base,active:1,code:`${q.code||'q'+q.id}__${b.kind}_${i+1}`,source_code:q.code,loop_source_id:id,loop_kind:b.kind,loop_item:item,text:`${q.text} — ${item}`,order_index:Number(q.order_index)+(i+1)/100});
       }
       await store.update('questions',{id:q.id},{active:0});
+      // The base question is now inactive, so KPIs mapped to it re-map onto the loop.
+      require('../lib/kpiMapping').scheduleMapping(study.id);
     }else if(action==='instrument'){
       const screener=json(b.screener_questions,[]);if(!Array.isArray(screener)||screener.some(q=>!q.code||!q.text||!Array.isArray(q.options)||!Array.isArray(q.allowed)||!q.allowed.length||q.allowed.some(a=>!q.options.includes(a))))throw new Error('Each screener needs code, text, options and allowed answers.');
       const closeout=json(b.close_out_questions,[]);if(!Array.isArray(closeout)||closeout.some(q=>!q.code||!q.text||!['text','single'].includes(q.type)||(q.type==='single'&&!Array.isArray(q.options))))throw new Error('Close-out questions need code, text, type (single or text) and options for single choice.');
@@ -93,7 +95,7 @@ router.post('/studies/:id/research/:action',async(req,res)=>{
     }else if(action==='run-jobs'){await ops.runResearchJobs();await ops.audit(actor,action,study.id);
     }else if(action==='snapshot'){await ops.snapshot(study.id,actor,validatePeriod(b));
     }else if(action==='approve-summary'){
-      const row=await store.findOne('ai_summaries',{id:Number(b.id),study_id:study.id});if(!row)throw new Error('Summary not found.');await ops.audit(actor,action,study.id,{summary_id:row.id});await store.update('ai_summaries',{id:row.id},{review_status:'approved',approved_by:actor,approved_at:store.nowSql(),client_narrative:String(b.narrative||'').trim()||row.narrative});
+      const row=await store.findOne('ai_summaries',{id:Number(b.id),study_id:study.id});if(!row)throw new Error('Summary not found.');await ops.audit(actor,action,study.id,{summary_id:row.id});await require('../lib/aiSummary').approveSummary(row,{narrative:b.narrative,actor,allowUnsupported:b.allow_unsupported==='1'});
     }else if(action==='approve-report'){
       const id=/^\d+$/.test(b.id)?Number(b.id):b.id;const row=await store.findOne('report_snapshots',{id,study_id:study.id});if(!row)throw new Error('Report not found.');await ops.audit(actor,action,study.id,{report_id:id});await store.update('report_snapshots',{id},{status:'approved',approved_by:actor,approved_at:store.nowSql()});
     }else if(action==='record-review'){

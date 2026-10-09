@@ -44,6 +44,14 @@
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Name</label>
           <input name="name" value="<%= study.name %>" class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
         </div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-600 mb-1.5" for="studyType">Study type</label>
+          <select name="study_type" id="studyType" data-original="<%= study.study_type || '' %>" <%= study.study_type ? 'required' : '' %> class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
+            <% if (!study.study_type) { %><option value="">Choose a study type…</option><% } %>
+            <% Object.values(studyTypes).forEach(t => { %><option value="<%= t.key %>" <%= study.study_type === t.key ? 'selected' : '' %>><%= t.label %></option><% }) %>
+          </select>
+          <p class="text-xs text-slate-400 mt-1"><%= study.study_type ? 'Decides the KPIs and report story order. Changing it swaps the KPI set and re-runs the AI mapping; approvals for KPIs both types share are kept.' : 'This study has no type yet, so it still uses the six general objectives. Choosing one gives it tailored KPIs and the AI maps your questions to them.' %></p>
+        </div>
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Status</label>
           <select name="status" class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
@@ -226,6 +234,11 @@
     var country = document.getElementById('marketCountry'); var regions = document.getElementById('marketRegions'); var selected = <%- JSON.stringify(selectedRegions.map(function(r){ return typeof r === 'string' ? r : r.code; })) %>;
     async function loadRegions() { regions.innerHTML = '<option>Loading…</option>'; var response = await fetch('/admin/geography/states?country=' + encodeURIComponent(country.value)); var data = await response.json(); regions.innerHTML=''; (data.states||[]).forEach(function(region){ var option=document.createElement('option'); option.value=region.code; option.textContent=region.name; option.selected=selected.indexOf(region.code)>-1; regions.appendChild(option); }); if(!regions.options.length) regions.innerHTML='<option disabled>No state or province list is available for this country</option>'; }
     country.addEventListener('change', function(){ selected=[]; loadRegions(); }); if(country.value) loadRegions();
+    var typeSelect = document.getElementById('studyType');
+    document.querySelector('[data-settings-form]').addEventListener('submit', function (e) {
+      var from = typeSelect.dataset.original;
+      if (from && typeSelect.value !== from && !confirm('Change the study type? Its KPI set will be swapped for the new type and the AI will re-map your questions. Approved mappings for KPIs both types share are kept.')) e.preventDefault();
+    });
     document.querySelectorAll('[data-qc-toggle]').forEach(function (toggle) {
       var rule = toggle.closest('.qc-rule');
       function apply() {

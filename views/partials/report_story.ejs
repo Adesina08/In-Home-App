@@ -1,0 +1,40 @@
+<%#
+  A typed study's report in its recipe's story order (Out-of-Home or In-Home
+  Tracker). Locals: storySections (from kpiMapping.recipeSections plus
+  attachCustomKpis), studyTypeLabel, configureUrl (admin only), admin (bool).
+%>
+<% const stateNote = { awaiting: 'Awaiting approval', not_measured: 'Not measured by this questionnaire' }; %>
+<section class="objective-dashboard" aria-labelledby="study-story-title">
+  <div class="objective-dashboard-heading"><div><div class="report-kicker"><%= studyTypeLabel %></div><h2 id="study-story-title">Report story</h2><p class="report-muted">Measures in the order the <%= studyTypeLabel %> story is told. Every value is calculated by the platform from approved questions.</p></div><% if (typeof configureUrl !== 'undefined' && configureUrl) { %><a class="report-button secondary" href="<%= configureUrl %>">Review KPI mapping</a><% } %></div>
+  <div class="objective-grid">
+    <% storySections.forEach((section, index) => { const rows = section.kpis.concat(section.custom || []); %>
+      <% if (!admin && !rows.length && !section.narrative) return; %>
+      <section class="report-panel objective-card" aria-labelledby="story-<%= section.key %>">
+        <div class="objective-card-heading"><span class="objective-index"><%= String(index + 1).padStart(2, '0') %></span><div><h3 id="story-<%= section.key %>"><%= section.label %></h3><p><%= section.description %></p></div></div>
+        <% if (rows.length) { %>
+          <div class="dashboard-table-scroll"><table class="report-table objective-table story-table"><thead><tr><th scope="col">Measure</th><th scope="col">Value</th></tr></thead><tbody>
+            <% rows.forEach(kpi => { const note = stateNote[kpi.state]; %><tr>
+              <th scope="row"><%= kpi.label %>
+                <% if (note) { %><small><%= note %></small><% } else if (kpi.basis) { %><small><%= kpi.basis %></small><% } %>
+                <% if (kpi.breakdown && kpi.breakdown.length > 1) { %><small><%= kpi.breakdown.slice(0, 4).map(b => b.pct === null ? `${b.label}: ${b.n}` : `${b.label} ${b.pct}%`).join(' · ') %></small><% } %>
+                <% if (admin && kpi.lowBase) { %><small>Low base (<%= kpi.base %>): hidden from clients</small><% } %>
+              </th>
+              <td><%= kpi.state === 'not_measured' ? '—' : (kpi.display || '—') %></td>
+            </tr>
+            <% if (kpi.splits && kpi.splits.length) { %><tr class="story-split-row"><td colspan="2">
+              <details class="story-splits"><summary>Breakdown by <%= kpi.splits.map(s => s.label.toLowerCase()).join(', ') %></summary>
+                <% kpi.splits.forEach(split => { %>
+                  <div class="story-split"><div class="story-split-title"><%= split.label %><%= split.compares ? ' · ' + split.compares : '' %></div>
+                    <table><tbody><% split.groups.forEach(g => { %><tr><th scope="row"><%= g.label %> <small>n=<%= g.base %></small></th><td><%= g.display %><%= admin && g.lowBase ? ' (low base)' : '' %></td></tr><% }) %></tbody></table>
+                  </div>
+                <% }) %>
+              </details>
+            </td></tr><% } %>
+            <% }) %>
+          </tbody></table></div>
+        <% } else if (section.narrative) { %><p class="objective-empty">Written in the AI summary from the measures above.</p>
+        <% } else { %><p class="objective-empty">No measure in this section yet.</p><% } %>
+      </section>
+    <% }) %>
+  </div>
+</section>

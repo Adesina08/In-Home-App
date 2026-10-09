@@ -78,6 +78,7 @@ app.locals.CATEGORIES = CATEGORIES;
 app.locals.formatCategories = formatCategories;
 app.locals.CATEGORY_GROUPS = CATEGORY_GROUPS;
 app.locals.CUSTOM_GROUPS = CUSTOM_GROUPS;
+app.locals.STUDY_TYPES = require("./lib/studyRecipes").STUDY_TYPES;
 app.locals.canonicalCategory = canonicalCategory;
 app.locals.categoryGroup = categoryGroup;
 app.locals.STUDY_TABS = STUDY_TABS;

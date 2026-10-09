@@ -1,0 +1,26 @@
+<%#
+  Mode effects (framework section 16): does a measure differ between entry
+  channels, or between self-joined and interviewer-recruited participants?
+  Locals: modeEffects (kpiMapping.modeEffects), admin (bool).
+%>
+<section class="report-panel mode-effects" aria-labelledby="mode-effects-title">
+  <div class="report-panel-head"><div><div class="report-kicker">Data quality</div><h2 id="mode-effects-title">Mode effects</h2>
+    <p>Each measure compared by <%= modeEffects.segments.length ? modeEffects.segments.map(s => s.toLowerCase()).join(' and ') : 'entry channel and recruitment' %>, for groups of at least <%= modeEffects.minimum %>. A gap of 10 points or more on a percentage, or 20% on other figures, is flagged. This is a screen, not a significance test.</p></div></div>
+  <% if (!modeEffects.compared) { %>
+    <p class="report-muted">Nothing to compare yet: every measure has a single channel and recruitment route, or groups below the minimum base.</p>
+  <% } else if (!modeEffects.material.length) { %>
+    <p class="mode-effects-ok">No material differences across <%= modeEffects.compared %> comparison<%= modeEffects.compared === 1 ? '' : 's' %>. Pooling these modes looks safe for the measures shown.</p>
+  <% } else { %>
+    <p class="mode-effects-warn"><strong><%= modeEffects.material.length %> measure<%= modeEffects.material.length === 1 ? '' : 's' %></strong> differ<%= modeEffects.material.length === 1 ? 's' : '' %> materially. Read <%= modeEffects.material.length === 1 ? 'it' : 'them' %> by group rather than as one pooled figure.</p>
+    <div class="dashboard-table-scroll"><table class="report-table"><thead><tr><th scope="col">Measure</th><th scope="col">Compared by</th><th scope="col">Highest</th><th scope="col">Lowest</th><th scope="col">Gap</th></tr></thead><tbody>
+      <% modeEffects.material.forEach(m => { %><tr>
+        <th scope="row"><%= m.kpi %><small><%= m.section %><%= m.compares ? ' · ' + m.compares : '' %></small></th>
+        <td><%= m.segment %></td>
+        <td><%= m.diff.high.label %>: <%= m.diff.high.display %> <small>n=<%= m.diff.high.base %></small></td>
+        <td><%= m.diff.low.label %>: <%= m.diff.low.display %> <small>n=<%= m.diff.low.base %></small></td>
+        <td><%= m.diff.gap %><%= m.diff.unit ? ' ' + m.diff.unit : '' %></td>
+      </tr><% }) %>
+    </tbody></table></div>
+  <% } %>
+  <% if (admin) { %><p class="report-muted" style="margin-top:10px">Web diary entries were recorded as “App” until this release, so older web entries count under App.</p><% } %>
+</section>

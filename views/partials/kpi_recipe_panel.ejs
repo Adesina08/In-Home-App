@@ -1,0 +1,147 @@
+<%#
+  Tailored KPIs for the study's type: the AI's proposed question mapping for
+  each KPI, its live value, and the researcher's approve / reject / change
+  controls. Locals: study, studyType, recipeSections, mappableQuestions,
+  mappingProvider.
+%>
+<% if (!studyType) { %>
+  <section id="recipe" class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card p-5 mb-5">
+    <div class="font-semibold text-slate-800 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-signal') %> Tailored KPIs</div>
+    <p class="text-sm text-slate-500 mt-1.5">This study has no type yet, so it uses the six general objectives below. <a class="text-signal font-semibold hover:underline" href="/admin/studies/<%= study.id %>#settings-identity">Choose Out-of-Home or In-Home Tracker in settings</a> to get the KPI set for that study type, mapped to your questions by AI.</p>
+  </section>
+<% } else { %>
+<%
+  const all = recipeSections.flatMap(s => s.kpis);
+  const count = state => all.filter(k => k.state === state).length;
+  const status = study.kpi_mapping_status || 'idle';
+  const busy = status === 'queued' || status === 'running';
+  const stateBadge = {
+    approved: ['Approved', 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+    auto: ['Automatic', 'bg-slate-50 text-slate-600 border-slate-200'],
+    awaiting: ['Needs review', 'bg-amber-50 text-amber-800 border-amber-200'],
+    not_measured: ['Not measured', 'bg-slate-50 text-slate-400 border-slate-200'],
+  };
+  const sourceLine = s => s.question ? `“${s.question.text.length > 70 ? s.question.text.slice(0, 67) + '…' : s.question.text}”${s.options && s.options.length ? ' — counts: ' + s.options.join(', ') : ''}` : (s.optional ? 'not used (optional)' : 'no question');
+%>
+<section id="recipe" class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card overflow-hidden mb-5" data-mapping-status="<%= status %>">
+  <div class="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4 flex-wrap">
+    <div class="min-w-0">
+      <div class="font-semibold text-slate-800 flex items-center gap-2"><%- icon('trend', 'w-4 h-4 text-signal') %> Tailored KPIs · <%= studyType.label %></div>
+      <p class="text-xs text-slate-500 mt-1 max-w-2xl">The AI reads your questionnaire and proposes which question measures each KPI. Nothing reaches a dashboard until you approve it. The numbers are always calculated by the platform, never by the AI.</p>
+      <p class="text-xs mt-2 <%= status === 'error' || status === 'unconfigured' ? 'text-amber-700' : 'text-slate-500' %>">
+        <% if (busy) { %><span class="inline-block w-2 h-2 rounded-full bg-signal animate-pulse mr-1"></span>The AI is reading your questionnaire… this page refreshes when it is done.
+        <% } else if (status === 'done') { %>Last mapped <%= study.kpi_mapped_at || '' %><%= study.kpi_mapping_provider ? ' with ' + (study.kpi_mapping_provider === 'gemini' ? 'Gemini' : 'OpenAI') : '' %>. It re-maps automatically after questionnaire changes.
+        <% } else if (status === 'error') { %>The last AI mapping failed: <%= study.kpi_mapping_error %>
+        <% } else if (status === 'unconfigured') { %><%= study.kpi_mapping_error %>
+        <% } else { %>Not mapped yet. It runs automatically once questions are added or imported.<% } %>
+      </p>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <div class="flex gap-1.5 text-[11px] flex-wrap">
+        <span class="px-2 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"><%= count('approved') + count('auto') %> ready</span>
+        <span class="px-2 py-1 rounded-full border bg-amber-50 text-amber-800 border-amber-200"><%= count('awaiting') %> to review</span>
+        <span class="px-2 py-1 rounded-full border bg-slate-50 text-slate-500 border-slate-200"><%= count('not_measured') %> not measured</span>
+      </div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/kpi-mapping/run">
+        <button class="console-button" <%= busy || !mappingProvider ? 'disabled' : '' %> title="<%= mappingProvider ? '' : 'No AI provider is configured' %>"><%- icon('refresh', 'w-3 h-3') %>Re-map with AI</button>
+      </form>
+    </div>
+  </div>
+
+  <% recipeSections.forEach((section, si) => { %>
+    <div class="border-b border-slate-100 last:border-b-0">
+      <div class="px-5 pt-4 pb-1 flex items-baseline gap-2">
+        <span class="text-[11px] font-semibold text-slate-400 tabular-nums"><%= String(si + 1).padStart(2, '0') %></span>
+        <h3 class="text-sm font-semibold text-slate-800"><%= section.label %></h3>
+        <span class="text-xs text-slate-400"><%= section.description %></span>
+      </div>
+      <% if (section.narrative) { %>
+        <p class="px-5 pb-4 text-xs text-slate-500">No KPI of its own: the AI summary writes this section from the approved measures above.</p>
+      <% } %>
+      <% section.kpis.forEach(k => { const [badge, badgeClass] = stateBadge[k.state]; const mapping = k.mapping; %>
+        <div id="kpi-<%= k.key %>" class="px-5 py-3 flex items-start justify-between gap-4 flex-wrap <%= k.state === 'not_measured' ? 'opacity-75' : '' %>">
+          <div class="min-w-0 w-full sm:w-auto sm:flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-medium text-slate-800 text-sm"><%= k.label %></span>
+              <span class="text-[11px] px-2 py-0.5 rounded-full border <%= badgeClass %>"><%= badge %></span>
+              <% if (mapping && mapping.source === 'ai' && k.state === 'awaiting' && mapping.confidence != null) { %><span class="text-[11px] text-slate-500"><%= Math.round(mapping.confidence * 100) %>% AI confidence</span><% } %>
+              <% if (mapping && mapping.source === 'manual' && k.state === 'approved') { %><span class="text-[11px] text-slate-500">set by hand</span><% } %>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5"><%= k.definition %></div>
+            <% if (k.inputs.length) { %>
+              <ul class="mt-1.5 space-y-0.5">
+                <% k.sources.forEach(s => { %><li class="text-xs"><span class="text-slate-400"><%= s.label %>:</span> <span class="<%= s.question ? 'text-slate-700' : 'text-slate-400' %>"><%= sourceLine(s) %></span></li><% }) %>
+              </ul>
+              <% if (mapping && mapping.reason && mapping.source === 'ai' && k.state !== 'approved') { %><div class="text-[11px] text-slate-400 mt-1">AI: <%= mapping.reason %></div><% } %>
+              <% if (mapping && mapping.status === 'rejected') { %><div class="text-[11px] text-slate-400 mt-1">Rejected by <%= mapping.reviewed_by %>.</div><% } %>
+            <% } %>
+          </div>
+          <div class="flex items-start justify-between gap-3 w-full sm:w-auto sm:shrink-0">
+            <div class="text-left sm:text-right sm:min-w-[110px] sm:max-w-[220px]">
+              <div class="text-base font-bold tabular-nums <%= k.value !== null ? 'text-slate-900' : 'text-slate-300' %>"><%= k.display %></div>
+              <% if (k.basis) { %><div class="text-[11px] text-slate-400"><%= k.basis %></div><% } %>
+              <% if (k.lowBase) { %><div class="text-[11px] text-amber-700">Low base (<%= k.base %>): hidden from clients</div><% } %>
+              <% if (k.state === 'awaiting') { %><div class="text-[11px] text-amber-700">Preview: not shown to clients until approved</div><% } %>
+            </div>
+            <% if (k.inputs.length) { %>
+              <div class="flex flex-col gap-1.5 items-end">
+                <% if (k.state === 'awaiting') { %>
+                  <form method="POST" action="/admin/studies/<%= study.id %>/kpi-mapping/<%= k.key %>/approve"><button class="console-button is-primary">Approve</button></form>
+                <% } %>
+                <% if (k.state === 'awaiting' || k.state === 'approved') { %>
+                  <form method="POST" action="/admin/studies/<%= study.id %>/kpi-mapping/<%= k.key %>/reject"><button class="console-button">Reject</button></form>
+                <% } %>
+              </div>
+            <% } %>
+          </div>
+          <% if (k.inputs.length) { %>
+            <details class="w-full" data-kpi-manual>
+              <summary class="text-xs text-signal font-semibold cursor-pointer select-none">Choose the questions yourself</summary>
+              <form method="POST" action="/admin/studies/<%= study.id %>/kpi-mapping/<%= k.key %>/manual" class="mt-2 grid gap-3 bg-slate-50/70 border border-slate-200 rounded-xl p-3">
+                <% k.sources.forEach(s => { const spec = k.inputs.find(i => i.role === s.role); const fits = mappableQuestions.filter(q => spec.accepts.includes(q.type)); const current = s.question ? s.question.id : ''; %>
+                  <div data-input-role>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1"><%= s.label %><%= spec.optional ? ' (optional)' : '' %></label>
+                    <select name="q_<%= s.role %>" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm bg-white" data-question-select>
+                      <option value=""><%= spec.optional ? 'Not used' : 'Choose a question…' %></option>
+                      <% fits.forEach(q => { %><option value="<%= q.id %>" <%= current === q.id ? 'selected' : '' %>><%= q.code ? q.code + ' · ' : '' %><%= q.text.length > 90 ? q.text.slice(0, 87) + '…' : q.text %> (<%= q.type %>)</option><% }) %>
+                    </select>
+                    <% if (!fits.length) { %><p class="text-[11px] text-slate-400 mt-1">No <%= spec.accepts.join(' / ') %> question in this questionnaire yet.</p><% } %>
+                    <% if (spec.options) { fits.filter(q => ['single','multi'].includes(q.type) && q.options.length).forEach(q => { %>
+                      <fieldset class="mt-1.5 <%= current === q.id ? '' : 'hidden' %>" data-options-for="<%= q.id %>" <%= current === q.id ? '' : 'disabled' %>>
+                        <legend class="text-[11px] text-slate-500 mb-1"><%= spec.options === 'required' ? 'Options that count (choose at least one)' : 'Options that count (optional; none means any answer)' %></legend>
+                        <div class="flex flex-wrap gap-x-3 gap-y-1">
+                          <% q.options.forEach(o => { %><label class="text-xs text-slate-600 flex items-center gap-1"><input type="checkbox" name="opt_<%= s.role %>" value="<%= o %>" <%= current === q.id && s.options.includes(o) ? 'checked' : '' %> /><%= o %></label><% }) %>
+                        </div>
+                      </fieldset>
+                    <% }) } %>
+                  </div>
+                <% }) %>
+                <div><button class="console-button is-primary">Save and approve</button></div>
+              </form>
+            </details>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+  <% }) %>
+</section>
+<script>
+  (function () {
+    var panel = document.getElementById("recipe");
+    if (!panel) return;
+    // Show only the option checkboxes of the question picked; the others are
+    // disabled so they are not submitted.
+    panel.addEventListener("change", function (e) {
+      var select = e.target.closest("[data-question-select]");
+      if (!select) return;
+      select.closest("[data-input-role]").querySelectorAll("[data-options-for]").forEach(function (group) {
+        var on = group.getAttribute("data-options-for") === select.value;
+        group.classList.toggle("hidden", !on);
+        group.disabled = !on;
+      });
+    });
+    var status = panel.getAttribute("data-mapping-status");
+    if (status === "queued" || status === "running") setTimeout(function () { location.reload(); }, 5000);
+  })();
+</script>
+<% } %>
