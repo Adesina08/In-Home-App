@@ -225,3 +225,7 @@
 .xtab-main { display:block; font-weight:600; }
 .xtab-sub { display:block; color:#6b7a8d; font-size:11.5px; }
 @media(max-width:800px) { .xtab-pickers { grid-template-columns:1fr; } .xtab-actions { margin-left:0; } }
+.xtab-letter { display:block; color:#35549c; font-weight:700; font-size:11px; margin-top:2px; }
+.xtab-sig { display:inline-block; margin-top:2px; padding:0 5px; border-radius:5px; background:#e7f6ec; color:#17613a; font-weight:700; font-size:11px; letter-spacing:.04em; }
+sup.xtab-sig { margin-left:4px; vertical-align:super; }
+.xtab-select { border:1px solid #d2dbe7; border-radius:9px; padding:5px 8px; font-size:13px; background:#fff; }

@@ -249,12 +249,21 @@ test('KPIs split by gender, age, location, recruitment and channel, and the mode
 
   const { modeDifference } = require('../lib/recipeKpis');
   const split = { groups: [{ label: 'App', value: 52, base: 40 }, { label: 'WhatsApp', value: 38, base: 25 }, { label: 'Web', value: 90, base: 1 }] };
-  assert.deepEqual(modeDifference(split, 5, true), { high: split.groups[0], low: split.groups[1], gap: 14, material: true, unit: 'points' }, 'the base-1 group is ignored');
+  assert.deepEqual(modeDifference(split, 5, true), { high: split.groups[0], low: split.groups[1], gap: 14, unit: 'points', method: 'screen', p: null, material: true }, 'no counts: screened; the base-1 group is ignored');
+  const tested = modeDifference({ groups: [{ label: 'App', value: 60, base: 100, test: { kind: 'prop', x: 60, n: 100 } }, { label: 'WhatsApp', value: 45, base: 100, test: { kind: 'prop', x: 45, n: 100 } }] }, 5, true);
+  assert.equal(tested.method, 'z-test');
+  assert.equal(tested.p, 0.0337);
+  assert.equal(tested.material, true);
+  const close = modeDifference({ groups: [{ label: 'A', value: 55, base: 30, test: { kind: 'prop', x: 11, n: 20 } }, { label: 'B', value: 40, base: 30, test: { kind: 'prop', x: 8, n: 20 } }] }, 5, true);
+  assert.equal(close.material, false, 'a 15-point gap on 20 vs 20 is not significant, so it is not flagged');
   assert.equal(modeDifference({ groups: [{ label: 'A', value: 10, base: 9 }, { label: 'B', value: 9, base: 9 }] }, 5, false).material, false);
 
   const effects = kpiMapping.modeEffects(story, { minimum_base_size: 1 });
   assert.ok(effects.compared > 0);
-  assert.ok(effects.material.some((m) => m.kpi === 'Consumption occasion' && m.segment === 'Entry channel'));
+  const occasionByChannel = effects.rows.find((m) => m.kpi === 'Consumption occasion' && m.segment === 'Entry channel');
+  assert.equal(occasionByChannel.diff.method, 'z-test', 'a share is tested, not screened');
+  assert.equal(occasionByChannel.diff.material, false, '3 of 4 vs 0 of 2 is a 75-point gap but p ≈ 0.08, so it is not flagged');
+  assert.ok(occasionByChannel.diff.p > 0.05 && occasionByChannel.diff.p < 0.1);
 });
 
 test('a summary with numbers the figures do not support cannot be approved without an explicit acceptance', async () => {

@@ -40,6 +40,12 @@
       <fieldset><legend>Show in cells</legend>
         <% Object.entries(metricLabels).forEach(([key, label]) => { %><label><input type="checkbox" name="metrics" value="<%= key %>" <%= metrics.includes(key) ? 'checked' : '' %> /> <%= label %></label><% }) %>
       </fieldset>
+      <fieldset><legend>Significance</legend>
+        <select name="sig" aria-label="Significance level" class="xtab-select">
+          <option value="off" <%= !significance ? 'selected' : '' %>>Off</option>
+          <% ['90', '95', '99'].forEach(l => { %><option value="<%= l %>" <%= significance === l ? 'selected' : '' %>><%= l %>% confidence</option><% }) %>
+        </select>
+      </fieldset>
       <fieldset><legend>Period</legend>
         <label>From <input type="date" name="from" value="<%= from %>" /></label>
         <label>To <input type="date" name="to" value="<%= to %>" /></label>
@@ -51,7 +57,7 @@
   <% if (result) { %>
     <section class="report-panel">
       <div class="report-panel-head">
-        <div><h2>Results</h2><p><%= result.base === 'respondents' ? 'Respondent base: a person counts in every category they gave in any entry.' : 'Occasion base: each diary entry counts once.' %> Column % = cell ÷ the column's answering base<%= result.tables.some(t => t.multi) ? '; multi-select questions can add up to more than 100%' : '' %>. Columns under <%= result.minimum %> <%= result.unitLabel %> are marked low base.</p></div>
+        <div><h2>Results</h2><p><%= result.base === 'respondents' ? 'Respondent base: a person counts in every category they gave in any entry.' : 'Occasion base: each diary entry counts once.' %> Column % = cell ÷ the column's answering base<%= result.tables.some(t => t.multi) ? '; multi-select questions can add up to more than 100%' : '' %>. Columns under <%= result.minimum %> <%= result.unitLabel %> are marked low base<%= result.significance ? ' and are not tested' : '' %>.<% if (result.significance) { %> <strong>Letters</strong> mark a column significantly higher than the lettered column(s) in the same top break at <%= result.significance %>% confidence (column %: two-proportion z-test; means: Welch's t-test).<% } %></p></div>
         <div class="xtab-export">
           <a class="report-button secondary" href="/admin/crosstab/export.csv?<%= queryString %>"><%- icon('download', 'w-4 h-4') %>CSV</a>
           <a class="report-button" href="/admin/crosstab/export.xlsx?<%= queryString %>"><%- icon('download', 'w-4 h-4') %>Excel</a>
@@ -63,17 +69,18 @@
         <div class="dashboard-table-scroll"><table class="xtab">
           <thead>
             <tr><th rowspan="2" class="xtab-stub"></th><% groups.forEach(g => { %><th colspan="<%= g.span %>" class="xtab-group-head"><%= g.group %></th><% }) %></tr>
-            <tr><% result.columns.forEach(c => { %><th class="<%= c.lowBase ? 'is-low' : '' %>"><%= c.label %><% if (c.lowBase) { %><small>low base</small><% } %></th><% }) %></tr>
+            <tr><% result.columns.forEach(c => { %><th class="<%= c.lowBase ? 'is-low' : '' %>"><%= c.label %><% if (result.significance && c.letter) { %><span class="xtab-letter"><%= c.letter %></span><% } %><% if (c.lowBase) { %><small>low base</small><% } %></th><% }) %></tr>
           </thead>
           <tbody>
             <tr class="xtab-base"><th scope="row">Base: <%= result.unitLabel %> answering</th><% table.bases.forEach(b => { %><td><%= b %></td><% }) %></tr>
             <% if (table.kind === 'numeric') { %>
-              <% [['mean', 'Mean'], ['median', 'Median'], ['min', 'Minimum'], ['max', 'Maximum']].forEach(([key, label]) => { %><tr><th scope="row"><%= label %></th><% table.stats.forEach(s => { %><td><%= s[key] ?? '—' %></td><% }) %></tr><% }) %>
+              <% [['mean', 'Mean'], ['sd', 'Standard deviation'], ['median', 'Median'], ['min', 'Minimum'], ['max', 'Maximum']].forEach(([key, label]) => { %><tr><th scope="row"><%= label %></th><% table.stats.forEach(s => { %><td><%= s[key] ?? '—' %><% if (key === 'mean' && s.sig && s.sig.length) { %><sup class="xtab-sig"><%= s.sig.join('') %></sup><% } %></td><% }) %></tr><% }) %>
             <% } else if (!table.rows.length) { %>
               <tr><th scope="row" class="report-muted">No answers yet</th><% result.columns.forEach(() => { %><td>—</td><% }) %></tr>
             <% } else { table.rows.forEach(row => { %>
               <tr><th scope="row"><%= row.label %></th><% row.cells.forEach(cell => { %><td>
                 <% metrics.forEach((m, i) => { const v = cell[m]; %><span class="<%= i === 0 ? 'xtab-main' : 'xtab-sub' %>"><%= v === null || v === undefined ? '—' : (m === 'n' ? v : v + '%') %></span><% }) %>
+                <% if (cell.sig && cell.sig.length) { %><span class="xtab-sig" title="Significantly higher than column<%= cell.sig.length > 1 ? 's' : '' %> <%= cell.sig.join(', ') %>"><%= cell.sig.join('') %></span><% } %>
               </td><% }) %></tr>
             <% }) } %>
           </tbody>

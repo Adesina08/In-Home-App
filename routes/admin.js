@@ -183,13 +183,15 @@ async function crosstabFor(req) {
   const side = [].concat(req.query.side || []), top = [].concat(req.query.top || []);
   const metrics = [].concat(req.query.metrics || ["n", "colPct"]).filter((m) => crosstab.METRIC_LABELS[m]);
   const base = req.query.base === "respondents" ? "respondents" : "entries";
+  // Significance testing is on at 95% unless the researcher turns it off.
+  const significance = req.query.sig === undefined ? "95" : (require("../lib/significance").LEVELS[req.query.sig] ? req.query.sig : null);
   let result = null, error = null;
   if (side.length) {
     try {
-      result = crosstab.buildCrosstab(report, { side, top, base, minimum: Math.max(2, Number(study.minimum_base_size) || 5), profiles: await require("../lib/staffAnalysis").loadProfiles(study.id) });
+      result = crosstab.buildCrosstab(report, { side, top, base, significance, minimum: Math.max(2, Number(study.minimum_base_size) || 5), profiles: await require("../lib/staffAnalysis").loadProfiles(study.id) });
     } catch (e) { if (e.status !== 400) throw e; error = e.message; }
   }
-  return { study, studies, report, period, side, top, base, metrics: metrics.length ? metrics : ["n", "colPct"], result, error, variables: crosstab.variables(report) };
+  return { study, studies, report, period, side, top, base, significance, metrics: metrics.length ? metrics : ["n", "colPct"], result, error, variables: crosstab.variables(report) };
 }
 
 router.get("/crosstab", async (req, res) => {
