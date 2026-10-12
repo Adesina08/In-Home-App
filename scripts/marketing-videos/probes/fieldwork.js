@@ -1,0 +1,22 @@
+const { chromium } = require('playwright');
+const { CHROME, BASE, WORK } = require('../config');
+const { staffLogin } = require('../rec');
+const vis = (p) => p.$$eval('input,select,textarea,button,a.report-button', (els) => els.filter((e) => e.offsetParent || ['radio', 'checkbox', 'file'].includes(e.type)).map((e) => `${e.tagName}:${e.type || ''}.${e.name || ''}[${(e.innerText || e.value || e.placeholder || '').replace(/\s+/g, ' ').slice(0, 26)}]`).join(' | '));
+(async () => {
+  const b = await chromium.launch({ executablePath: CHROME });
+  const s = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage(); await staffLogin(s);
+  await s.goto(BASE + '/admin?study=1#fieldwork-operations', { waitUntil: 'networkidle' });
+  const a = s.locator('form[action$="/research/assignment"]');
+  console.log('ASSIGN', await a.evaluate((f) => [...f.elements].map((e) => `${e.name}:${e.type}${e.options ? '{' + [...e.options].map((o) => o.value + '=' + o.text).join(',') + '}' : ''}`).join(' | ')));
+  await s.goto(BASE + '/admin/studies/1/bulk-invite', { waitUntil: 'networkidle' });
+  await s.setInputFiles('input[type=file]', WORK + '/roster.csv');
+  await Promise.all([s.waitForNavigation({ waitUntil: 'networkidle' }), s.locator('form[action$="/bulk-invite/review"] button').last().click()]);
+  await s.screenshot({ path: WORK + '/shots/bulk2.png', fullPage: true });
+  console.log('BULK REVIEW', s.url(), await vis(s));
+  await s.context().request.post(BASE + '/admin/studies/1/research/assignment', { form: { user_id: '2', enabled: '1', area: 'Surulere', household_target: '20' }, maxRedirects: 0 });
+  const i = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 2 })).newPage(); await staffLogin(i, 'interviewer@inicio.demo');
+  await i.goto(BASE + '/interviewer/register', { waitUntil: 'networkidle' });
+  console.log('REGISTER', await vis(i));
+  await i.screenshot({ path: WORK + '/shots/ireg3.png', fullPage: true });
+  await b.close();
+})();

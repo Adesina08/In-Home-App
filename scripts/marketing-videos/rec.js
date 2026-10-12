@@ -32,8 +32,10 @@ const CURSOR_JS = `(() => {
 })();`;
 
 class Recorder {
-  constructor(name, { width = 1440, height = 900, mobile = false, scale = 1, camera = null, mic = null } = {}) {
-    Object.assign(this, { name, width, height, mobile, scale, camera, mic });
+  // storageState: a saved Playwright login to start from. waitUntil: 'load' for sites whose
+  // background polling never lets the network go idle.
+  constructor(name, { width = 1440, height = 900, mobile = false, scale = 1, camera = null, mic = null, storageState, waitUntil = 'networkidle' } = {}) {
+    Object.assign(this, { name, width, height, mobile, scale, camera, mic, storageState, waitUntil });
     this.dir = path.join(WORK, 'raw', name);
     fs.rmSync(this.dir, { recursive: true, force: true });
     fs.mkdirSync(path.join(this.dir, 'frames'), { recursive: true });
@@ -48,7 +50,7 @@ class Recorder {
     this.browser = await chromium.launch({ executablePath: CHROME, args });
     this.context = await this.browser.newContext({
       permissions: this.camera ? ['camera', 'microphone'] : [],
-      viewport: { width: this.width, height: this.height }, deviceScaleFactor: this.scale,
+      viewport: { width: this.width, height: this.height }, deviceScaleFactor: this.scale, storageState: this.storageState,
       isMobile: this.mobile, hasTouch: this.mobile, locale: 'en-GB', timezoneId: 'Africa/Lagos', colorScheme: 'light',
       userAgent: this.mobile ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' : undefined,
     });
@@ -99,7 +101,7 @@ class Recorder {
   mark(name) { (this.marks = this.marks || {})[name] = this.now(); }
   wait(ms) { return this.page.waitForTimeout(ms); }
 
-  async goto(url) { await this.page.goto(url.startsWith('http') ? url : BASE + url, { waitUntil: 'networkidle' }); await this.wait(500); }
+  async goto(url) { await this.page.goto(url.startsWith('http') ? url : BASE + url, { waitUntil: this.waitUntil }); await this.wait(500); }
 
   async moveTo(locator, ms = 700) {
     const el = typeof locator === 'string' ? this.page.locator(locator).first() : locator;
@@ -123,14 +125,14 @@ class Recorder {
     await this.page.evaluate(() => window.__cursor && window.__cursor.pulse());
     await this.wait(350);
     this.pause();
-    await Promise.all([this.page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => {}), el.click()]);
+    await Promise.all([this.page.waitForNavigation({ waitUntil: this.waitUntil }).catch(() => {}), el.click()]);
   }
 
   async click(locator, { nav = false, after = 600 } = {}) {
     const el = await this.moveTo(locator);
     await this.page.evaluate(() => window.__cursor && window.__cursor.pulse());
     await this.wait(180);
-    if (nav) await Promise.all([this.page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => {}), el.click()]);
+    if (nav) await Promise.all([this.page.waitForNavigation({ waitUntil: this.waitUntil }).catch(() => {}), el.click()]);
     else await el.click();
     await this.wait(after);
   }
@@ -187,7 +189,9 @@ class Recorder {
 /** Log in on the staff console before recording starts. */
 async function staffLogin(page, email = 'superadmin@inicio.demo') {
   await page.goto(BASE + '/login');
-  await page.getByText('Proceed to login').click();
+  // Desktop shows a welcome panel first; phone-sized screens show the form straight away.
+  const proceed = page.getByText('Proceed to login');
+  if (await proceed.isVisible()) await proceed.click();
   await page.fill('#email', email);
   await page.fill('input[name=password]', 'Demo1234!');
   await Promise.all([page.waitForNavigation(), page.click('button[type=submit]')]);

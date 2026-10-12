@@ -17,7 +17,9 @@ const BASE_CSS = `*{margin:0;box-sizing:border-box} body{width:${W}px;height:${H
   .brand{display:flex;align-items:center;gap:16px;color:#1b2f5b;font-family:'Bricolage Grotesque';font-weight:800;letter-spacing:-.5px}`;
 const esc = (s) => String(s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
-function card({ kicker, title, sub, outro }) {
+const STEPS = ['01 Study', '02 Diary', '03 Review', '04 Report'];
+
+function card({ kicker, title, sub, outro, brand = 'INICIO Diary', steps = STEPS }) {
   return `<html><head>${FONTS}<style>${BASE_CSS}
     .wrap{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:0 180px}
     .kicker{font-family:'IBM Plex Mono',monospace;font-size:24px;letter-spacing:6px;color:#3b6aa8;text-transform:uppercase;margin-top:56px}
@@ -26,19 +28,19 @@ function card({ kicker, title, sub, outro }) {
     .steps{display:flex;gap:18px;margin-top:56px}.steps div{padding:18px 28px;border-radius:18px;background:rgba(255,255,255,.7);border:1px solid #c9dcef;font-weight:600;color:#1b2f5b;font-size:24px}
     .ring{position:absolute;right:-220px;bottom:-260px;width:760px;height:760px;border-radius:50%;border:2px solid #b9d3ec}</style></head>
     <body><div class="bg"></div><div class="ring"></div><div class="wrap">
-      <div class="brand" style="font-size:52px"><img src="${LOGO}" style="height:64px">INICIO Diary</div>
+      <div class="brand" style="font-size:52px"><img src="${LOGO}" style="height:64px">${esc(brand)}</div>
       ${kicker ? `<div class="kicker">${esc(kicker)}</div>` : ''}
       <h1 style="${kicker ? '' : 'margin-top:56px'}">${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}
-      ${outro ? '<div class="steps"><div>01 Study</div><div>02 Diary</div><div>03 Review</div><div>04 Report</div></div>' : ''}
+      ${outro ? `<div class="steps">${steps.map((s) => `<div>${esc(s)}</div>`).join('')}</div>` : ''}
     </div></body></html>`;
 }
 
-function background(L) {
+function background(L, brand = 'INICIO Diary') {
   return `<html><head>${FONTS}<style>${BASE_CSS}</style></head><body><div class="bg"></div>
     ${L.kind === 'desktop'
       ? `<div style="position:absolute;left:${L.x}px;top:${L.y}px;width:${L.w}px;height:${L.h}px;border-radius:22px;box-shadow:0 40px 90px rgba(27,47,91,.28),0 0 0 1px rgba(27,47,91,.08);background:#fff"></div>`
       : `<div style="position:absolute;left:${L.px}px;top:${L.py}px;width:${L.pw}px;height:${L.ph}px;border-radius:72px;background:#0f172a;box-shadow:0 50px 100px rgba(27,47,91,.35)"></div>
-         <div class="brand" style="position:absolute;left:${L.cx}px;top:90px;font-size:34px"><img src="${LOGO}" style="height:44px">INICIO Diary</div>`}
+         <div class="brand" style="position:absolute;left:${L.cx}px;top:90px;font-size:34px"><img src="${LOGO}" style="height:44px">${esc(brand)}</div>`}
   </body></html>`;
 }
 
@@ -74,9 +76,10 @@ async function renderGraphics(dir, meta, L, opts) {
     await page.evaluate(() => document.fonts.ready);
     await (el ? page.locator(el) : page).screenshot({ path: path.join(dir, file), omitBackground: !!transparent });
   };
-  await shot(card({ kicker: opts.kicker, title: opts.title, sub: opts.subtitle }), 'intro.png');
-  await shot(card({ title: opts.outroTitle || 'Every study, in motion.', sub: opts.outroSub || 'Research. Insights. Impact.', outro: true }), 'outro.png');
-  await shot(background(L), 'bg.png');
+  const { brand, steps } = opts;
+  await shot(card({ kicker: opts.kicker, title: opts.title, sub: opts.subtitle, brand }), 'intro.png');
+  await shot(card({ title: opts.outroTitle || 'Every study, in motion.', sub: opts.outroSub || 'Research. Insights. Impact.', outro: true, brand, steps }), 'outro.png');
+  await shot(background(L, brand), 'bg.png');
   await page.setViewportSize({ width: L.sw, height: L.sh });
   await shot(mask(L.sw, L.sh, L.kind === 'desktop' ? 22 : 56), 'mask.png', { transparent: true });
   await page.setViewportSize({ width: W, height: H });
@@ -141,14 +144,33 @@ async function compose(name, opts) {
   const starts = []; let t = 0;
   clips.forEach((c, i) => { starts.push(t); t += c.D - (i < clips.length - 1 ? XF : 0); });
   const total = t;
-  const join = clips.flatMap((c) => ['-i', c.file]);
-  const jf = []; let prev = '0:v';
-  for (let i = 1; i < clips.length; i++) {
-    const out = i === clips.length - 1 ? 'vout' : `x${i}`;
-    jf.push(`[${prev}][${i}:v]xfade=transition=fade:duration=${XF}:offset=${starts[i].toFixed(3)}[${out}]`);
-    prev = out;
+  // Decoding every clip at once runs out of memory on long films, so join a few at a time.
+  const MAX_JOIN = 6;
+  const fadeChain = (list, first, label) => {
+    const f = []; let prev = `${first}:v`, at = 0;
+    for (let i = 1; i < list.length; i++) {
+      at += list[i - 1].D - XF;
+      const out = i === list.length - 1 ? label : `${label}${i}`;
+      f.push(`[${prev}][${first + i}:v]xfade=transition=fade:duration=${XF}:offset=${at.toFixed(3)}[${out}]`);
+      prev = out;
+    }
+    return f;
+  };
+  let videoClips = clips, round = 0;
+  while (videoClips.length > MAX_JOIN) {
+    const next = [];
+    for (let g = 0; g < videoClips.length; g += MAX_JOIN - 1) {
+      const group = videoClips.slice(g, g + MAX_JOIN - 1);
+      if (group.length === 1) { next.push(group[0]); continue; }
+      const file = path.join(dir, `join-${round}-${g}.mp4`);
+      ffmpeg([...group.flatMap((c) => ['-i', c.file]), '-filter_complex', fadeChain(group, 0, 'v').join(';'), '-map', '[v]', ...VIDEO_OUT, file]);
+      next.push({ file, D: group.reduce((s, c) => s + c.D, 0) - XF * (group.length - 1) });
+    }
+    videoClips = next; round++;
   }
-  let input = clips.length;
+  const join = videoClips.flatMap((c) => ['-i', c.file]);
+  const jf = videoClips.length > 1 ? fadeChain(videoClips, 0, 'vout') : ['[0:v]null[vout]'];
+  let input = videoClips.length;
   const voices = (opts.voiceovers || []).map((v) => {
     const partIndex = (opts.parts || [name]).indexOf(v.part);
     const mark = clips[partIndex + 1].meta.marks?.[v.mark];

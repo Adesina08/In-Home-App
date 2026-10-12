@@ -19,6 +19,9 @@ const LINES = {
   'clip-2339': { voice: 'Charon', who: 'a friendly Nigerian man in his thirties', text: "Lunch with my wife at our favourite spot. We ordered two Kora Malts with the food. Honestly, it goes well with rice." },
   'clip-172686': { voice: 'Zephyr', who: 'a cheerful Nigerian mother', text: "Dinner with the children. Everybody gets a small glass of Sunrise Malt on Sundays. It's a family thing for us now." },
   'clip-7647': { voice: 'Achernar', who: 'a busy Nigerian mother in the morning', text: "Breakfast before school. I mix the malt with a bit of milk for my son. He won't finish his food without it." },
+  // Soren AI Bot Mode interview (soren/live.js entry-ai): Blessing answers by audio, then by video.
+  'soren-brand': { voice: 'Aoede', who: 'a warm Nigerian woman in her thirties, answering an interviewer on her phone', text: "I chose Sunrise Malt because it gives me energy for the busy morning, and the kids love it too. It's also cheaper than coffee these days, so it just makes sense." },
+  'soren-price': { voice: 'Aoede', who: 'a warm Nigerian woman in her thirties, talking to her phone camera at home', text: "Mostly the price. Everything has gone up this year. I used to buy coffee and juice every week, but now it's Sunrise Malt sachets, because they're cheaper. If they get too expensive, I'll switch." },
   'clip-169349': { voice: 'Puck', who: 'a relaxed Nigerian father on a Saturday', text: "Saturday breakfast with the whole family. Bread, eggs and Royal Grain for everyone. We buy it in packs at the supermarket, it lasts the week." },
 };
 
