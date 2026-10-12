@@ -31,7 +31,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useColorScheme } from "nativewind";
 import { api, API_BASE, clearRememberedSession, extendRememberedSession, getRememberedSession, getToken, MobileEnrolment, setToken } from "./src/api";
-import { cancelDiaryReminders, latestEntryTime, scheduleDiaryReminders } from "./src/reminders";
+import { cancelDiaryReminders, entryHistory, latestEntryTime, scheduleDiaryReminders } from "./src/reminders";
 import { VideoDiaryScreen, VideoDraft } from "./src/screens/VideoDiary";
 import { StandardVideoCaptureScreen } from "./src/screens/StandardVideoCapture";
 import { HomeScreen, DisplayRecord } from "./src/screens/Home";
@@ -945,6 +945,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
       name:firstName(home.respondent?.name),
       plan:home.reminders,
       lastEntryAt:latestEntryTime(home.records||[],pendingEntries.map(p=>p.createdAt)),
+      history:entryHistory(home.records||[],pendingEntries.map(p=>p.createdAt)),
     }).catch(()=>{});
   },[selected?.respondent.id,home,pendingEntries]);
 

@@ -217,6 +217,20 @@
           <% const reminderChannels = Array.isArray(study.reminder_channels) ? study.reminder_channels : [study.default_reminder_channel || 'whatsapp']; %><div class="grid grid-cols-2 gap-2 border border-slate-300 rounded-[11px] p-3 min-h-[42px] bg-white"><% [['whatsapp','WhatsApp'],['sms','SMS'],['email','Email'],['in-app','In-app / Push']].forEach(([value,label]) => { %><label class="flex items-center gap-2 text-xs"><input type="checkbox" name="reminder_channels" value="<%= value %>" <%= reminderChannels.includes(value)?'checked':'' %> /><%= label %></label><% }) %></div>
         </div>
       </div>
+      <% if (typeof reminderTiming !== 'undefined' && reminderTiming) { const pct = v => v == null ? '—' : Math.round(v * 100) + '%'; const num = v => v == null ? '—' : v.toFixed(1); %>
+      <div class="mt-4 border border-slate-200 rounded-[11px] p-4 bg-slate-50">
+        <p class="text-sm font-medium text-slate-700">Reminder timing experiment (app respondents)</p>
+        <p class="text-xs text-slate-400 mt-0.5 mb-3">Most app respondents get reminders at the time of day they usually log. One in five keep the fixed schedule as a comparison group. On time = the next entry came within the reminder threshold. Counts entries from 12 Oct 2026.</p>
+        <table class="w-full text-sm">
+          <thead><tr class="text-left text-xs text-slate-500"><th class="py-1 font-medium">Group</th><th class="py-1 font-medium">Respondents</th><th class="py-1 font-medium">Entries each</th><th class="py-1 font-medium">On time</th><th class="py-1 font-medium">Intervals</th></tr></thead>
+          <tbody>
+            <% [['habit','Usual-time reminders'],['fixed','Fixed schedule (comparison)']].forEach(([key,label]) => { const a = reminderTiming[key]; %>
+            <tr class="border-t border-slate-200"><td class="py-1.5"><%= label %></td><td><%= a.respondents %></td><td><%= num(a.entriesPerRespondent) %></td><td class="font-semibold"><%= pct(a.onTimeRate) %></td><td class="text-slate-500"><%= a.intervals %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
     </div>
 
     <button class="inline-flex items-center gap-1.5 bg-signal text-white rounded-[11px] px-6 py-2.5 text-sm font-semibold hover:bg-signal-bright transition shadow-[0_1px_2px_rgba(29,78,216,.2),0_4px_10px_-2px_rgba(29,78,216,.35)]">

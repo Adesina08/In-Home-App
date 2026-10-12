@@ -15,7 +15,7 @@ const { getProvider: getBrandDetectionProvider, identifyBrandInFile } = require(
 const { detectionCategories } = require("../lib/categories");
 const { analyseLocalMedia, analyseStoredMedia } = require("../lib/mediaTranscriptAnalysis");
 const { logAudit } = require("../lib/audit");
-const { reminderThresholds } = require("../lib/reminders");
+const { reminderThresholds, reminderTiming } = require("../lib/reminders");
 const { buildVideoPrompts } = require("../lib/videoPrompts");
 const { analyzeSubmittedVideo } = require("../lib/videoEntryAnalysis");
 
@@ -186,6 +186,7 @@ router.get("/respondents/:id/home", requireMobileAuth, async (req, res) => {
       active: study.status === "live" && respondent.consent_status === "given" && !respondent.withdrawn_at &&
         ["active", "activated"].includes(respondent.activation_status) && respondent.end_validation_status !== "pending",
       endDate: study.end_date || null,
+      timing: reminderTiming(respondent),
     },
     records: records.map((r) => ({ id: r.id, periodLabel: r.period_label, occurrenceTime: r.occurrence_time, entryTime: r.entry_time, submitTime: r.submit_time, status: r.status, entryMode: r.entry_mode || "standard", isPractice: !!r.is_practice })),
   });

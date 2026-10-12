@@ -7,7 +7,7 @@ const store = require("../lib/store");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { classifyRisk, unresolvedBlockingFlags, computeQualityScore, BAND_LABELS, exceptionFollowUpQueue } = require("../lib/qc");
-const { runReminderEngine } = require("../lib/reminders");
+const { runReminderEngine, reminderTimingComparison } = require("../lib/reminders");
 const researchOps = require("../lib/researchOperations");
 const { parseUpload, parseConditionText } = require("../lib/questionnaireParser");
 const { getProvider: getBrandDetectionProvider } = require("../lib/brandDetection");
@@ -429,8 +429,11 @@ router.post("/studies", requireRole("superadmin"), async (req, res) => {
 router.get("/studies/:id", async (req, res) => {
   const study = await store.findOne("studies", { id: toId(req.params.id) });
   if (!study) return res.status(404).render("error", { message: "Study not found", user: req.session.user });
+  const respondents = await store.find("respondents", { study_id: study.id });
+  const records = await store.find("diary_records", { respondent_id: { $in: respondents.map((r) => r.id) } });
   res.render("admin/study_settings", {
     study, tab: "settings",
+    reminderTiming: reminderTimingComparison(study, respondents, records),
     CATEGORIES, selectedCategories: selectedOrAllCategories(study.category),
     studyTypes: studyRecipes.STUDY_TYPES,
     countries: geography.countries(),
