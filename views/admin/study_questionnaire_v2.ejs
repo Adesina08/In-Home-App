@@ -32,6 +32,7 @@
     </div>
   </div>
   <div class="flex items-center gap-2">
+    <button type="button" data-open-generate class="inline-flex items-center gap-1.5 bg-white border border-signal/40 text-signal rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal/5 transition"><%- icon('sparkles', 'w-4 h-4') %> Generate with AI</button>
     <a href="/admin/studies/<%= study.id %>/questionnaire/template.xlsx" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition">Download template</a>
     <a href="/admin/studies/<%= study.id %>/questionnaire/upload"
        class="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"><%- icon('upload', 'w-4 h-4') %> Import</a>
@@ -41,6 +42,16 @@
     </form>
   </div>
 </div>
+
+<% if (!questions.length) { %>
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-signal/20 bg-signal/5 px-5 py-4">
+  <div>
+    <p class="text-sm font-semibold text-slate-800">Don't have a questionnaire yet?</p>
+    <p class="text-xs text-slate-500 mt-0.5">Describe the study, by typing or recording yourself, and the AI drafts one for you to review. Or import an existing file.</p>
+  </div>
+  <button type="button" data-open-generate class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition"><%- icon('sparkles', 'w-4 h-4') %> Generate with AI</button>
+</div>
+<% } %>
 
 <%# Draft edits are autosaved but isolated from the immutable published
     snapshot until Publish is pressed. Keep that state visible rather than
@@ -636,5 +647,7 @@
   renderList(); renderEditor();
 })();
 </script>
+
+<%- include('../partials/questionnaire_generate_modal', { existingCount: questions.length }) %>
 
 <%- include('../partials/footer') %>

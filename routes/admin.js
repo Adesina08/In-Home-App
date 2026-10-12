@@ -513,6 +513,7 @@ router.post("/studies/:id/settings", async (req, res) => {
     qc_back_entry_enabled: b.qc_back_entry_enabled ? 1 : 0,
     qc_duplicate_enabled: b.qc_duplicate_enabled ? 1 : 0,
     qc_burst_enabled: b.qc_burst_enabled ? 1 : 0,
+    study_description: (b.study_description || "").trim().slice(0, 6000) || null,
     invite_brief: (b.invite_brief || "").trim() || null,
     required_entries_per_period: Math.min(100, Math.max(1, parseInt(b.required_entries_per_period, 10) || 1)),
     minimum_base_size: Math.min(1000, Math.max(2, parseInt(b.minimum_base_size, 10) || 30)),
@@ -557,6 +558,7 @@ router.get("/studies/:id/questionnaire", async (req, res) => {
     }));
   res.render("admin/study_questionnaire_v2", {
     study, questions, activeQuestions, sections, rules, tab: "questionnaire",
+    studyTypeLabel: (studyRecipes.STUDY_TYPES[study.study_type] || {}).label || null,
     user: req.session.user,
     imported: req.query.imported,
     rulesCreated: req.query.rulesCreated,
@@ -895,6 +897,54 @@ router.get("/studies/:id/questionnaire/template.xlsx", async (req, res) => {
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(instructions), "Instructions");
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
   res.attachment(`inicio-questionnaire-template-${study.id}.xlsx`).type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").send(buffer);
+});
+
+// ---------- Generate with AI (lib/questionnaireGenerator.js) ----------
+// The modal's spoken brief: transcribed here, then edited as text by the user.
+router.post("/studies/:id/questionnaire/generate/transcribe", importUpload.single("audio"), async (req, res) => {
+  if (!req.file || !req.file.size) return res.status(400).json({ error: "No recording was received." });
+  try {
+    const openai = require("../lib/openaiClient");
+    const ext = /ogg/.test(req.file.mimetype) ? "ogg" : /mp4|m4a|aac/.test(req.file.mimetype) ? "m4a" : "webm";
+    const text = await openai.transcribeAudio({ buffer: req.file.buffer, filename: `brief.${ext}`, mimeType: req.file.mimetype });
+    res.json({ text });
+  } catch (e) {
+    res.status(502).json({ error: `Couldn't transcribe the recording: ${e.message}` });
+  }
+});
+
+// Drafts questions into a question_imports row and sends the user to the usual
+// import preview, where they review, edit and commit (appending) or discard.
+router.post("/studies/:id/questionnaire/generate", async (req, res) => {
+  const study = await store.findOne("studies", { id: toId(req.params.id) });
+  if (!study) return res.status(404).json({ error: "Study not found." });
+  const b = req.body || {};
+  const description = String(b.description || "").trim().slice(0, 6000);
+  if (description.length < 20) return res.status(400).json({ error: "Describe the study in a sentence or two so the AI has something to work from." });
+  const brief = {
+    description,
+    brands: String(b.brands || "").trim().slice(0, 1000),
+    notes: String(b.notes || "").trim().slice(0, 2000),
+    questionCount: Math.min(60, Math.max(3, parseInt(b.questionCount, 10) || 15)),
+  };
+  if (b.saveDescription && description !== (study.study_description || "")) {
+    await store.update("studies", { id: study.id }, { study_description: description });
+  }
+  try {
+    const existing = (await store.find("questions", { study_id: study.id }, { sort: { order_index: 1, id: 1 } })).filter(isQuestionActive);
+    const rows = await require("../lib/questionnaireGenerator").generateQuestionnaire({ study: { ...study, study_description: description }, brief, existing });
+    const { id } = await store.insert("question_imports", {
+      study_id: study.id,
+      source_filename: "AI draft",
+      source_type: "ai",
+      payload_json: JSON.stringify(rows),
+      warnings_json: JSON.stringify(existing.length ? [`These questions will be added after the ${existing.length} already in this questionnaire.`] : []),
+    });
+    logAudit(req.session.user.email, "questionnaire_generate", "question_imports", id, { rows: rows.length, questionCount: brief.questionCount });
+    res.json({ redirect: `/admin/studies/${study.id}/questionnaire/preview/${id}` });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
 });
 
 router.post("/studies/:id/questionnaire/upload", importUpload.single("file"), async (req, res) => {

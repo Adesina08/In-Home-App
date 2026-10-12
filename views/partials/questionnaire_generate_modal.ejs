@@ -1,0 +1,156 @@
+<%#
+  "Generate with AI" brief (routes/admin.js .../questionnaire/generate). The
+  draft lands on the usual import preview to review and commit; committing
+  appends after any existing questions. The mic records a spoken brief that
+  .../generate/transcribe turns into editable text.
+%>
+<dialog id="generateModal" class="w-[min(640px,94vw)] max-h-[92vh] rounded-2xl p-0 backdrop:bg-slate-900/60">
+  <form id="generateForm" class="flex flex-col max-h-[92vh]">
+    <div class="flex items-start justify-between gap-3 p-5 border-b border-slate-100">
+      <div>
+        <h2 class="font-display text-lg font-bold text-slate-900 flex items-center gap-2"><%- icon('sparkles', 'w-5 h-5 text-signal') %> Generate with AI</h2>
+        <p class="text-xs text-slate-500 mt-0.5"><%= existingCount ? `The draft is added after your ${existingCount} existing questions.` : 'Describe the study and the AI drafts a questionnaire.' %> You review every question before anything is saved.</p>
+      </div>
+      <button type="button" data-close class="text-slate-400 hover:text-slate-700" aria-label="Close"><%- icon('x', 'w-5 h-5') %></button>
+    </div>
+
+    <div class="p-5 space-y-4 overflow-y-auto">
+      <div>
+        <span class="block text-sm font-medium text-slate-600 mb-1">Study type</span>
+        <% if (studyTypeLabel) { %>
+          <p class="text-sm text-slate-800"><%= studyTypeLabel %> <span class="text-xs text-slate-400">· questions will cover the inputs its KPIs need</span></p>
+        <% } else { %>
+          <p class="text-sm text-slate-500">Not set. <a href="/admin/studies/<%= study.id %>#settings-identity" class="text-signal underline">Choose one in Settings</a> so the questions cover the study's KPIs.</p>
+        <% } %>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label for="genDescription" class="text-sm font-medium text-slate-600">Study description</label>
+          <button type="button" id="genRecord" class="inline-flex items-center gap-1.5 text-xs font-semibold text-signal border border-signal/30 rounded-lg px-2.5 py-1 hover:bg-signal/5 transition">
+            <%- icon('mic', 'w-4 h-4') %><span>Record instead</span>
+          </button>
+        </div>
+        <textarea id="genDescription" name="description" rows="6" maxlength="6000" required
+                  placeholder="e.g. We want to understand how young adults in Lagos drink energy drinks out of home: when and where, with whom, which brands, how much they spend and why they pick one brand over another."
+                  class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition"><%= study.study_description || '' %></textarea>
+        <p id="genRecordStatus" class="text-xs text-slate-400 mt-1">Objectives, who takes part, the category and what you want to learn. Typing or talking both work.</p>
+        <label class="flex items-center gap-2 text-xs text-slate-500 mt-1.5"><input type="checkbox" name="saveDescription" checked /> Save this as the study description in Settings</label>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <label for="genBrands" class="block text-sm font-medium text-slate-600 mb-1.5">Brands of interest <span class="text-slate-400 font-normal">(optional)</span></label>
+          <input id="genBrands" name="brands" placeholder="e.g. Red Bull, Monster, Predator, Power Horse" class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition" />
+        </div>
+        <div>
+          <label for="genCount" class="block text-sm font-medium text-slate-600 mb-1.5">About how many questions</label>
+          <select id="genCount" name="questionCount" class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
+            <% [10, 15, 20, 30, 40].forEach(n => { %><option value="<%= n %>" <%= n === 15 ? 'selected' : '' %>><%= n %></option><% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label for="genNotes" class="block text-sm font-medium text-slate-600 mb-1.5">Anything to include or avoid <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="genNotes" name="notes" rows="2" maxlength="2000" placeholder="e.g. Ask for a photo of the pack. Don't ask about income."
+                  class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition"></textarea>
+      </div>
+
+      <p id="genError" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></p>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 p-4 border-t border-slate-100 bg-slate-50/60">
+      <button type="button" data-close class="bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition">Cancel</button>
+      <button type="submit" id="genSubmit" class="inline-flex items-center gap-1.5 bg-signal text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-signal-bright transition disabled:opacity-60">
+        <%- icon('sparkles', 'w-4 h-4') %><span>Generate draft</span>
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  var modal = document.getElementById('generateModal');
+  var form = document.getElementById('generateForm');
+  var base = '/admin/studies/<%= study.id %>/questionnaire/generate';
+  var errorBox = document.getElementById('genError');
+  var description = document.getElementById('genDescription');
+  var recordBtn = document.getElementById('genRecord');
+  var recordStatus = document.getElementById('genRecordStatus');
+  var submit = document.getElementById('genSubmit');
+  var MAX_SECONDS = 300;
+
+  document.querySelectorAll('[data-open-generate]').forEach(function (b) { b.addEventListener('click', function () { modal.showModal(); }); });
+  modal.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', function () { stopRecording(); modal.close(); }); });
+  function showError(message) { errorBox.textContent = message; errorBox.classList.toggle('hidden', !message); }
+
+  // ---- Spoken brief: record, upload, append the transcript ----
+  var recorder = null, chunks = [], timer = null, seconds = 0;
+  function setRecordLabel(text) { recordBtn.querySelector('span').textContent = text; }
+  function stopRecording() { if (recorder && recorder.state === 'recording') recorder.stop(); }
+  recordBtn.addEventListener('click', async function () {
+    if (recorder && recorder.state === 'recording') return stopRecording();
+    showError('');
+    if (!navigator.mediaDevices || !window.MediaRecorder) return showError('This browser can’t record audio. Type the description instead.');
+    var stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { return showError('Microphone access was blocked. Allow it in the browser, or type the description instead.'); }
+    chunks = []; seconds = 0;
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = async function () {
+      clearInterval(timer);
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      recordBtn.classList.remove('text-red-600', 'border-red-300');
+      setRecordLabel('Record instead');
+      if (!chunks.length) return;
+      recordBtn.disabled = true;
+      recordStatus.textContent = 'Transcribing your recording…';
+      try {
+        var body = new FormData();
+        body.append('audio', new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }), 'brief');
+        var res = await fetch(base + '/transcribe', { method: 'POST', body: body });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.error || 'Transcription failed.');
+        if (!data.text) throw new Error('No speech was picked up. Try again a little closer to the microphone.');
+        description.value = (description.value.trim() ? description.value.trim() + '\n\n' : '') + data.text;
+        recordStatus.textContent = 'Transcribed. Check the text and edit anything the AI misheard.';
+      } catch (e) {
+        recordStatus.textContent = '';
+        showError(e.message);
+      } finally { recordBtn.disabled = false; }
+    };
+    recorder.start();
+    recordBtn.classList.add('text-red-600', 'border-red-300');
+    setRecordLabel('Stop · 0:00');
+    recordStatus.textContent = 'Recording… talk through the study, then press Stop.';
+    timer = setInterval(function () {
+      seconds++;
+      setRecordLabel('Stop · ' + Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0'));
+      if (seconds >= MAX_SECONDS) stopRecording();
+    }, 1000);
+  });
+
+  // ---- Generate: draft, then open the import preview ----
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    stopRecording();
+    showError('');
+    var fd = new FormData(form);
+    var payload = { description: fd.get('description'), brands: fd.get('brands'), questionCount: fd.get('questionCount'), notes: fd.get('notes'), saveDescription: fd.get('saveDescription') === 'on' };
+    submit.disabled = true;
+    submit.querySelector('span').textContent = 'Drafting… this can take a minute';
+    try {
+      var res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(payload) });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || !data.redirect) throw new Error(data.error || 'The draft could not be generated. Please try again.');
+      window.location.href = data.redirect;
+    } catch (err) {
+      showError(err.message);
+      submit.disabled = false;
+      submit.querySelector('span').textContent = 'Generate draft';
+    }
+  });
+})();
+</script>

@@ -52,6 +52,13 @@
           </select>
           <p class="text-xs text-slate-400 mt-1"><%= study.study_type ? 'Decides the KPIs and report story order. Changing it swaps the KPI set and re-runs the AI mapping; approvals for KPIs both types share are kept.' : 'This study has no type yet, so it still uses the six general objectives. Choosing one gives it tailored KPIs and the AI maps your questions to them.' %></p>
         </div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-slate-600 mb-1.5" for="studyDescription">Study description</label>
+          <textarea name="study_description" id="studyDescription" rows="4" maxlength="6000"
+                    placeholder="e.g. Track how young adults in Lagos drink energy drinks out of home: when and where, with whom, which brands, spend, and why they choose one brand over another."
+                    class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition"><%= study.study_description || '' %></textarea>
+          <p class="text-xs text-slate-400 mt-1">For your team and the AI: objectives, audience, category and what you want to learn. Used by Generate with AI and KPI mapping. Respondents never see it.</p>
+        </div>
         <div>
           <label class="block text-sm font-medium text-slate-600 mb-1.5">Status</label>
           <select name="status" class="w-full border border-slate-300 rounded-[11px] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-signal/30 focus:border-signal transition">
