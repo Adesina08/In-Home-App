@@ -22,6 +22,8 @@ async function serve(req,res,next){
     if(!media||!await permitted(req,media))return res.sendStatus(404);
     res.set('Cache-Control','private, no-store');res.set('X-Content-Type-Options','nosniff');
     const mime=media.mimetype||{photo:'image/jpeg',video:'video/mp4',audio:'audio/mp4'}[media.media_type];if(mime)res.type(mime);
+    // Sample-study illustrations ship with the app rather than living in the upload store.
+    if(require('../lib/studyCleanup').isSampleMedia(filePath))return res.sendFile(require('path').join(__dirname,'..','public','sample-media',require('path').basename(filePath)),err=>{if(err&&!res.headersSent)res.sendStatus(404);});
     if(filePath.startsWith('azureblob://'))return res.redirect(require('../lib/mediaStorage').getMediaUrl(filePath));
     res.sendFile(require('path').resolve(process.env.UPLOAD_DIR||require('path').join(__dirname,'..','uploads'),require('path').basename(filePath)),err=>{if(err&&!res.headersSent)res.sendStatus(404);});
   }catch(e){next(e);}

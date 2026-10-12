@@ -1,6 +1,6 @@
 <div class="console-study-heading">
   <a href="/admin/studies" class="console-back">Studies <span>/</span></a>
-  <div class="console-study-title"><h1><%= study.name %></h1><span class="console-status <%= study.status === 'live' ? 'is-live' : '' %>"><%= study.status %></span></div>
+  <div class="console-study-title"><h1><%= study.name %></h1><span class="console-status <%= study.status === 'live' ? 'is-live' : '' %>"><%= study.status %></span><% if (study.is_sample) { %><span class="console-status is-alert" title="Mock data for exploring the platform">Sample</span><% } %></div>
   <p><%= [study.market, formatCategories(study.category)].filter(Boolean).join(' · ') || 'Study workspace' %> <span>·</span> <%= ({realtime:'Real-time occasions',daily:'Daily diary',weekly:'Weekly diary',monthly:'Monthly diary'})[study.diary_mode] || study.diary_mode %></p>
   <nav class="console-study-tabs" aria-label="Study navigation">
     <a href="/admin?study=<%= study.id %>"><%- icon('chart', 'w-4 h-4') %>Overview</a>

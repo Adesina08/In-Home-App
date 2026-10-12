@@ -29,6 +29,7 @@ const { validateExpression } = require("../public/js/skip-logic.js");
 const { markQuestionnaireDirty, publishVersion } = require("../lib/studyVersion");
 const kpiMapping = require("../lib/kpiMapping");
 const studyRecipes = require("../lib/studyRecipes");
+const sampleStudies = require("../lib/sampleStudies");
 const staffEmail = require("../lib/staffEmail");
 const geography = require("../lib/geography");
 
@@ -123,7 +124,8 @@ function studyNotFound(res) {
 async function getStudyOrFirst(req) {
   const studies = await store.find("studies", studyScopeFilter(req), { sort: { id: 1 } });
   const studyId = parseInt(req.query.study || req.params.id, 10);
-  const study = studies.find((s) => s.id === studyId) || studies[0] || null;
+  // With no study chosen, open a real study before a sample one.
+  const study = studies.find((s) => s.id === studyId) || studies.find((s) => !s.is_sample) || studies[0] || null;
   return { study, studies };
 }
 
@@ -439,7 +441,20 @@ router.get("/studies/:id", async (req, res) => {
     countries: geography.countries(),
     selectedCountry: study.market_country_code || geography.country(study.market)?.isoCode || "",
     selectedRegions: Array.isArray(study.market_regions) ? study.market_regions : [],
+    sampleReset: req.query.reset === "sample",
   });
+});
+
+// A sample study (lib/sampleStudies.js) can be put back to its original
+// mock data after people have edited it.
+router.post("/studies/:id/sample/reset", async (req, res) => {
+  const studyId = toId(req.params.id);
+  if (!canAccessStudy(req, studyId)) return studyNotFound(res);
+  const study = await store.findOne("studies", { id: studyId });
+  if (!sampleStudies.isSampleStudy(study)) return res.status(400).render("error", { message: "Only a sample study can be reset.", user: req.session.user });
+  const result = await sampleStudies.resetSampleStudy(studyId);
+  logAudit(req.session.user.email, "sample_study_reset", "studies", studyId, result);
+  res.redirect(`/admin/studies/${studyId}?reset=sample`);
 });
 
 router.get("/geography/states", (req, res) => res.json({ states: geography.states(req.query.country) }));

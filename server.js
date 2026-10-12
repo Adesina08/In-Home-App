@@ -228,6 +228,13 @@ store.connect().then(async () => {
   // without admin@inicio.demo are left untouched.
   await ensureDemoSuperadmin();
 
+  // The In-Home and Out-of-Home sample studies are added once, in the
+  // background, if they are missing -- they never block startup or touch a
+  // real study. SAMPLE_STUDIES=off leaves them out.
+  if (process.env.SAMPLE_STUDIES !== "off") {
+    require("./lib/sampleStudies").ensureSampleStudies().catch((e) => console.error("Could not create the sample studies:", e.message));
+  }
+
   app.listen(PORT, () => {
     console.log(`Inicio Diary running on http://localhost:${PORT}`);
     require("./lib/scheduler").start();

@@ -3,6 +3,7 @@ const store = require("../lib/store");
 const { requireRole } = require("../lib/auth");
 const { logAudit } = require("../lib/audit");
 const { getSchedulerIntervalMinutes, setSchedulerIntervalMinutes, MIN_MINUTES, MAX_MINUTES } = require("../lib/systemSettings");
+const { deleteRespondentCascade, clearStudyContents, removeWhere } = require("../lib/studyCleanup");
 
 const router = express.Router();
 
@@ -18,81 +19,6 @@ const onlySuperadmin = requireRole("superadmin");
 function toId(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : value;
-}
-
-async function removeWhere(collection, filter) {
-  try {
-    return await store.remove(collection, filter);
-  } catch (e) {
-    // A newer/older pilot database may not have every optional collection yet.
-    // Do not leave the primary respondent/study undeletable because an optional
-    // supporting collection is absent.
-    console.warn(`Superadmin cleanup skipped ${collection}:`, e.message);
-    return { changes: 0 };
-  }
-}
-
-async function deleteRespondentCascade(respondentId) {
-  const respondent = await store.findOne("respondents", { id: respondentId });
-  if (!respondent) return null;
-
-  const records = await store.find(
-    "diary_records",
-    { respondent_id: respondentId },
-    { projection: { id: 1 } }
-  );
-  const recordIds = records.map((r) => r.id);
-  const stagedMedia = await store.find("staged_media", { respondent_id: respondentId });
-  for (const media of stagedMedia) await require("../lib/mediaStorage").deleteMedia(media.file_path);
-  await removeWhere("staged_media", { respondent_id: respondentId });
-
-  if (recordIds.length) {
-    const mediaRows = await store.find("media", { record_id: { $in: recordIds } });
-    for (const media of mediaRows) await require("../lib/mediaStorage").deleteMedia(media.file_path);
-    await removeWhere("responses", { record_id: { $in: recordIds } });
-    await removeWhere("media", { record_id: { $in: recordIds } });
-    await removeWhere("qc_flags", { record_id: { $in: recordIds } });
-    await removeWhere("coded_verbatims", { record_id: { $in: recordIds } });
-  }
-
-  await removeWhere("qc_flags", { respondent_id: respondentId });
-  await removeWhere("reminders", { respondent_id: respondentId });
-  await removeWhere("whatsapp_outbox", { respondent_id: respondentId });
-  await removeWhere("whatsapp_sessions", { respondent_id: respondentId });
-  await removeWhere("whatsapp_inbound_messages", { respondent_id: respondentId });
-  await removeWhere("respondent_credentials", { respondent_id: respondentId });
-  await removeWhere("otp_codes", { respondent_id: respondentId });
-  await removeWhere("push_subscriptions", { respondent_id: respondentId });
-  await removeWhere("respondent_profile_snapshots", { respondent_id: respondentId });
-  await removeWhere("end_validations", { respondent_id: respondentId });
-  await removeWhere("follow_up_log", { respondent_id: respondentId });
-  await removeWhere("incentive_ledger", { respondent_id: respondentId });
-  await removeWhere("backchecks", { respondent_id: respondentId });
-  await removeWhere("privacy_requests", { respondent_id: respondentId });
-  await removeWhere("diary_submissions", { respondent_id: respondentId });
-  await removeWhere("mobile_sessions", { respondent_id: respondentId });
-  await removeWhere("diary_records", { respondent_id: respondentId });
-  await removeWhere("respondents", { id: respondentId });
-
-  // The account represents a person across studies. Delete it only when this
-  // was their final enrolment; otherwise the same account must continue to work
-  // for their remaining studies.
-  if (respondent.account_id) {
-    const remaining = await store.count("respondents", { account_id: respondent.account_id });
-    if (!remaining) {
-      await removeWhere("mobile_sessions", { account_id: respondent.account_id });
-      const profile = await store.findOne("respondent_profiles", { account_id: respondent.account_id });
-      if (profile && profile.photo_path) await require("../lib/mediaStorage").deleteMedia(profile.photo_path);
-      await removeWhere("respondent_profiles", { account_id: respondent.account_id });
-      await removeWhere("respondent_accounts", { id: respondent.account_id });
-    }
-  } else if (respondent.profile_id) {
-    const profile = await store.findOne("respondent_profiles", { id: respondent.profile_id });
-    if (profile && profile.photo_path) await require("../lib/mediaStorage").deleteMedia(profile.photo_path);
-    await removeWhere("respondent_profiles", { id: respondent.profile_id });
-  }
-
-  return respondent;
 }
 
 // Platform-wide operational settings -- currently just the scheduler
@@ -266,28 +192,7 @@ router.post("/superadmin/studies/:id/delete", onlySuperadmin, async (req, res) =
     });
   }
 
-  const respondents = await store.find(
-    "respondents",
-    { study_id: studyId },
-    { projection: { id: 1 } }
-  );
-  for (const respondent of respondents) {
-    await deleteRespondentCascade(respondent.id);
-  }
-
-  await removeWhere("skip_rules", { study_id: studyId });
-  await removeWhere("questions", { study_id: studyId });
-  await removeWhere("question_imports", { study_id: studyId });
-  await removeWhere("brands", { study_id: studyId });
-  await removeWhere("consent_versions", { study_id: studyId });
-  await removeWhere("kpi_config", { study_id: studyId });
-  await removeWhere("ai_summaries", { study_id: studyId });
-  try { await require("../lib/videoSummary").removeVideoSummaries({ study_id: studyId }); }
-  catch (e) { console.warn("Study delete cleanup skipped video_summaries:", e.message); }
-  await removeWhere("respondent_profile_snapshots", { study_id: studyId });
-  for (const collection of ["interviewer_assignments", "fieldwork_visits", "backchecks", "incentive_rules", "incentive_ledger", "client_grants", "report_snapshots", "report_schedules", "research_alerts", "research_audit", "theme_codes", "coded_verbatims", "privacy_requests", "follow_up_log", "end_validations"]) {
-    await removeWhere(collection, { study_id: studyId });
-  }
+  const respondentsDeleted = await clearStudyContents(studyId);
 
   // Preserve staff/client accounts but detach them from a project that no
   // longer exists.
@@ -301,7 +206,7 @@ router.post("/superadmin/studies/:id/delete", onlySuperadmin, async (req, res) =
     studyId,
     {
       study_name: study.name,
-      respondents_deleted: respondents.length,
+      respondents_deleted: respondentsDeleted,
       permanent: true,
     }
   );

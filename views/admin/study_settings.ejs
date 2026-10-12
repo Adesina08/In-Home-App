@@ -4,6 +4,18 @@
 <div class="console-settings-layout">
 <nav class="console-settings-nav" aria-label="Settings sections"><% [['identity','Study identity'],['cadence','Diary & recruitment'],['methodology','Methodology'],['evidence','Evidence'],['quality','Quality checks'],['reminders','Reminders']].forEach(([id,label])=>{ %><a href="#settings-<%= id %>"><%= label %></a><% }) %></nav>
 <div class="bg-white rounded-[18px] border border-[#EDF0F4] shadow-card p-6 max-w-4xl">
+  <% if (study.is_sample) { %>
+    <div class="flex flex-wrap items-start justify-between gap-3 text-sm mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3.5">
+      <div class="text-amber-900">
+        <div class="font-semibold">This is a sample study</div>
+        <div class="text-xs mt-0.5">Its respondents, entries and photos are mock data for exploring the platform. Edit anything you like; resetting replaces all of it with a fresh copy of the sample.</div>
+        <% if (typeof sampleReset !== 'undefined' && sampleReset) { %><div class="text-xs font-semibold mt-1.5">The sample study was reset.</div><% } %>
+      </div>
+      <form method="POST" action="/admin/studies/<%= study.id %>/sample/reset" onsubmit="return confirm('Reset this sample study? Every change made to it, including its questionnaire, settings and data, is replaced with a fresh copy.')">
+        <button class="console-button"><%- icon('refresh', 'w-4 h-4') %>Reset sample study</button>
+      </form>
+    </div>
+  <% } %>
   <div class="flex items-start gap-2 text-sm text-slate-500 mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
     <%- icon('cog', 'w-4 h-4 mt-0.5 text-signal') %>
     <span>Configure participation, evidence, quality checks, and reminders for this study. Save your changes before moving to another screen.</span>
