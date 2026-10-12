@@ -13,3 +13,6 @@ data.localdb.json*
 
 # Marketing video tooling: demo database, recordings and rendered videos.
 /scripts/marketing-videos/.work/
+
+# Over-the-air update export, deployed by CI (lib/otaUpdates.js)
+/ota/

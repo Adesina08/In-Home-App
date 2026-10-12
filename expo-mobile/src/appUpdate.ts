@@ -1,11 +1,15 @@
 import { Linking, Platform } from "react-native";
 import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "./api";
 
 // The Build Android APK workflow publishes the APK and its manifest side by
 // side; every build carries a higher versionCode and the same release key, so
 // the downloaded APK installs over this one as an update (no uninstall).
+// JS-only releases arrive over the air instead (expo-updates, served by
+// lib/otaUpdates.js), so the APK is only offered when its native runtime
+// differs from this install's.
 const MANIFEST_URL = `${API_BASE}/public/downloads/inicio-diary.json`;
 export const APK_URL = `${API_BASE}/public/downloads/inicio-diary.apk`;
 const SNOOZE_KEY = "inicio.update.snoozed";
@@ -28,6 +32,7 @@ export async function checkForUpdate(): Promise<AvailableUpdate | null> {
     const manifest = await res.json();
     const versionCode = Number(manifest?.versionCode);
     if (!Number.isInteger(versionCode) || versionCode <= installed) return null;
+    if (manifest.runtimeVersion && manifest.runtimeVersion === Updates.runtimeVersion) return null;
     const snoozed = JSON.parse((await AsyncStorage.getItem(SNOOZE_KEY)) || "null");
     if (snoozed?.versionCode === versionCode && Date.now() - snoozed.at < SNOOZE_MS) return null;
     return { version: String(manifest.version || ""), versionCode, bytes: Number(manifest.bytes) || undefined };

@@ -43,6 +43,12 @@ jobs:
           name: inicio-diary-apk
           path: public/downloads
 
+      - name: Download the over-the-air update
+        uses: actions/download-artifact@v4
+        with:
+          name: inicio-diary-ota
+          path: ota
+
       - name: Install native test adapters
         working-directory: expo-mobile
         run: npm ci --no-audit --no-fund
@@ -76,7 +82,7 @@ jobs:
           zip -qr ../inicio-diary-release.zip .
           cd ..
           test -s inicio-diary-release.zip
-          ls -lh inicio-diary-release.zip public/downloads/inicio-diary.apk
+          ls -lh inicio-diary-release.zip public/downloads/inicio-diary.apk ota/build.json
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4

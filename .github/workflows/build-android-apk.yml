@@ -83,6 +83,15 @@ jobs:
           mkdir -p apk-download
           cp "$APK" apk-download/inicio-diary.apk
           node scripts/apk-manifest.js "$APK" apk-download/inicio-diary.json
+      - name: Export the over-the-air update
+        # Same JS as the APK; phones on this runtime pick it up on next launch
+        # (served by lib/otaUpdates.js from ota/ on the web app).
+        working-directory: expo-mobile
+        run: |
+          npx expo export --platform android --output-dir ../ota-dist
+          npx expo config --json --type public > ../ota-dist/expoConfig.json
+          node -e "const c=require('../ota-dist/expoConfig.json');require('fs').writeFileSync('../ota-dist/build.json',JSON.stringify({runtimeVersion:c.runtimeVersion,createdAt:new Date().toISOString()}))"
+          cat ../ota-dist/build.json
       - name: Remove the release key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
@@ -90,5 +99,11 @@ jobs:
         with:
           name: inicio-diary-apk
           path: apk-download/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inicio-diary-ota
+          path: ota-dist/
           if-no-files-found: error
           retention-days: 30

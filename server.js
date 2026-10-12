@@ -34,6 +34,11 @@ app.use("/public/downloads", (req, res, next) => {
   next();
 });
 app.use("/public", express.static(path.join(__dirname, "public")));
+// Over-the-air JS updates for the Android app (lib/otaUpdates.js). File names
+// are content hashes, so they can be cached forever.
+const otaUpdates = require("./lib/otaUpdates");
+app.get("/ota/manifest", otaUpdates.manifestHandler({ baseUrl: require("./lib/urls").appBaseUrl }));
+app.use("/ota/files", express.static(otaUpdates.OTA_DIR, { immutable: true, maxAge: "365d" }));
 // Keep serving the retirement worker for browsers that installed the old PWA.
 // New pages no longer register it; existing registrations fetch this once and
 // unregister themselves.
