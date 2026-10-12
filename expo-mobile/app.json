@@ -15,7 +15,9 @@
       "versionCode": 2000,
       "permissions": [
         "CAMERA",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -67,7 +69,13 @@
           "barcodeScannerEnabled": false
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      [
+        "expo-notifications",
+        {
+          "color": "#1F3864"
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "https://in-home-app-e8dkcnc7eefjgycv.francecentral-01.azurewebsites.net"

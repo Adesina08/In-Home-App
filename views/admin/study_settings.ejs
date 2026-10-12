@@ -213,7 +213,7 @@
         </div>
         <div class="flex flex-col">
           <label class="block text-sm font-medium text-slate-600 mb-1.5">How reminders are sent</label>
-          <p class="text-xs text-slate-400 mb-1.5">Respondents can override this for themselves.</p>
+          <p class="text-xs text-slate-400 mb-1.5">WhatsApp participants are always reminded on WhatsApp and app users by in-app push. These channels apply only to respondents who haven't chosen a mode yet.</p>
           <% const reminderChannels = Array.isArray(study.reminder_channels) ? study.reminder_channels : [study.default_reminder_channel || 'whatsapp']; %><div class="grid grid-cols-2 gap-2 border border-slate-300 rounded-[11px] p-3 min-h-[42px] bg-white"><% [['whatsapp','WhatsApp'],['sms','SMS'],['email','Email'],['in-app','In-app / Push']].forEach(([value,label]) => { %><label class="flex items-center gap-2 text-xs"><input type="checkbox" name="reminder_channels" value="<%= value %>" <%= reminderChannels.includes(value)?'checked':'' %> /><%= label %></label><% }) %></div>
         </div>
       </div>

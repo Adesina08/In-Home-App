@@ -31,6 +31,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useColorScheme } from "nativewind";
 import { api, API_BASE, clearRememberedSession, extendRememberedSession, getRememberedSession, getToken, MobileEnrolment, setToken } from "./src/api";
+import { cancelDiaryReminders, latestEntryTime, scheduleDiaryReminders } from "./src/reminders";
 import { VideoDiaryScreen, VideoDraft } from "./src/screens/VideoDiary";
 import { StandardVideoCaptureScreen } from "./src/screens/StandardVideoCapture";
 import { HomeScreen, DisplayRecord } from "./src/screens/Home";
@@ -787,6 +788,7 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     try { await api.logout(); } catch {}
     await setToken(null);
     await AsyncStorage.removeItem("inicio.offline.enrolments");
+    await cancelDiaryReminders().catch(()=>{});
     setSelected(null); setHome(null); setParticipation(null); setRewardCelebration(null); setEnrolments([]); setError(""); setScreen("login");
     setBusy(false);
   }
@@ -933,6 +935,18 @@ export default function App({ onSwitchToInterviewer }: { onSwitchToInterviewer: 
     const listener=AppState.addEventListener('change',state=>{if(state==='active')refreshSync().catch(()=>{});});
     return()=>{clearInterval(timer);listener.remove();};
   },[selected?.respondent.id]);
+  // Re-plan on-device diary reminders whenever the entries change (opening
+  // the study, a submission syncing, or an entry queued offline).
+  useEffect(()=>{
+    if(!selected||!home||home.respondent?.id!==selected.respondent.id)return;
+    scheduleDiaryReminders({
+      respondentId:selected.respondent.id,
+      studyName:home.study?.name||selected.study.name,
+      name:firstName(home.respondent?.name),
+      plan:home.reminders,
+      lastEntryAt:latestEntryTime(home.records||[],pendingEntries.map(p=>p.createdAt)),
+    }).catch(()=>{});
+  },[selected?.respondent.id,home,pendingEntries]);
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
