@@ -8,6 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import AppRedesign from "./AppRedesign";
 import InterviewerApp from "./InterviewerApp";
 import { LogoLoader } from "./src/components/LogoLoader";
+import { UpdatePrompt } from "./src/components/UpdatePrompt";
 
 type AppMode = "respondent" | "interviewer";
 const MODE_KEY = "inicio.appMode";
@@ -55,7 +56,7 @@ function AppContent() {
 function SafeApp() {
   const { colorScheme } = useColorScheme();
   const dark = colorScheme === 'dark';
-  return <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={{flex:1,backgroundColor:dark?'#0A1628':'#FAF9F7'}}><StatusBar style={dark?'light':'dark'} /><AppContent /></SafeAreaView>;
+  return <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={{flex:1,backgroundColor:dark?'#0A1628':'#FAF9F7'}}><StatusBar style={dark?'light':'dark'} /><AppContent /><UpdatePrompt /></SafeAreaView>;
 }
 export default function App() {
   return <SafeAreaProvider initialMetrics={initialWindowMetrics}><SafeApp /></SafeAreaProvider>;
